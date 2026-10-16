@@ -643,6 +643,41 @@ def market_quote(symbol: str, provider: str, who: Who, fetch: Annotated[Callable
     return {"symbol": q.symbol, "price": str(q.price), "currency": q.currency, "as_of": q.as_of, "source": q.source}
 
 
+@app.post("/documents/{doc_id}/vendor-facts")
+def vendor_facts(doc_id: str, db: Db, who: Writer, preset: str, commit: bool = False,
+                 currency: str | None = None):
+    """Propose (or with commit=true store) cited facts from an uploaded PitchBook, Crowdcube or Seedrs/Republic
+    CSV export. Each fact quotes its `Header=value` cell and passes the normal gate; rows whose currency
+    or date cannot be read come back in `rejected`. Header presets are unverified against real exports."""
+    from app.vendorfacts import PRESETS, propose
+
+    doc = _own_doc(db, who, doc_id)
+    if preset not in PRESETS:
+        raise HTTPException(422, f"preset must be one of {sorted(PRESETS)}")
+    if doc.kind != "csv":
+        raise HTTPException(422, "vendor-facts reads documents uploaded as CSV exports")
+    pages = [(p.number, p.text) for p in sorted(doc.pages, key=lambda p: p.number)]
+    props, rejected = propose(pages, preset, currency)
+    stored, refused = [], []
+    for pr in props:
+        item = {"entity": pr.entity, "metric": pr.metric, "period": pr.period, "value": str(pr.value),
+                "unit": pr.unit, "page": pr.page, "quote": pr.quote, "row": pr.row}
+        if not commit:
+            stored.append(item)
+            continue
+        try:
+            f = add_verified_fact(db, tenant_id=who.tenant, entity=pr.entity, metric=pr.metric, period=pr.period,
+                                  value=pr.value, unit=pr.unit, document_id=doc_id, page=pr.page, quote=pr.quote,
+                                  scale=pr.scale, basis=preset)
+            log_event(db, who.tenant, actor(who), "fact.create", {"fact_id": f.id, "entity": pr.entity,
+                                                                  "metric": pr.metric, "period": pr.period})
+            stored.append({**item, "id": f.id, "status": f.status})
+        except CitationError as e:
+            db.rollback()
+            refused.append({**item, "reason": str(e)})
+    return {"committed": commit, "facts": stored, "refused": refused, "rejected": rejected}
+
+
 @app.get("/uk/company/{number}/accounts")
 def uk_accounts(number: str, tenant: Tenant, fetch: Annotated[Callable, Depends(get_ch_fetch)]):
     from dataclasses import asdict
@@ -656,6 +691,76 @@ def uk_accounts(number: str, tenant: Tenant, fetch: Annotated[Callable, Depends(
         raise HTTPException(404, "company not found") from e
     except RuntimeError as e:
         raise HTTPException(503, str(e)) from e
+
+
+def _ch_call(fn, number, fetch):
+    from dataclasses import asdict
+
+    from app.chfeed import CompanyNotFound
+    try:
+        return [asdict(x) for x in fn(number, fetch)]
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except CompanyNotFound as e:
+        raise HTTPException(404, "company not found") from e
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from e
+
+
+@app.get("/uk/company/{number}/officers")
+def uk_officers(number: str, tenant: Tenant, fetch: Annotated[Callable, Depends(get_ch_fetch)]):
+    from app import chfeed
+    return _ch_call(chfeed.officers, number, fetch)
+
+
+@app.get("/uk/company/{number}/psc")
+def uk_psc(number: str, tenant: Tenant, fetch: Annotated[Callable, Depends(get_ch_fetch)]):
+    """People with significant control from the live API (needs COMPANIES_HOUSE_API_KEY). Ceased
+    entries are included with ceased_on set; nothing is dropped or defaulted."""
+    from app import chfeed
+    return _ch_call(chfeed.pscs, number, fetch)
+
+
+@app.post("/uk/psc/extract")
+async def uk_psc_extract(file: Annotated[UploadFile, File()], who: Who, companies: str):
+    """Pick the named companies out of an uploaded PSC snapshot (.jsonl, or .zip holding one) and return
+    their records with the source line number. `companies` is comma separated. Unreadable lines are
+    counted and the first few reported."""
+    import io as _io
+    import zipfile
+
+    from app.chbulk import iter_psc_snapshot
+    from app.chfeed import normalise_number
+
+    try:
+        want = {normalise_number(x) for x in companies.split(",") if x.strip()}
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    if not want or len(want) > 500:
+        raise HTTPException(422, "give between 1 and 500 company numbers")
+    data = await file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
+    if data[:2] == b"PK":
+        try:
+            z = zipfile.ZipFile(_io.BytesIO(data))
+            names = [n for n in z.namelist() if n.lower().endswith((".jsonl", ".txt", ".json"))]
+            if not names:
+                raise HTTPException(422, "no .jsonl file in the zip")
+            lines = z.open(names[0])
+        except zipfile.BadZipFile as e:
+            raise HTTPException(422, "corrupt zip") from e
+    else:
+        lines = _io.BytesIO(data)
+    found, errors = [], []
+    from dataclasses import asdict
+    for rec in iter_psc_snapshot(lines, want):
+        if isinstance(rec, dict):
+            errors.append(rec)
+        else:
+            found.append(asdict(rec))
+    missing = sorted(want - {r["company_number"] for r in found})
+    return {"records": found, "not_in_file": missing, "unreadable_lines": len(errors), "unreadable_sample": errors[:5]}
 
 
 @app.get("/memo.docx")
