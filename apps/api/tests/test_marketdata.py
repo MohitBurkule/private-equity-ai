@@ -1,9 +1,7 @@
 from decimal import Decimal
 
 import pytest
-
 from app import marketdata as md
-
 
 
 def test_latest_wins_and_case_normalised():
