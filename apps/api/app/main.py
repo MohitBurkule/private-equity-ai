@@ -52,6 +52,7 @@ from app.portfolio import (
     record_observation,
 )
 from app.ratelimit import limiter
+from app.report import build_report, build_report_docx
 from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
 from app.search import PageIndex
 from app.xbrl import candidates, crosscheck, load_companyfacts
@@ -654,6 +655,19 @@ def covenant_status(company_id: int, db: Db, who: Who):
     breaches = [{"covenant_id": c["id"], "kpi_metric": c["kpi_metric"], **t}
                 for c in out for t in c["tests"] if t["status"] in ("breach", "unit_mismatch")]
     return {"covenants": out, "breaches": breaches}
+
+
+@app.get("/portfolio/report")
+def portfolio_report(db: Db, who: Who):
+    return build_report(db, who.tenant, visible_doc_ids(db, who))
+
+
+@app.get("/portfolio/report.docx")
+def portfolio_report_docx(db: Db, who: Who):
+    log_event(db, who.tenant, actor(who), "report.export", {"format": "docx"})
+    return Response(build_report_docx(db, who.tenant, visible_doc_ids(db, who)), headers={
+        "Content-Disposition": 'attachment; filename="portfolio-report.docx"'},
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 @app.get("/portfolio/companies/{company_id}/change")
