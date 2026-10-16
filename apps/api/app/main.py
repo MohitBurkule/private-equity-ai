@@ -23,6 +23,7 @@ from app import comps as comps_mod
 from app import firm_knowledge as fk
 from app import jobs as jobs_mod
 from app import legal as legal_mod
+from app import outreach as outreach_mod
 from app import targets as tg_mod
 from app import workflows as wf_mod
 from app.acl import Principal, doc_visible, fact_visible, visible_doc_ids
@@ -1293,6 +1294,26 @@ def targets_screen(body: Screen, db: Db, who: Who):
     out.sort(key=lambda r: r["verdict"] != "match")
     return {"matches": sum(r["verdict"] == "match" for r in out), "review": sum(r["verdict"] == "review" for r in out),
             "items": out[:min(max(body.limit, 1), 1000)]}
+
+
+class OutreachIn(BaseModel):
+    target_ids: list[int]
+    sender: str
+    firm: str
+    thesis: str | None = None
+
+
+@app.post("/targets/outreach")
+def targets_outreach(body: OutreachIn, db: Db, who: Writer):
+    """Mail-merge drafts for chosen targets. Nothing is sent; revenue is quoted only with its filing link."""
+    if not 0 < len(body.target_ids) <= 200:
+        raise HTTPException(422, "send 1 to 200 target ids")
+    rows = db.query(Target).filter(Target.tenant_id == who.tenant, Target.id.in_(body.target_ids)).all()
+    missing = sorted(set(body.target_ids) - {t.id for t in rows})
+    if missing:
+        raise HTTPException(404, f"targets not found: {missing}")
+    log_event(db, who.tenant, actor(who), "target.outreach_draft", {"count": len(rows)})
+    return [outreach_mod.draft(t, body.sender, body.firm, body.thesis) for t in rows]
 
 
 class TargetStatus(BaseModel):
