@@ -403,6 +403,7 @@ def fact_conflicts(db: Db, who: Who, entity: str | None = None):
     """Same entity, metric, period and basis with different values across facts. Reports only."""
     return [{"entity": c.entity, "metric": c.metric, "period": c.period, "basis": c.basis,
              "spread_pct": str(c.spread_pct.quantize(Decimal("0.01"))), "likely_rounding": c.likely_rounding,
+             "severity": c.severity, "cross_document": c.cross_document, "sources": c.sources,
              "values": [{"value": str(v), "fact_id": fid} for v, fid in c.values]}
             for c in find_conflicts(db, who.tenant, visible_doc_ids(db, who), entity)]
 
