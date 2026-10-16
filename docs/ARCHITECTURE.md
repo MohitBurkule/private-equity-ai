@@ -114,3 +114,6 @@ Repo name; deployment target (cloud/on-prem); which vendor licences user holds (
 9. **Secondary markets (Seedrs/Crowdcube):** no official API found. Ingest user-uploaded exports; no scrapers.
 10. **Permissions-aware retrieval, ethical walls, audit trail from M0** (already in section 5; now a hard M0 gate).
 11. **Untested:** OCR path (all 10 sample docs have text layers), restatement handling, XBRL cross-check. Blocked on network allowlist for sec.gov, data.sec.gov, Companies House.
+
+## 13. Measured baselines
+- Retrieval (BM25 + finance synonym expansion, scoped to the gold document), 14 FinanceBench open-source questions on 10 sample filings: recall@1 0.14, @3 0.36, @5 0.50, @10 0.57 (`evals/run_retrieval_eval.py`). Without synonym expansion: @10 0.29. Small n and synonyms were tuned on these questions, so treat as an upper-biased baseline. Next steps: dense embeddings + cross-encoder rerank, statement-page classifier, and a held-out question set.
