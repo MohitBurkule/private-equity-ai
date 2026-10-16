@@ -232,3 +232,18 @@ class Target(Base):
     revenue_url: Mapped[str | None] = mapped_column(Text, default=None)  # where the revenue figure is filed
     status: Mapped[str] = mapped_column(String(16), default="new")  # new | screened | contacted | passed
     notes: Mapped[str | None] = mapped_column(Text, default=None)
+
+class Alert(Base):
+    """An inbox item written by a watcher. dedupe_key makes repeated scans idempotent."""
+    __tablename__ = "alert"
+    __table_args__ = (UniqueConstraint("tenant_id", "dedupe_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    severity: Mapped[str] = mapped_column(String(16))
+    title: Mapped[str] = mapped_column(Text)
+    detail: Mapped[str] = mapped_column(Text)
+    dedupe_key: Mapped[str] = mapped_column(String(256))
+    fact_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON list of fact ids
+    status: Mapped[str] = mapped_column(String(16), default="new", server_default="new")
+    created_at: Mapped[str] = mapped_column(String(40), default="")
