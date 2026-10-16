@@ -18,8 +18,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import agent as ag
+from app import comps as comps_mod
 from app import firm_knowledge as fk
 from app import jobs as jobs_mod
+from app import legal as legal_mod
 from app.acl import Principal, doc_visible, fact_visible, visible_doc_ids
 from app.answer import answer_question
 from app.audit import log_event, verify_chain
@@ -33,6 +35,9 @@ from app.auth import (
     revoke_key,
 )
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
+from app.connectors.base import ConnectorError, default_http
+from app.connectors.registry import IMPLEMENTED, catalog
+from app.connectors.sync import sync as connector_sync
 from app.db import make_engine, make_session_factory
 from app.dd import STATUSES, TEMPLATE
 from app.edgar import fetch_companyfacts
@@ -52,6 +57,7 @@ from app.models import (
     DDRequest,
     Deal,
     Document,
+    DocumentSource,
     EvalRun,
     Fact,
     Holding,
@@ -1077,6 +1083,38 @@ def calc_waterfall(body: WaterfallIn, who: Who):
             "payouts": {k: str(v) for k, v in r.payouts.items()}}
 
 
+class CompsIn(BaseModel):
+    target: str
+    peers: list[str]
+    period: str
+    metrics: list[str] = ["revenue", "ebitda"]
+    target_period: str | None = None
+    ev_period: str | None = None
+
+
+@app.post("/calc/comps")
+def calc_comps(body: CompsIn, db: Db, who: Who):
+    """Trading comps (or precedents: peers are deal entities with enterprise_value facts) and implied range."""
+    if len(body.peers) > 200 or len(body.metrics) > 10:
+        raise HTTPException(422, "too many peers or metrics")
+    return comps_mod.run(db, who.tenant, body.target, body.peers, body.period, body.metrics,
+                         visible_doc_ids(db, who), body.target_period, body.ev_period)
+
+
+@app.get("/documents/{doc_id}/legal-terms")
+def legal_terms(doc_id: str, doc_type: str, db: Db, who: Who):
+    """Key terms (governing law, term, caps, covenants...) as cited sentences. doc_type: nda | spa | credit."""
+    _own_doc(db, who, doc_id)
+    pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc_id).order_by(PageRow.number)]
+    try:
+        out = legal_mod.extract(pages, doc_type)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    for f in out["findings"]:
+        f["document_id"] = doc_id
+    return out
+
+
 @app.get("/portfolio/report")
 def portfolio_report(db: Db, who: Who):
     return build_report(db, who.tenant, visible_doc_ids(db, who))
@@ -1303,3 +1341,45 @@ def _optional_llm():
         return get_llm()
     except NoLLMConfigured:
         return None
+
+
+CONNECTOR_HTTP = default_http  # tests replace this with recorded responses
+
+
+class SyncBody(BaseModel):
+    token: str  # per-call OAuth access token; never stored
+    deal: str | None = None
+    limit: int = 50
+    options: dict[str, str] = {}
+
+
+@app.get("/connectors")
+def list_connectors(who: Who):
+    return catalog()
+
+
+@app.post("/connectors/{name}/sync")
+def sync_connector(name: str, body: SyncBody, db: Db, who: Writer):
+    cls = IMPLEMENTED.get(name)
+    if cls is None:
+        raise HTTPException(404, "connector not implemented")
+    try:
+        conn = cls(body.token, CONNECTOR_HTTP, **body.options)
+        out = connector_sync(db, who, conn, (body.deal or "").strip() or None, max(1, min(body.limit, 500)))
+    except PermissionError as e:
+        raise HTTPException(403, str(e)) from e
+    except (ConnectorError, ValueError, OSError) as e:
+        raise HTTPException(502, f"connector failed: {e}") from e
+    log_event(db, who.tenant, actor(who), "connector.sync",
+              {"connector": name, "deal": body.deal, "ingested": len(out["ingested"])})
+    return out
+
+
+@app.get("/documents/{doc_id}/source")
+def document_source(doc_id: str, db: Db, who: Who):
+    """Link back to the original in the source system, for audit and citation."""
+    _own_doc(db, who, doc_id)
+    s = db.query(DocumentSource).filter_by(document_id=doc_id).order_by(DocumentSource.id.desc()).first()
+    if s is None:
+        raise HTTPException(404, "document was uploaded manually; no connector source")
+    return {"connector": s.connector, "url": s.url, "version": s.version}
