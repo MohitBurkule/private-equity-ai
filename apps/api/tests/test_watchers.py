@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.main import SessionLocal, app
 from app.models import DDRequest, Deal
-from tests.helpers import new_tenant
+from app.rls import bind_tenant
 
 c = TestClient(app)
 
@@ -15,13 +15,12 @@ def old(days):
 
 
 def test_stalled_deal_and_overdue_dd_alerts_once_per_week_and_skip_closed():
-    h = new_tenant(c, "wt1")
+    t = c.post("/admin/tenants", json={"name": "wt1"}, headers={"X-Admin-Token": "test-admin"}).json()
+    h, tid = {"Authorization": f"Bearer {t['api_key']}"}, t["tenant_id"]
     for n in ("WT1 Atlas", "WT1 Borealis", "WT1 Closed Co"):
         c.post("/deals", headers=h, json={"name": n})
     c.post("/dd/requests/seed", headers=h, json={"deal": "WT1 Atlas", "categories": ["legal"]})
     with SessionLocal() as s:
-        tid = s.query(Deal).filter_by(name="WT1 Atlas").one().tenant_id
-        from app.rls import bind_tenant
         bind_tenant(s, tid)
         s.query(Deal).filter_by(name="WT1 Atlas").one().updated_at = old(45)
         s.query(Deal).filter_by(name="WT1 Closed Co").one().updated_at = old(90)
