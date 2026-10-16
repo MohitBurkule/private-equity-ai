@@ -42,7 +42,7 @@ Target modules: `firm_knowledge.py` (profile), `agent.py` (tool registry, workfl
 | 6 | Precedent transactions | MISSING | Holdings import has deal rows; needs multiple calc + dataset | comps |
 | 7 | Legal review (NDA, SPA, covenants) | PARTIAL | Covenants table, extract schemas, cap table, share ledger, waterfall. Missing: clause library, playbook compare, red-flag table | workflows |
 | 8 | Portfolio tracking | BUILT (core) | Companies, KPI observations, covenants, change report, DOCX report, fund metrics, cohorts | - |
-| 9 | Scheduled workflows and proactive alerts (inbox, email) | PARTIAL | Job queue for ingest only. Agent core adds runs; scheduler is a follow-up | agent core |
+| 9 | Scheduled workflows and proactive alerts (inbox, email) | PARTIAL | Alert inbox + covenant watcher (`/alerts`), workflow runs (`/agent`). Email digest (`/alerts/digest`, SMTP) and periodic scan (`ALERT_SCAN_INTERVAL_S`) built. Missing: filing, KPI, screening watchers; per-user recipients | agent core |
 | 10 | Document generation (decks, research, outreach emails) | PARTIAL | memo DOCX/PPTX, portfolio DOCX. Missing: outreach email batch, research report | workflows |
 | 11 | Interactive dashboards | PARTIAL | React app, KPI panels. Missing: filterable target map, quarterly KPI board | UI |
 | 12 | Integrations (FactSet, PitchBook, DealCloud, SharePoint, Outlook, Gmail, Drive, LinkedIn, Cap IQ) | PARTIAL | FactSet quote, PitchBook export, Yahoo/Stooq, SEC, CH. Missing: OAuth connectors, DealCloud, SharePoint, Outlook, Drive | integrations |
@@ -50,8 +50,8 @@ Target modules: `firm_knowledge.py` (profile), `agent.py` (tool registry, workfl
 | 14 | Data-conflict flags | BUILT (core) | `/facts/conflicts`, tie-out, sumcheck. Missing: CIM vs DD report vs annual report doc-level pairing UI | workflows |
 | 15 | Benchmarking vs live data | PARTIAL | XBRL cross-check, quotes. Missing: peer sets, sector benchmark tables | comps |
 | 16 | Workspaces (multi-deal, team) | PARTIAL | Deals, API-key roles, per-deal ACL. Missing: user identities/SSO, shared notes | UI |
-| 17 | Firm memory / firm knowledge | NEW (this thread) | Cited profile of firm rules and preferences, extract from docs and emails | agent core |
-| 18 | Agent + workflow orchestration | NEW (this thread) | Tool registry, workflow runner, bounded agent loop, run log | agent core |
+| 17 | Firm memory / firm knowledge | BUILT (v1) | Cited profile of firm rules and preferences, extract from docs and emails | agent core |
+| 18 | Agent + workflow orchestration | BUILT (v1) | Tool registry, workflow runner, bounded agent loop, run log | agent core |
 | 19 | Source transparency | BUILT | Citations verified, source viewer, audit chain | - |
 | 20 | Financial calculation toolkit | BUILT | LTM, net debt, NWC, IRR/TVPI/DPI, waterfall, share ledger | - |
 | 21 | Due-diligence request tracking | BUILT | DD requests, summary, DDQ | - |
