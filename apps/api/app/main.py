@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app import agent as ag
+from app import alerts as al
 from app import comps as comps_mod
 from app import firm_knowledge as fk
 from app import jobs as jobs_mod
@@ -54,6 +55,7 @@ from app.migrate import migrate
 from app.models import (
     STAGES,
     AgentRun,
+    Alert,
     DDRequest,
     Deal,
     Document,
@@ -1383,3 +1385,41 @@ def document_source(doc_id: str, db: Db, who: Who):
     if s is None:
         raise HTTPException(404, "document was uploaded manually; no connector source")
     return {"connector": s.connector, "url": s.url, "version": s.version}
+
+
+def _unrestricted(who: Principal) -> None:
+    if who.restricted:
+        raise HTTPException(403, "alerts cover the whole tenant; use an unrestricted key")
+
+
+class AlertStatusIn(BaseModel):
+    status: str
+
+
+@app.post("/alerts/scan")
+def alerts_scan(db: Db, who: Writer):
+    _unrestricted(who)
+    made = al.scan(db, who.tenant)
+    log_event(db, who.tenant, actor(who), "alerts.scan", {"created": len(made)})
+    return {"created": [al.alert_dict(a) for a in made]}
+
+
+@app.get("/alerts")
+def alerts_list(db: Db, who: Who, status: str | None = None):
+    _unrestricted(who)
+    q = db.query(Alert).filter_by(tenant_id=who.tenant)
+    if status:
+        q = q.filter_by(status=status)
+    return [al.alert_dict(a) for a in q.order_by(Alert.id.desc()).limit(200)]
+
+
+@app.post("/alerts/{alert_id}/status")
+def alerts_status(alert_id: int, body: AlertStatusIn, db: Db, who: Writer):
+    _unrestricted(who)
+    try:
+        a = al.set_status(db, who.tenant, alert_id, body.status)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    if a is None:
+        raise HTTPException(404, "not found")
+    return al.alert_dict(a)
