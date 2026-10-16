@@ -15,8 +15,8 @@ def _fmt(v: Decimal) -> str:
     return f"{v.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP):,}"
 
 
-def build_memo(db: Session, entity: str) -> str:
-    facts = (db.query(Fact).filter_by(entity=entity, status="verified")
+def build_memo(db: Session, tenant_id: str, entity: str) -> str:
+    facts = (db.query(Fact).filter_by(tenant_id=tenant_id, entity=entity, status="verified")
              .order_by(Fact.period, Fact.metric).all())
     if not facts:
         return f"# {entity}\n\nNo verified facts available. Nothing to report.\n"

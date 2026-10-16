@@ -1,11 +1,12 @@
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.audit import log_event, verify_chain
+from app.auth import admin_token_ok, create_tenant, tenant_for_key
 from app.db import Base, make_engine, make_session_factory
 from app.facts import CitationError, add_verified_fact
 from app.ingest import ingest_upload
@@ -34,33 +35,66 @@ def get_db():
 Db = Annotated[Session, Depends(get_db)]
 
 
+def get_tenant(db: Db, authorization: Annotated[str | None, Header()] = None) -> str:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(401, "missing bearer token")
+    tenant = tenant_for_key(db, authorization[7:].strip())
+    if tenant is None:
+        raise HTTPException(401, "invalid token")
+    return tenant
+
+
+Tenant = Annotated[str, Depends(get_tenant)]
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+class TenantIn(BaseModel):
+    name: str
+
+
+@app.post("/admin/tenants", status_code=201)
+def admin_create_tenant(body: TenantIn, db: Db, x_admin_token: Annotated[str | None, Header()] = None):
+    if not admin_token_ok(x_admin_token):
+        raise HTTPException(403, "admin token required")
+    t, key = create_tenant(db, body.name)
+    return {"tenant_id": t.id, "api_key": key, "note": "store this key now; it is not shown again"}
+
+
 @app.post("/documents")
-async def upload(file: Annotated[UploadFile, File()], db: Db):
+async def upload(file: Annotated[UploadFile, File()], db: Db, tenant: Tenant):
     data = await file.read()
     try:
-        doc = ingest_upload(db, data, file.filename or "upload.pdf")
-    except Exception as e:  # corrupt / encrypted / empty PDFs are flagged, never skipped
+        doc = ingest_upload(db, tenant, data, file.filename or "upload.pdf")
+    except Exception as e:  # corrupt / encrypted / empty files are flagged, never skipped
         raise HTTPException(422, f"cannot parse file: {e}") from e
+    log_event(db, tenant, "api", "document.upload", {"document_id": doc.id, "filename": doc.filename})
     return {"id": doc.id, "filename": doc.filename, "n_pages": doc.n_pages}
 
 
+def _own_doc(db: Session, tenant: str, doc_id: str) -> Document:
+    doc = db.get(Document, doc_id)
+    if doc is None or doc.tenant_id != tenant:  # same 404 for "missing" and "someone else's"
+        raise HTTPException(404, "document not found")
+    return doc
+
+
 @app.get("/documents/{doc_id}/pages/{number}")
-def get_page(doc_id: str, number: int, db: Db):
-    row = (db.query(PageRow).filter_by(document_id=doc_id, number=number).one_or_none())
+def get_page(doc_id: str, number: int, db: Db, tenant: Tenant):
+    _own_doc(db, tenant, doc_id)
+    row = db.query(PageRow).filter_by(document_id=doc_id, number=number).one_or_none()
     if row is None:
         raise HTTPException(404, "page not found")
     return {"document_id": doc_id, "page": number, "text": row.text}
 
 
 @app.get("/documents")
-def list_documents(db: Db):
+def list_documents(db: Db, tenant: Tenant):
     return [{"id": d.id, "filename": d.filename, "n_pages": d.n_pages}
-            for d in db.query(Document).all()]
+            for d in db.query(Document).filter_by(tenant_id=tenant).all()]
 
 
 class FactIn(BaseModel):
@@ -77,26 +111,29 @@ class FactIn(BaseModel):
 
 
 @app.post("/facts", status_code=201)
-def create_fact(body: FactIn, db: Db):
+def create_fact(body: FactIn, db: Db, tenant: Tenant):
     try:
-        f = add_verified_fact(db, **body.model_dump())
+        f = add_verified_fact(db, tenant_id=tenant, **body.model_dump())
     except CitationError as e:
         raise HTTPException(422, str(e)) from e
-    log_event(db, "api", "fact.create", {"fact_id": f.id, "entity": body.entity,
-                                          "metric": body.metric, "period": body.period})
+    log_event(db, tenant, "api", "fact.create", {"fact_id": f.id, "entity": body.entity,
+                                                 "metric": body.metric, "period": body.period})
     return {"id": f.id, "status": f.status}
 
 
 @app.get("/memo")
-def memo(entity: str, db: Db):
-    return {"entity": entity, "markdown": build_memo(db, entity)}
+def memo(entity: str, db: Db, tenant: Tenant):
+    return {"entity": entity, "markdown": build_memo(db, tenant, entity)}
 
 
 @app.get("/search")
-def search(q: str, db: Db, doc_id: str | None = None, k: int = 5):
-    query = db.query(PageRow)
+def search(q: str, db: Db, tenant: Tenant, doc_id: str | None = None, k: int = 5):
     if doc_id:
-        query = query.filter_by(document_id=doc_id)
+        _own_doc(db, tenant, doc_id)
+    query = (db.query(PageRow).join(Document, Document.id == PageRow.document_id)
+             .filter(Document.tenant_id == tenant))  # tenant filter BEFORE ranking
+    if doc_id:
+        query = query.filter(PageRow.document_id == doc_id)
     rows = query.all()
     index = PageIndex([(r.document_id, r.number, r.text) for r in rows])
     text = {(r.document_id, r.number): r.text for r in rows}
@@ -112,38 +149,38 @@ class CompanyIn(BaseModel):
 
 
 @app.post("/portfolio/companies", status_code=201)
-def create_company(body: CompanyIn, db: Db):
-    c = PortfolioCompany(**body.model_dump())
+def create_company(body: CompanyIn, db: Db, tenant: Tenant):
+    c = PortfolioCompany(tenant_id=tenant, **body.model_dump())
     db.add(c)
     db.commit()
-    log_event(db, "api", "company.create", {"company_id": c.id, "name": c.name})
+    log_event(db, tenant, "api", "company.create", {"company_id": c.id, "name": c.name})
     return {"id": c.id, "name": c.name}
 
 
 @app.post("/portfolio/companies/{company_id}/observations", status_code=201)
-def add_observation(company_id: int, fact_id: int, db: Db):
+def add_observation(company_id: int, fact_id: int, db: Db, tenant: Tenant):
     try:
-        o = record_observation(db, company_id, fact_id)
+        o = record_observation(db, tenant, company_id, fact_id)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
-    log_event(db, "api", "kpi.record", {"observation_id": o.id, "fact_id": fact_id})
+    log_event(db, tenant, "api", "kpi.record", {"observation_id": o.id, "fact_id": fact_id})
     return {"id": o.id, "metric": o.metric, "period": o.period, "value": str(o.value)}
 
 
 @app.get("/portfolio/companies/{company_id}/kpis")
-def kpis(company_id: int, db: Db):
+def kpis(company_id: int, db: Db, tenant: Tenant):
     return [{"metric": o.metric, "period": o.period, "value": str(o.value), "unit": o.unit,
-             "fact_id": o.fact_id} for o in current_kpis(db, company_id)]
+             "fact_id": o.fact_id} for o in current_kpis(db, tenant, company_id)]
 
 
 @app.get("/portfolio/companies/{company_id}/change")
-def change(company_id: int, metric: str, new: str, old: str, db: Db):
-    v = qoq_change(db, company_id, metric, new, old)
+def change(company_id: int, metric: str, new: str, old: str, db: Db, tenant: Tenant):
+    v = qoq_change(db, tenant, company_id, metric, new, old)
     return {"metric": metric, "new": new, "old": old,
             "pct_change": None if v is None else str(v.quantize(Decimal("0.01")))}
 
 
 @app.get("/audit/verify")
-def audit_verify(db: Db):
-    ok, bad = verify_chain(db)
+def audit_verify(db: Db, tenant: Tenant):
+    ok, bad = verify_chain(db, tenant)
     return {"ok": ok, "first_bad_id": bad}
