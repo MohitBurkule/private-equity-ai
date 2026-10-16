@@ -62,3 +62,17 @@ def test_targets_flow_filters_facets_screen_and_isolation():
     assert c.patch(f"/targets/{tid}", headers=h, json={"status": "contacted"}).json()["status"] == "contacted"
     assert c.get("/targets", headers=other).json()["total"] == 0
     json.dumps(sc)
+
+
+def test_outreach_drafts_use_only_known_facts():
+    h, other = new_tenant(c, "tg3"), new_tenant(c, "tg4")
+    c.post("/targets", headers=h, json=[
+        {"name": "Acme", "source_ref": "a", "sector": "Software (SIC 62012)", "revenue": "150000000",
+         "currency": "USD", "revenue_period": "FY2023", "revenue_url": "http://sec/x"},
+        {"name": "Bare", "source_ref": "b"}])
+    ids = [t["id"] for t in c.get("/targets", headers=h).json()["items"]]
+    out = c.post("/targets/outreach", headers=h, json={"target_ids": ids, "sender": "Sam", "firm": "Fund I"}).json()
+    full, bare = out[0]["body"], out[1]["body"]
+    assert "USD 150.0 million for FY2023 (http://sec/x)" in full and "software" in full
+    assert "revenue" not in bare and "invest in" not in bare  # nothing invented for the sparse target
+    assert c.post("/targets/outreach", headers=other, json={"target_ids": ids, "sender": "s", "firm": "f"}).status_code == 404
