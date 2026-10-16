@@ -67,3 +67,42 @@ jobs:
           nohup python -m uvicorn app.main:app --port 8000 > /tmp/api.log 2>&1 &
           for i in $(seq 1 30); do curl -sf localhost:8000/health && break; sleep 1; done
           python ../../scripts/smoke.py http://localhost:8000 ci-admin || { cat /tmp/api.log; exit 1; }
+  compose-e2e:
+    runs-on: ubuntu-latest
+    env: {ADMIN_TOKEN: ci-admin}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the full stack
+        run: docker compose up -d --build --wait --wait-timeout 300
+      - name: Wait for API
+        run: for i in $(seq 1 60); do curl -sf localhost:8000/health && break; sleep 2; done
+      - name: Web serves the UI
+        run: curl -sf localhost:8080/ | grep -qi "<div id"
+      - name: End-to-end smoke through the container
+        run: python3 scripts/smoke.py http://localhost:8000 ci-admin
+      - if: failure()
+        run: docker compose logs --no-color | tail -200
+      - if: always()
+        run: docker compose down -v
+  llm-local:
+    runs-on: ubuntu-latest
+    env:
+      LLM_PROVIDER: llamacpp
+      LLAMA_MODEL_PATH: ${{ github.workspace }}/models/qwen2.5-1.5b-instruct-q4_k_m.gguf
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: actions/cache@v4
+        with: {path: models, key: gguf-qwen2.5-1.5b-q4km-v1}
+      - name: Fetch model weights (cached)
+        run: |
+          mkdir -p models
+          [ -f "$LLAMA_MODEL_PATH" ] || curl -fsSL -o "$LLAMA_MODEL_PATH" \
+            https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf
+      - run: pip install -e 'apps/api[dev]' llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+      - name: /ask and schema-extraction evals on a local open model
+        run: python evals/run_llm_eval.py | tee llm-eval.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: llm-eval, path: llm-eval.json}

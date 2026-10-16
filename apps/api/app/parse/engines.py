@@ -142,6 +142,35 @@ def _rapidocr(path, pages, scale: float = 2.0):
         yield PageResult("rapidocr", p, [Line(ln.text, ln.bbox, "rapidocr", conf) for ln in lines], method="ocr")
 
 
+_docling = None
+
+
+def _docling_engine(path, pages):
+    """Docling (layout model + TableFormer). Tables become one line per row, cells joined by ' | '."""
+    global _docling
+    from docling.document_converter import DocumentConverter
+    _docling = _docling or DocumentConverter()
+    for p in pages:
+        doc = _docling.convert(str(path), page_range=(p, p)).document
+        lines: list[Line] = []
+        for item, _ in doc.iterate_items():
+            prov = getattr(item, "prov", None)
+            bb = None
+            if prov:
+                h = doc.pages[prov[0].page_no].size.height
+                b = prov[0].bbox
+                bb = (b.l, h - b.t, b.r, h - b.b) if b.coord_origin.name == "BOTTOMLEFT" else (b.l, b.t, b.r, b.b)
+            data = getattr(item, "data", None)
+            if data is not None and getattr(data, "grid", None):
+                for row in data.grid:
+                    cells = [c.text.strip() for c in row if c.text.strip()]
+                    if cells:
+                        lines.append(Line(" | ".join(dict.fromkeys(cells)), bb, "docling"))
+            elif getattr(item, "text", "").strip():
+                lines.append(Line(item.text.strip(), bb, "docling"))
+        yield PageResult("docling", p, lines)
+
+
 ENGINES = {
     "pdftotext": (_pdftotext, lambda: shutil.which("pdftotext") is not None),
     "pdftotext_layout": (_pdftotext_layout, lambda: shutil.which("pdftotext") is not None),
@@ -150,6 +179,7 @@ ENGINES = {
     "pdfplumber": (_pdfplumber, lambda: _has("pdfplumber")),
     "pypdf": (_pypdf, lambda: _has("pypdf")),
     "pdfium": (_pdfium, lambda: _has("pypdfium2")),
+    "docling": (_docling_engine, lambda: _has("docling")),
     "rapidocr": (_rapidocr, lambda: _has("rapidocr_onnxruntime") and _has("pypdfium2")),
 }
 
