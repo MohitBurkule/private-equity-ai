@@ -55,6 +55,7 @@ from app.ratelimit import limiter
 from app.report import build_report, build_report_docx
 from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
 from app.search import PageIndex
+from app.tracing import tracing_middleware
 from app.xbrl import candidates, crosscheck, load_companyfacts
 
 engine = make_engine()
@@ -70,6 +71,7 @@ jobs_mod.requeue_pending(SessionLocal)
 MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
 
 app = FastAPI(title="PE Platform API", version="0.0.1")
+app.middleware("http")(tracing_middleware)
 
 
 def get_db():
