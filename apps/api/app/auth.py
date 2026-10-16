@@ -26,9 +26,31 @@ def create_tenant(db: Session, name: str) -> tuple[Tenant, str]:
     return t, key
 
 
+def key_id(key_hash: str) -> str:
+    return key_hash[:12]
+
+
 def tenant_for_key(db: Session, key: str) -> str | None:
     row = db.get(ApiKey, hash_key(key))
-    return row.tenant_id if row else None
+    return row.tenant_id if row and not row.revoked else None
+
+
+def add_key(db: Session, tenant_id: str) -> tuple[str, str]:
+    """Additional key for rotation: issue the new one, switch clients, then revoke the old one."""
+    key = "pe_" + secrets.token_urlsafe(32)
+    h = hash_key(key)
+    db.add(ApiKey(key_hash=h, tenant_id=tenant_id))
+    db.commit()
+    return key_id(h), key
+
+
+def revoke_key(db: Session, kid: str) -> bool:
+    rows = [r for r in db.query(ApiKey).all() if key_id(r.key_hash) == kid]
+    if len(rows) != 1:
+        return False
+    rows[0].revoked = True
+    db.commit()
+    return True
 
 
 def admin_token_ok(presented: str | None) -> bool:
