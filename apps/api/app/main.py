@@ -9,12 +9,13 @@ from sqlalchemy.orm import Session
 from app.answer import answer_question
 from app.audit import log_event, verify_chain
 from app.auth import admin_token_ok, create_tenant, tenant_for_key
-from app.db import Base, make_engine, make_session_factory
+from app.db import make_engine, make_session_factory
 from app.edgar import fetch_companyfacts
 from app.facts import CitationError, add_verified_fact
 from app.ingest import ingest_upload
 from app.llm import LLM, NoLLMConfigured, get_llm
 from app.memo import build_memo
+from app.migrate import migrate
 from app.models import Document, PageRow
 from app.portfolio import (
     PortfolioCompany,
@@ -31,7 +32,7 @@ SessionLocal = make_session_factory(engine)
 install_tenant_hook(SessionLocal)
 # Schema + RLS run as the owner role (MIGRATE_DATABASE_URL); requests run as the app role.
 _owner = make_engine(os.environ.get("MIGRATE_DATABASE_URL")) if os.environ.get("MIGRATE_DATABASE_URL") else engine
-Base.metadata.create_all(_owner)
+migrate(_owner)
 apply_rls(_owner, os.environ.get("APP_DB_ROLE"))
 verify_app_role(engine)
 
