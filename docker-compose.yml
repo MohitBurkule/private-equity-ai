@@ -7,7 +7,9 @@ services:
       MIGRATE_DATABASE_URL: postgresql+psycopg://pe_owner:change-me-owner@db:5432/pe
       APP_DB_ROLE: pe_app
       ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN to enable tenant creation}
-    depends_on: [db, redis]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_started}
   web:
     build: apps/web
     ports: ["8080:80"]
@@ -15,6 +17,10 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment: {POSTGRES_USER: pe, POSTGRES_PASSWORD: pe, POSTGRES_DB: pe}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pe -d pe"]
+      interval: 5s
+      retries: 12
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./infra/db-init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
