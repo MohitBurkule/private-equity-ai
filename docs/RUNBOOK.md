@@ -69,3 +69,7 @@ No point-in-time recovery, no per-person identity (OIDC), uploads are parsed in-
 - `POST /deals`, `GET /deals`, `PATCH /deals/{name}`: stage (sourcing, screening, dd, ic, signed, closed, passed), note, document and open-DD counts. Walled keys cannot create deals.
 - `POST /ddq` with `{"questions": [...]}` (1 to 200): each question is answered alone with verified, cited claims only. `needs_human` is true for anything abstained, failed or empty. No answer is ever filled in without a source.
 - `app/marketdata.py`: `Provider` protocol and `CsvProvider` (columns symbol, price, currency, as_of). Paid feeds implement the protocol. Missing symbols raise `NoData`.
+
+## Portfolio report
+
+`GET /portfolio/report` (JSON) and `/portfolio/report.docx`: covenant alerts first, then each company's current KPIs with source document and page. Only facts the key may see are used.
