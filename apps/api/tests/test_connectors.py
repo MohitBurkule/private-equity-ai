@@ -38,7 +38,7 @@ def gmail_routes():
 def test_catalog_status():
     h = new_tenant(c, "cat")
     r = {x["name"]: x["status"] for x in c.get("/connectors", headers=h).json()}
-    assert r["gmail"] == "live" and r["salesforce"] == "live" and r["intralinks"] == "planned" and len(r) >= 15
+    assert r["gmail"] == "live" and r["salesforce"] == "live" and r["intralinks"] == "live" and len(r) >= 15
 
 
 def test_gmail_sync_cites_source_and_is_idempotent(monkeypatch):
@@ -196,3 +196,38 @@ def test_saved_connection_encrypts_token_and_runs_due(monkeypatch):
     assert c.get("/connections", headers=h).json()[0]["last_status"].startswith("ok")
     assert "token" not in c.get("/connections", headers=h).text
     assert c.post("/connections", json={**body, "interval_minutes": 1}, headers=h).status_code == 422
+
+
+def test_dataroom_export_zip_keeps_folders_and_checks_host():
+    import io
+    import zipfile
+
+    import pytest
+
+    from app.connectors.base import ConnectorError
+    from app.connectors.dataroom import Datasite, Intralinks
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("Legal/nda.eml", eml("NDA", "signed"))
+    url = "https://acme.intralinks.com/export/room1.zip"
+    it = list(Intralinks("tok", fake({url: buf.getvalue()}), export_url=url, room="Atlas").items())
+    assert it[0].name == "Atlas.zip" and it[0].url == "https://acme.intralinks.com/"
+    with pytest.raises(ConnectorError):
+        list(Datasite("tok", fake({}), export_url="https://evil.example.com/x.zip").items())
+    with pytest.raises(ConnectorError):
+        list(Datasite("tok", fake({"https://x.datasite.com/e": b"<html>"}), export_url="https://x.datasite.com/e").items())
+
+
+def test_dataroom_sync_expands_archive_with_walls(monkeypatch):
+    import io
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("Legal/nda.eml", eml("NDA", "signed"))
+    url = "https://acme.datasite.com/export/room1.zip"
+    monkeypatch.setattr(m, "CONNECTOR_HTTP", fake({url: buf.getvalue()}))
+    h = new_tenant(c, "dr")
+    body = {"token": "tok", "deal": "atlas", "options": {"export_url": url, "room": "Atlas"}}
+    r = c.post("/connectors/datasite/sync", json=body, headers=h).json()
+    assert r["ingested"] and r["ingested"][0]["source_url"] == "https://acme.datasite.com/"
+    assert r["ingested"][0]["filename"] == "Legal/nda.eml"
