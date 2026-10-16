@@ -33,6 +33,11 @@ The response contains the API key once; only its hash is stored. Paste it into t
 - Limits: 2000 files, `MAX_ARCHIVE_UNCOMPRESSED_BYTES` (1 GB), nesting depth 3. Encrypted members, path-escaping names and size-mismatched members are skipped with a reason. A `deal` tag applies to every member.
 - DOCX has no real pages: text is cut into ~3000-char chunks labelled by the nearest heading, so a citation page is a chunk, not a printed page. Legacy .doc/.ppt/.msg are not supported. No malware scan yet.
 
+## Background ingest
+- `POST /documents/async` (same fields and walls as `/documents`) returns 202 `{job_id}`; poll `GET /jobs/{id}` (status queued/running/done/failed, stage, attempts, result with `documents` and `skipped`). `GET /jobs` lists the latest 100; walled keys see only their own jobs.
+- Env: `INGEST_WORKERS` (2), `SPOOL_DIR` (system temp; put it on a persistent volume), `SCAN_COMMAND` (for example `clamdscan --no-summary`; the file path is appended; non-zero exit fails the job and removes the file; unset = no scan).
+- Unexpected errors retry up to 3 times. After a restart queued jobs are re-run at startup (`POST /admin/jobs/requeue` does it on demand). Workers run inside the API process, so a heavy PDF still competes with requests; move to a separate worker container when load needs it.
+
 ## Structured extraction
 - `GET /extract/schemas` lists schemas (debt, customer_concentration, arr, ebitda_bridge). `POST /documents/{id}/extract` `{schema_name, entity, period}` needs `LLM_PROVIDER`. The model proposes value, page and quote per field; code accepts only if the quote is on that page and the value is a number printed in it (USD fields may use the page's own "in millions/thousands" scale; the model cannot supply a scale). Masked terms (`[***]`) come back as `redacted`, never filled.
 - Accepted values are stored with status `auto`: not in memos or calc until a person accepts them via `POST /facts/{id}/review`. Never run against a real model yet; the golden text set (25 items) is for that evaluation.
@@ -44,4 +49,4 @@ The response contains the API key once; only its hash is stored. Paste it into t
 - Enforced in the app layer; Postgres RLS is tenant-level only. Uploading identical bytes already stored under another deal returns 409 (reveals that the content exists). Changing a document's deal after upload is not supported yet. Keys are still service keys: no per-person identity or OIDC yet.
 
 ## Known operational gaps
-No backups or restore procedure yet, no malware scan on uploads, no per-person identity (OIDC), uploads are parsed in-process (a hostile PDF can consume memory), sessions of the web app keep the API key in sessionStorage. Treat as pre-production.
+No backups or restore procedure yet, no per-person identity (OIDC), uploads are parsed in-process (a hostile PDF can consume memory), sessions of the web app keep the API key in sessionStorage. Treat as pre-production.
