@@ -1,12 +1,12 @@
 import { Search, SendHorizonal, Sparkles } from "lucide-react";
 import { useRef, useState } from "react";
-import { api, AskResult, DocumentInfo, Hit } from "./api";
+import { api, api2, AskResult, DocumentInfo, Hit } from "./api";
 import { SourceChip } from "./source";
 import { Badge, Button, Card } from "./ui";
 
 type Turn =
   | { who: "user"; text: string }
-  | { who: "agent"; question: string; answer?: AskResult; hits: Hit[]; docs: Record<string, string>; note?: string };
+  | { who: "agent"; question: string; answer?: AskResult; hits: Hit[]; docs: Record<string, string>; note?: string; tools?: string[] };
 
 const SUGGESTIONS = [
   "What was net income for the nine months?",
@@ -29,17 +29,23 @@ export function Chat() {
     let hits: Hit[] = [];
     let answer: AskResult | undefined;
     let note: string | undefined;
+    let tools: string[] | undefined;
     try {
       const list: DocumentInfo[] = await api.documents();
       list.forEach((d) => { docs[d.id] = d.filename; });
       hits = (await api.search(text)).slice(0, 5);
-      try { answer = await api.ask(text); } catch (e) {
+      try {
+        const run = await api2.agent(text);
+        tools = run.steps.map((s) => s.tool);
+        if (run.status === "done" && run.result && "claims" in run.result) answer = run.result as unknown as AskResult;
+        else note = run.error ?? "The agent could not finish.";
+      } catch (e) {
         note = String(e).includes("503")
           ? "No AI model is configured on this server, so there is no written answer. These are the closest passages in your documents."
           : String(e);
       }
     } catch (e) { note = String(e); }
-    setTurns((t) => [...t, { who: "agent", question: text, answer, hits, docs, note }]);
+    setTurns((t) => [...t, { who: "agent", question: text, answer, hits, docs, note, tools }]);
     setBusy(false);
     setTimeout(() => end.current?.scrollIntoView({ behavior: "smooth" }), 50);
   };
@@ -61,6 +67,9 @@ export function Chat() {
           <div key={i} className="flex justify-end"><div className="max-w-[80%] rounded-2xl rounded-br-md bg-acc px-4 py-2.5 text-bg">{t.text}</div></div>
         ) : (
           <Card key={i} className="space-y-3 p-4">
+            {t.tools && t.tools.length > 0 && (
+              <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-mut">Used {t.tools.map((n, k) => <Badge key={k} tone="acc">{n}</Badge>)}</p>
+            )}
             {t.answer?.status === "not_found" && <p className="text-sm">Not found in the documents. Nothing was verified against a source. {t.answer.detail}</p>}
             {t.answer?.status === "error" && <p role="alert" className="text-sm text-bad">{t.answer.detail}</p>}
             {t.answer?.claims.map((c, k) => (
