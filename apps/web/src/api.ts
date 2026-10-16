@@ -33,3 +33,38 @@ export const api = {
   memo: (entity: string) =>
     fetch(`/api/memo?entity=${encodeURIComponent(entity)}`, { headers: auth() }).then((r) => j<{ markdown: string }>(r)),
 };
+
+export interface FactRow {
+  id: number; entity: string; metric: string; period: string; value: string; unit: string; status: string;
+  reviewed_by: string | null; sources: { document_id: string; page: number; quote: string }[];
+}
+export interface DealRow { name: string; stage: string; note: string | null; documents: number; dd_total: number; dd_open: number }
+export interface DDRow { id: number; deal: string; category: string; title: string; status: string; document_id: string | null }
+export interface Breach { company: string; kpi_metric: string; period: string; status: string; value: string; threshold: string }
+export interface Report {
+  breaches: Breach[];
+  companies: { id: number; name: string; kpis: { metric: string; period: string; value: string; unit: string; sources: { document_id: string; page: number }[] }[] }[];
+}
+
+async function call<T>(path: string, method = "GET", body?: unknown): Promise<T> {
+  const r = await fetch(`/api${path}`, {
+    method,
+    headers: { ...auth(), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return j<T>(r);
+}
+
+export const api2 = {
+  facts: (status?: string) => call<FactRow[]>(`/facts${status ? `?status=${status}` : ""}`),
+  review: (id: number, action: "accept" | "reject", note?: string) => call<FactRow>(`/facts/${id}/review`, "POST", { action, note }),
+  deals: () => call<DealRow[]>("/deals"),
+  createDeal: (name: string) => call<DealRow>("/deals", "POST", { name }),
+  setStage: (name: string, stage: string) => call<DealRow>(`/deals/${encodeURIComponent(name)}`, "PATCH", { stage }),
+  dd: (deal: string) => call<DDRow[]>(`/dd/requests?deal=${encodeURIComponent(deal)}`),
+  ddSeed: (deal: string) => call<{ created: number }>("/dd/requests/seed", "POST", { deal }),
+  ddStatus: (id: number, status: string) => call<DDRow>(`/dd/requests/${id}`, "PATCH", { status }),
+  report: () => call<Report>("/portfolio/report"),
+};
+
+export const STAGES = ["sourcing", "screening", "dd", "ic", "signed", "closed", "passed"];
