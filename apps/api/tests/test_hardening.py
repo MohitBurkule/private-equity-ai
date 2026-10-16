@@ -84,3 +84,29 @@ def test_csv_pages_split_every_50_rows():
     d = c.post("/documents", files={"file": ("big.csv", f"name,qty\n{rows}\n".encode(), "text/csv")},
                headers=h).json()
     assert d["n_pages"] == 3
+
+
+def test_redis_limiter_shared_across_instances_and_falls_back_on_failure():
+    import os
+
+    import pytest
+    import redis
+
+    from app.ratelimit import RedisRateLimiter
+    url = os.environ.get("REDIS_TEST_URL")
+    if not url:
+        pytest.skip("needs REDIS_TEST_URL")
+    client = redis.Redis.from_url(url)
+    client.flushdb()
+    a, b = RedisRateLimiter(3, client), RedisRateLimiter(3, client)  # two "replicas"
+    t = 1_000_000.0
+    assert [a.allow("t1", now=t), b.allow("t1", now=t), a.allow("t1", now=t)] == [True, True, True]
+    assert b.allow("t1", now=t) is False  # shared count, not per process
+    assert a.allow("t2", now=t) is True
+    assert a.allow("t1", now=t + 61) is True  # next window
+
+    class Down:
+        def incr(self, *a):
+            raise redis.ConnectionError("down")
+    d = RedisRateLimiter(2, Down())
+    assert [d.allow("x"), d.allow("x"), d.allow("x")] == [True, True, False]  # local bucket still limits

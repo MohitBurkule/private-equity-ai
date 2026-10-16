@@ -25,7 +25,7 @@ The response contains the API key once; only its hash is stored. Paste it into t
 
 ## Keys, limits
 - Rotate: `POST /admin/tenants/{tenant_id}/keys` (new key), switch clients, then `DELETE /admin/keys/{key_id}` for the old one (both with `X-Admin-Token`). Revoked keys get 401 immediately.
-- `RATE_LIMIT_PER_MIN` (default 600 per tenant, 0 disables; in-memory, so per process: use a shared store before running several replicas). `MAX_UPLOAD_BYTES` (default 100 MB; nginx allows 200 MB, lower it to match).
+- `RATE_LIMIT_PER_MIN` (default 600 per tenant, 0 disables). Without `REDIS_URL` the limit is a per-process token bucket; with `REDIS_URL` (compose sets it) it is a shared one-minute window across replicas (up to 2x burst at a window edge) and falls back to the local bucket if Redis is down. `MAX_UPLOAD_BYTES` (default 100 MB; nginx allows 200 MB, lower it to match).
 - CSV/TSV uploads (for example a platform account export you download yourself) are stored as `row N: Header=value | ...` lines, 50 rows per page, so facts can cite a row. No platform layout is assumed.
 
 ## Data-room uploads
