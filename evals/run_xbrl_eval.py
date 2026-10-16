@@ -15,8 +15,11 @@ def main(data: Path) -> dict:
     cache, counts, bad = {}, {}, []
     for line in (data / "golden" / "golden_xbrl_v1.jsonl").open():
         it = json.loads(line)
-        ix = next(s for s in it["sources"] if s["type"] == "ixbrl")
-        api = next(s for s in it["sources"] if s["type"] == "xbrl-api")
+        ix = next((s for s in it["sources"] if s["type"] == "ixbrl"), None)
+        api = next((s for s in it["sources"] if s["type"] == "xbrl-api"), None)
+        if ix is None or api is None:  # items kept for other checks have no inline/API pair to compare
+            counts["no_ixbrl_api_pair"] = counts.get("no_ixbrl_api_pair", 0) + 1
+            continue
         per = period_from_context(ix["contextRef"])
         if per is None:  # opaque context ids (c-12): fall back to the dates in the question text
             q = it["question"]

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api2, DDRow, DealRow, FactRow, Report, STAGES } from "./api";
+import { api2, DDRow, EvalRunRow, DealRow, FactRow, Report, STAGES } from "./api";
 
 function useLoad<T>(load: () => Promise<T>, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null);
@@ -112,6 +112,45 @@ export function PortfolioPanel() {
           </ul>
         </div>
       ))}
+    </section>
+  );
+}
+
+const isNum = (v: unknown): v is number => typeof v === "number";
+
+export function EvalDashboard() {
+  const { data, error } = useLoad<EvalRunRow[]>(api2.evals);
+  const bySuite = new Map<string, EvalRunRow[]>();
+  data?.forEach((r) => bySuite.set(r.suite, [...(bySuite.get(r.suite) ?? []), r]));
+  return (
+    <section>
+      <h2>Evals</h2>
+      <Err e={error} />
+      {data && data.length === 0 && <p>No eval runs recorded. Run evals/record.py to add some.</p>}
+      {[...bySuite.entries()].map(([suite, runs]) => {
+        const latest = runs[0];
+        const numeric = Object.entries(latest.metrics).filter(([, v]) => isNum(v));
+        const misses = latest.metrics["misses"];
+        return (
+          <div key={suite}>
+            <h3>{suite}</h3>
+            <p>Latest run {latest.ran_at.slice(0, 19)}{latest.note ? ` (${latest.note})` : ""}; {runs.length} run(s) recorded.</p>
+            <table>
+              <thead><tr><th>Metric</th><th>Latest</th><th>Previous</th></tr></thead>
+              <tbody>
+                {numeric.map(([k, v]) => {
+                  const prev = runs[1]?.metrics[k];
+                  return <tr key={k}><td>{k}</td><td>{String(v)}</td><td>{isNum(prev) ? String(prev) : "-"}</td></tr>;
+                })}
+              </tbody>
+            </table>
+            {Array.isArray(misses) && misses.length > 0 && (
+              <details><summary>{misses.length} miss(es) in the latest run</summary>
+                <pre>{JSON.stringify(misses, null, 1)}</pre></details>
+            )}
+          </div>
+        );
+      })}
     </section>
   );
 }

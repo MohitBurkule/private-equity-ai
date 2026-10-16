@@ -99,3 +99,7 @@ Some filing text drops blank cells, so a row has fewer values than columns. `POS
 ## Fund metrics
 
 `POST /calc/fund-metrics` returns DPI, RVPI, TVPI and XIRR from dated flows (paid in negative, distributions positive), a NAV and an as-of date. No IRR is returned when the flows cannot produce one; the reason is in `irr_note`. Inputs are the caller's; link them to cited facts when they come from reports.
+
+## Evals dashboard
+
+`python evals/record.py DATA_DIR [suite ...]` (with `PE_API_URL` and `PE_API_KEY`) runs the golden, retrieval, uk and xbrl suites and posts each result to `POST /evals`; the Evals tab shows the latest run per suite against the previous one and lists misses. A suite that cannot run is reported and not recorded. Last local runs: golden 9 of 9 rows found, uk 45 of 45 correct, xbrl 118 of 118 match (4 items have no inline/API pair and are counted separately).

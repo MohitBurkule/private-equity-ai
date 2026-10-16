@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Deals, PortfolioPanel, ReviewQueue } from "./Panels";
+import { Deals, EvalDashboard, PortfolioPanel, ReviewQueue } from "./Panels";
 import { Workspace } from "./Workspace";
 
-const TABS = ["Workspace", "Review", "Deals", "Portfolio"] as const;
+const TABS = ["Workspace", "Review", "Deals", "Portfolio", "Evals"] as const;
 
 export function App() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("Workspace");
@@ -18,6 +18,7 @@ export function App() {
         {tab === "Review" && <ReviewQueue />}
         {tab === "Deals" && <Deals />}
         {tab === "Portfolio" && <PortfolioPanel />}
+        {tab === "Evals" && <EvalDashboard />}
       </div>
     </>
   );
