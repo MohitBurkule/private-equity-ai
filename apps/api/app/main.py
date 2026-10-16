@@ -6,12 +6,14 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.answer import answer_question
 from app.audit import log_event, verify_chain
 from app.auth import admin_token_ok, create_tenant, tenant_for_key
 from app.db import Base, make_engine, make_session_factory
 from app.edgar import fetch_companyfacts
 from app.facts import CitationError, add_verified_fact
 from app.ingest import ingest_upload
+from app.llm import LLM, NoLLMConfigured, get_llm
 from app.memo import build_memo
 from app.models import Document, PageRow
 from app.portfolio import (
@@ -212,3 +214,27 @@ def xbrl_check(cik: int, concept: str, end: str, value: Decimal, tenant: Tenant,
     res = crosscheck(value, candidates(facts, concept, end, start, accn, unit))
     return {"status": res.status, "distinct_values": [str(v) for v in res.distinct_values],
             "filings": sorted({f"{f.accn} ({f.form}, filed {f.filed})" for f in res.matched})}
+
+
+def llm_dependency() -> LLM:
+    try:
+        return get_llm()
+    except NoLLMConfigured as e:
+        raise HTTPException(503, str(e)) from e
+
+
+class AskIn(BaseModel):
+    question: str
+    doc_id: str | None = None
+
+
+@app.post("/ask")
+def ask(body: AskIn, db: Db, tenant: Tenant, llm: Annotated[LLM, Depends(llm_dependency)]):
+    if body.doc_id:
+        _own_doc(db, tenant, body.doc_id)
+    a = answer_question(db, tenant, llm, body.question, body.doc_id)
+    log_event(db, tenant, "api", "ask", {"question": body.question, "status": a.status,
+                                         "claims": len(a.claims), "rejected": len(a.rejected)})
+    cite = lambda c: {"text": c.text, "document_id": c.doc_id, "page": c.page, "quote": c.quote}
+    return {"status": a.status, "detail": a.detail, "claims": [cite(c) for c in a.claims],
+            "rejected": [{**cite(c), "reason": c.reason} for c in a.rejected]}
