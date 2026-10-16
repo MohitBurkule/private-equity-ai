@@ -1,4 +1,5 @@
 import os
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Annotated
 
@@ -174,6 +175,22 @@ def create_fact(body: FactIn, db: Db, tenant: Tenant):
 @app.get("/memo")
 def memo(entity: str, db: Db, tenant: Tenant):
     return {"entity": entity, "markdown": build_memo(db, tenant, entity)}
+
+
+def get_sec_fetch():
+    from app.secfeed import default_fetch
+    return default_fetch
+
+
+@app.get("/sec/filings")
+def sec_filings(ticker: str, tenant: Tenant, fetch: Annotated[Callable, Depends(get_sec_fetch)]):
+    from dataclasses import asdict
+
+    from app.secfeed import recent_filings
+    try:
+        return [asdict(f) for f in recent_filings(ticker, fetch)]
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from e
 
 
 @app.get("/memo.docx")
