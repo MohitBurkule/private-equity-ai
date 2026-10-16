@@ -4,6 +4,20 @@ AI platform for private equity teams: ingest data-room documents, answer questio
 
 Status: early but running. Private repo, planned to be open-sourced. Architecture, measured results and known gaps: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); diagrams (database, components, deployment): [docs/DIAGRAMS.md](docs/DIAGRAMS.md). Setup and operations: [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
+## What it does
+An analyst loads deal documents, searches them, and every number in the output links to a quote on a source page. Facts that cannot be verified are refused. Screenshots below are from a real local run with demo data (Apple Q3 FY23 10-Q).
+
+| | |
+|---|---|
+| ![Workspace](docs/screenshots/02-workspace-documents.png) | ![Source page](docs/screenshots/05-source-page-highlight.png) |
+| Load documents, search | Open the cited source page |
+| ![Memo](docs/screenshots/07-memo.png) | ![Deals](docs/screenshots/09-deals.png) |
+| IC memo with footnoted figures | Deals and 26-item DD tracker |
+| ![Portfolio](docs/screenshots/10-portfolio.png) | ![Evals](docs/screenshots/11-evals.png) |
+| Covenant breach from cited facts | Eval dashboard |
+
+Known rough edges: unstyled UI, raw unformatted amounts, `/ask` and auto-extraction need an LLM key and have not run against a real model.
+
 ## What works today
 - Upload PDF (text layer, or OCR for scans with values flagged for human confirmation), XLSX (cell-addressed, formulas kept, hidden sheets flagged) and UK Companies House iXBRL (balance-sheet arithmetic checked, failing filings marked UNRELIABLE).
 - Tenants, roles (admin, member, viewer), API keys, per-deal ethical walls; Postgres row-level security underneath; hash-chained audit log; request ids, JSON access log, Prometheus `/metrics`.
