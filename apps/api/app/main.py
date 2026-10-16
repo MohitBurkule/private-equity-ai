@@ -38,7 +38,7 @@ from app.extract.schemas import SCHEMAS
 from app.facts import CitationError, add_verified_fact, review_fact
 from app.ingest import finalize_upload, ingest_any
 from app.llm import LLM, NoLLMConfigured, get_llm
-from app.memo import build_memo, build_memo_docx
+from app.memo import build_memo, build_memo_docx, build_memo_pptx
 from app.migrate import migrate
 from app.models import DDRequest, Document, Fact, IngestJob, PageRow
 from app.models import Tenant as TenantRow
@@ -498,6 +498,14 @@ def memo_docx(entity: str, db: Db, who: Who):
     return Response(build_memo_docx(db, who.tenant, entity, visible_doc_ids(db, who)), headers={
         "Content-Disposition": 'attachment; filename="memo.docx"'},
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+@app.get("/memo.pptx")
+def memo_pptx(entity: str, db: Db, who: Who):
+    log_event(db, who.tenant, actor(who), "memo.export", {"entity": entity, "format": "pptx"})
+    return Response(build_memo_pptx(db, who.tenant, entity, visible_doc_ids(db, who)), headers={
+        "Content-Disposition": 'attachment; filename="memo.pptx"'},
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
 
 @app.get("/search")
