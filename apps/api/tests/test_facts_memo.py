@@ -62,3 +62,28 @@ def test_api_roundtrip():
     assert r.status_code == 422
     assert c.get("/memo", params={"entity": "X"}, headers=h).status_code == 200
     assert c.get("/search", params={"q": "revenue"}, headers=h).status_code == 200
+
+
+def test_docx_export_contains_figures_footnotes_and_draft_notice():
+    import io
+
+    from docx import Document as Docx
+
+    from app.memo import build_memo_docx
+    s, doc = setup_db()
+    kw = {"tenant_id": "t", "entity": "Acme", "period": "FY24", "unit": "USD", "document_id": doc, "page": 1}
+    add_verified_fact(s, metric="revenue", value=Decimal(1000), quote="Total revenues 1,000", **kw)
+    text = "\n".join(p.text for p in Docx(io.BytesIO(build_memo_docx(s, "t", "Acme"))).paragraphs)
+    assert "DRAFT" in text and "revenue (FY24, GAAP): 1,000.00 USD [1]" in text
+    assert '[1] acme.pdf, p.1: "Total revenues 1,000"' in text
+    empty = "\n".join(p.text for p in Docx(io.BytesIO(build_memo_docx(s, "t", "Nobody"))).paragraphs)
+    assert "Nothing to report" in empty
+
+
+def test_docx_endpoint_requires_auth_and_returns_word_file():
+    from app.main import app
+    from tests.helpers import new_tenant
+    c = TestClient(app)
+    assert c.get("/memo.docx", params={"entity": "X"}).status_code == 401
+    r = c.get("/memo.docx", params={"entity": "X"}, headers=new_tenant(c, "docx-t"))
+    assert r.status_code == 200 and r.content[:2] == b"PK" and "wordprocessingml" in r.headers["content-type"]
