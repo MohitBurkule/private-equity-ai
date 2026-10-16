@@ -28,6 +28,7 @@ from app.auth import (
     principal_for_key,
     revoke_key,
 )
+from app.calc import Calc, ltm, net_debt, nwc
 from app.db import make_engine, make_session_factory
 from app.edgar import fetch_companyfacts
 from app.facts import CitationError, add_verified_fact, review_fact
@@ -278,6 +279,30 @@ def review(fact_id: int, body: ReviewIn, db: Db, who: Writer):
     log_event(db, who.tenant, actor(who), "fact.review",
               {"fact_id": f.id, "action": body.action, "before": before, "after": _fact_out(f), "note": body.note})
     return _fact_out(f)
+
+
+def _calc_out(c: Calc) -> dict:
+    return {"name": c.name, "entity": c.entity, "ok": c.ok, "value": None if c.value is None else str(c.value),
+            "unit": c.unit, "formula": c.formula, "missing": c.missing, "problems": c.problems,
+            "inputs": [{"role": i.role, "sign": i.sign, "fact_id": i.fact.id, "metric": i.fact.metric,
+                        "period": i.fact.period, "value": str(i.fact.value), "unit": i.fact.unit,
+                        "sources": [{"document_id": s.document_id, "page": s.page, "quote": s.quote}
+                                    for s in i.fact.sources]} for i in c.inputs]}
+
+
+@app.get("/calc/ltm")
+def calc_ltm(entity: str, metric: str, fy: str, ytd: str, ytd_prior: str, db: Db, who: Who):
+    return _calc_out(ltm(db, who.tenant, entity, metric, fy, ytd, ytd_prior, visible_doc_ids(db, who)))
+
+
+@app.get("/calc/net-debt")
+def calc_net_debt(entity: str, period: str, db: Db, who: Who, include_leases: bool = True):
+    return _calc_out(net_debt(db, who.tenant, entity, period, visible_doc_ids(db, who), include_leases))
+
+
+@app.get("/calc/nwc")
+def calc_nwc(entity: str, period: str, db: Db, who: Who):
+    return _calc_out(nwc(db, who.tenant, entity, period, visible_doc_ids(db, who)))
 
 
 @app.get("/memo")
