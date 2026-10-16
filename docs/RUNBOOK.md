@@ -56,5 +56,10 @@ The response contains the API key once; only its hash is stored. Paste it into t
 - viewer is read-only. Audit events record `key:<key_id>` as actor.
 - Enforced in the app layer; Postgres RLS is tenant-level only. Uploading identical bytes already stored under another deal returns 409 (reveals that the content exists). Changing a document's deal after upload is not supported yet. Keys are still service keys: no per-person identity or OIDC yet.
 
+## Backup and restore
+- `scripts/backup.sh` (needs `BACKUP_DATABASE_URL`, a superuser or BYPASSRLS role in libpq form; `BACKUP_DIR`, `KEEP`, optional `SPOOL_DIR`) writes a custom-format `pg_dump` plus a spool tarball and prunes old ones. The `pe_owner` and `pe_app` roles cannot dump: row-level security is forced for everyone, which is intended. In the compose stack use the `pe` superuser.
+- `scripts/restore.sh <dump>` (needs `TARGET_DATABASE_URL`, same kind of role, a scratch database) restores and then runs `scripts/restore_check.py`: per-tenant document and fact counts, orphaned fact sources, and the audit hash chain. Exit 1 on any problem; a tampered audit row is detected (drill done: edited one row after restore, check failed as expected).
+- Do a restore drill on a scratch database regularly; an untested backup is not a backup. Compose now keeps the ingest spool on the `spool` volume so queued jobs survive a container restart. Point-in-time recovery (WAL archiving) is not set up.
+
 ## Known operational gaps
-No backups or restore procedure yet, no per-person identity (OIDC), uploads are parsed in-process (a hostile PDF can consume memory), sessions of the web app keep the API key in sessionStorage. Treat as pre-production.
+No point-in-time recovery, no per-person identity (OIDC), uploads are parsed in-process (a hostile PDF can consume memory), sessions of the web app keep the API key in sessionStorage. Treat as pre-production.
