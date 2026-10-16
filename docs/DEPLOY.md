@@ -41,3 +41,7 @@ This covers what to change from the sample `docker-compose.yml` before real data
 ## Known limits
 
 No single sign-on yet (API keys per tenant with roles and deal walls). No Elasticsearch/OpenSearch; search is in-process. Dense retrieval and reranking need model access that has not been set up.
+
+## Alerts
+
+`deploy/monitoring/alerts.yml` holds Prometheus rules for the API: target down, 5xx ratio, auth-failure spike, rate-limit pressure. A test fails if a rule uses a metric the app does not export. Pair with `GET /audit/verify` on a schedule (see above), since no metric covers audit-chain integrity.
