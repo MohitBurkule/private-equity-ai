@@ -8,8 +8,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps" / "api"))
-from app.extract.tables import extract_rows  # noqa: E402
-from app.parse.pdf import extract_pages  # noqa: E402
+from app.extract.tables import extract_rows
+from app.parse.pdf import extract_pages
 
 
 def norm(s: str) -> str:

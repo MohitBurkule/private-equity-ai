@@ -10,9 +10,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps" / "api"))
-from app.parse.pdf import extract_pages  # noqa: E402
-from app.hybrid import HybridIndex  # noqa: E402
-from app.search import PageIndex  # noqa: E402
+from app.hybrid import HybridIndex
+from app.parse.pdf import extract_pages
+from app.search import PageIndex
 
 
 def main(data: Path, ks=(1, 3, 5, 10)) -> dict:

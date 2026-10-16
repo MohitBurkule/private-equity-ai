@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from alembic import command
 from alembic.config import Config
 from sqlalchemy.engine import Engine
 
-from alembic import command
 from app.db import Base
 
 

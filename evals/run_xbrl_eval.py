@@ -8,7 +8,12 @@ from decimal import Decimal
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps" / "api"))
-from app.xbrl import candidates, crosscheck, load_companyfacts, period_from_context  # noqa: E402
+from app.xbrl import (
+    candidates,
+    crosscheck,
+    load_companyfacts,
+    period_from_context,
+)
 
 
 def main(data: Path) -> dict:
