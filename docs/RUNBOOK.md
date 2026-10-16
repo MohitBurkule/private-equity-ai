@@ -111,3 +111,7 @@ Search uses BM25. A hybrid index (BM25 plus char-trigram ranker, fused with RRF)
 ## Reading SH01 forms
 
 `GET /documents/{id}/capital-form` reads an electronic SH01 from the stored pages: company number, allotment dates, class rows (number, nominal, paid, unpaid), statement-of-capital rows and totals, each with page and verbatim line. Scanned forms need OCR at upload (`OCR_ENABLED`, the project's `ocr` extra); their values are flagged `ocr: true` and need a person to confirm them. Digits OCR turns into letters are reported unreadable, never repaired. Checked on the Monzo forms from the golden set: the text form (15,000,000 allotted, total 41,807,801) and the OCR-read form (15,519,568 allotted, total 26,753,982), which together with the earlier form give the combined 26,807,801 through `/calc/share-ledger`.
+
+## Exit waterfall
+
+`POST /calc/waterfall` splits an exit value across preferred classes and common: seniority ranks (equal ranks pro rata), liquidation-preference multiple, participating with optional cap, and conversion to common when that pays more. Payouts add up to the exit value to the cent. It does NOT apply dividends, anti-dilution adjustments, option exercise prices or management carve-outs; read those from the charter and treat the result as a first pass.
