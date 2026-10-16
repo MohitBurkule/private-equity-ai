@@ -609,6 +609,40 @@ def get_ch_fetch():
     return default_fetch
 
 
+def get_market_fetch():
+    from app.marketfeeds import default_fetch
+    return default_fetch
+
+
+@app.get("/market/quote")
+def market_quote(symbol: str, provider: str, who: Who, fetch: Annotated[Callable, Depends(get_market_fetch)],
+                 currency: str | None = None):
+    """Latest price from a named provider: yahoo, stooq (needs `currency`) or factset (needs credentials).
+    Returns the source's own as-of date; 404 when the source has nothing, never a made-up number."""
+    from app import marketfeeds
+    from app.marketdata import NoData
+
+    try:
+        if provider == "stooq":
+            if not currency:
+                raise HTTPException(422, "stooq quotes carry no currency; pass currency=")
+            p = marketfeeds.StooqProvider(currency, fetch)
+        elif provider == "yahoo":
+            p = marketfeeds.YahooProvider(fetch)
+        elif provider == "factset":
+            p = marketfeeds.FactSetProvider(fetch=fetch)
+        else:
+            raise HTTPException(422, "provider must be yahoo, stooq or factset")
+        q = p.quote(symbol.strip())
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from e
+    except NoData as e:
+        raise HTTPException(404, str(e)) from e
+    except OSError as e:
+        raise HTTPException(502, f"{provider} unreachable: {e}") from e
+    return {"symbol": q.symbol, "price": str(q.price), "currency": q.currency, "as_of": q.as_of, "source": q.source}
+
+
 @app.get("/uk/company/{number}/accounts")
 def uk_accounts(number: str, tenant: Tenant, fetch: Annotated[Callable, Depends(get_ch_fetch)]):
     from dataclasses import asdict
