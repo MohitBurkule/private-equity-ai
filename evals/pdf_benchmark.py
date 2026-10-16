@@ -13,8 +13,10 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps" / "api"))
-from app.parse import engines
+from app.parse import engines, router
 
+# g13 cites 0-based pages (text is on 70/71, golden says 69/71); excluded rather than silently rescored.
+KNOWN_GOLD_PAGE_ERRORS = {"g13"}
 NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 
@@ -31,6 +33,8 @@ def items(data: Path):
     out = []
     for l in (gdir / "golden_v1.jsonl").open():
         r = json.loads(l)
+        if r["id"] in KNOWN_GOLD_PAGE_ERRORS:
+            continue
         for s in r["sources"]:
             if s["type"] != "pdf" or not s.get("pdf_page_1based"):
                 continue
@@ -38,8 +42,8 @@ def items(data: Path):
             f = data / ("uk/" + doc if doc.startswith("uk/") else f"sec/{doc}.pdf")
             if not f.exists():
                 continue
-            parts = [p.strip() for p in s["raw"].split(";")]
-            labels = [p.strip() for p in s["row_label"].split(";")]
+            parts = [p.strip() for p in re.split(r";| / ", s["raw"])]
+            labels = [p.strip() for p in re.split(r";| / ", s["row_label"])]
             if len(labels) != len(parts):
                 labels = [""] * len(parts)
             out.append({"id": r["id"], "file": f, "page": s["pdf_page_1based"], "parts": list(zip(labels, parts)), "kind": "golden_v1"})
@@ -94,7 +98,11 @@ def main():
         for it in its:
             t = time.time()
             try:
-                pr = engines.run(e, it["file"], [it["page"]])[0]
+                if e == "router":
+                    rp = router.route_page(it["file"], it["page"])
+                    pr = engines.PageResult(e, it["page"], rp.lines)
+                else:
+                    pr = engines.run(e, it["file"], [it["page"]])[0]
             except Exception as ex:  # noqa: BLE001
                 pr = engines.PageResult(e, it["page"], [])
                 agg["fails"].append(f"{it['id']}:{type(ex).__name__}")
