@@ -19,8 +19,13 @@ def xlsx(text):
     return b.getvalue()
 
 
+_CACHE: dict[str, bytes] = {}
+
+
 def up(c, h, text, deal=None):
-    return c.post("/documents", files={"file": ("m.xlsx", xlsx(text), "x")},
+    # same text must give identical bytes (xlsx embeds a timestamp, so build each text once)
+    data = _CACHE.setdefault(text, xlsx(text))
+    return c.post("/documents", files={"file": ("m.xlsx", data, "x")},
                   data={"deal": deal} if deal else {}, headers=h)
 
 
