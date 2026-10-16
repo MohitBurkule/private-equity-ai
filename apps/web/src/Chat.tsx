@@ -38,11 +38,14 @@ export function Chat() {
         const run = await api2.agent(text);
         tools = run.steps.map((s) => s.tool);
         if (run.status === "done" && run.result && "claims" in run.result) answer = run.result as unknown as AskResult;
-        else note = run.error ?? "The agent could not finish.";
+        else throw new Error("agent-failed");
       } catch (e) {
-        note = String(e).includes("503")
-          ? "No AI model is configured on this server, so there is no written answer. These are the closest passages in your documents."
-          : String(e);
+        if (String(e).includes("503")) {
+          note = "No AI model is configured on this server, so there is no written answer. These are the closest passages in your documents.";
+        } else {
+          // Small models often cannot drive the agent loop; a direct verified ask is the reliable path.
+          try { answer = await api.ask(text); } catch (e2) { note = String(e2); }
+        }
       }
     } catch (e) { note = String(e); }
     setTurns((t) => [...t, { who: "agent", question: text, answer, hits, docs, note, tools }]);
