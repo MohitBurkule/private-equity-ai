@@ -49,6 +49,7 @@ from app.models import (
     DDRequest,
     Deal,
     Document,
+    EvalRun,
     Fact,
     Holding,
     IngestJob,
@@ -835,6 +836,42 @@ def calc_fund_metrics(body: FundIn, who: Who):
     return {"paid_in": str(m.paid_in), "distributed": str(m.distributed), "nav": str(m.nav),
             "dpi": q(m.dpi), "rvpi": q(m.rvpi), "tvpi": q(m.tvpi),
             "irr": None if m.irr is None else round(m.irr, 6), "irr_note": m.irr_note}
+
+
+class EvalIn(BaseModel):
+    suite: str
+    metrics: dict
+    note: str | None = None
+
+
+@app.post("/evals", status_code=201)
+def eval_record(body: EvalIn, db: Db, who: Writer):
+    import json as _json
+
+    suite = body.suite.strip()
+    if not suite or len(suite) > 64:
+        raise HTTPException(422, "suite name required (64 characters at most)")
+    text = _json.dumps(body.metrics, default=str)
+    if len(text) > 200_000:
+        raise HTTPException(413, "metrics too large")
+    r = EvalRun(tenant_id=who.tenant, suite=suite, metrics=text, note=body.note, ran_at=_now_iso(),
+                recorded_by=actor(who))
+    db.add(r)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "eval.record", {"suite": suite, "id": r.id})
+    return {"id": r.id}
+
+
+@app.get("/evals")
+def eval_list(db: Db, who: Who, suite: str | None = None, limit: int = 100):
+    import json as _json
+
+    q = db.query(EvalRun).filter_by(tenant_id=who.tenant)
+    if suite:
+        q = q.filter_by(suite=suite)
+    rows = q.order_by(EvalRun.id.desc()).limit(max(1, min(limit, 500))).all()
+    return [{"id": r.id, "suite": r.suite, "ran_at": r.ran_at, "note": r.note, "recorded_by": r.recorded_by,
+             "metrics": _json.loads(r.metrics)} for r in rows]
 
 
 @app.get("/portfolio/report")

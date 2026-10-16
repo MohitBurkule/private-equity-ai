@@ -139,3 +139,15 @@ class Holding(Base):
     acquired: Mapped[str | None] = mapped_column(String(10), default=None)
     document_id: Mapped[str] = mapped_column(ForeignKey("document.id"))
     line: Mapped[int] = mapped_column(Integer)
+
+
+class EvalRun(Base):
+    """One run of an evaluation suite: free-form metrics as JSON, so the dashboard shows what the suite reports."""
+    __tablename__ = "eval_run"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    suite: Mapped[str] = mapped_column(String(64), index=True)
+    metrics: Mapped[str] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text, default=None)
+    ran_at: Mapped[str] = mapped_column(String(40))
+    recorded_by: Mapped[str] = mapped_column(String(64))

@@ -40,6 +40,7 @@ export interface FactRow {
 }
 export interface DealRow { name: string; stage: string; note: string | null; documents: number; dd_total: number; dd_open: number }
 export interface DDRow { id: number; deal: string; category: string; title: string; status: string; document_id: string | null }
+export interface EvalRunRow { id: number; suite: string; ran_at: string; note: string | null; metrics: Record<string, unknown> }
 export interface Breach { company: string; kpi_metric: string; period: string; status: string; value: string; threshold: string }
 export interface Report {
   breaches: Breach[];
@@ -65,6 +66,7 @@ export const api2 = {
   ddSeed: (deal: string) => call<{ created: number }>("/dd/requests/seed", "POST", { deal }),
   ddStatus: (id: number, status: string) => call<DDRow>(`/dd/requests/${id}`, "PATCH", { status }),
   report: () => call<Report>("/portfolio/report"),
+  evals: () => call<EvalRunRow[]>("/evals?limit=200"),
 };
 
 export const STAGES = ["sourcing", "screening", "dd", "ic", "signed", "closed", "passed"];
