@@ -74,7 +74,7 @@ Status: v0.2. Revised with research round 1 (research/00-INDEX.md) and sample-da
 ## 6. Alternatives considered
 - **Vector DB**: pgvector (chosen v1, one DB, RLS-compatible) vs Qdrant/Weaviate (scale, filtering) vs Elasticsearch dense. Interface-wrapped to swap.
 - **Lexical search**: Elasticsearch vs OpenSearch (licence) vs Postgres FTS. Start Postgres FTS + OpenSearch optional; hybrid needed for exact numbers/names.
-- **Parsing**: Docling / Unstructured / LlamaParse / Azure Document Intelligence / Textract. Default Docling (permissive). **No AGPL or restricted-licence parsers in core**: PyMuPDF is AGPL; Marker/Surya code is Apache-2.0 but their model weights carry commercial-use limits (Open RAIL-M, revenue cap); MinerU has extra terms; OpenBB licence is ambiguous. These are optional adapters behind a licence tag, separately deployed, pending legal review. pdf.js for viewer. Pluggable cloud OCR for hard scans; benchmark on sample data.
+- **Parsing**: Docling / Unstructured / LlamaParse / Azure Document Intelligence / Textract. Default Docling (permissive). **Licence: the repo is AGPL-3.0, so AGPL dependencies (PyMuPDF, OpenBB) are allowed in core when they help. Still avoid parsers with commercial-use or revenue-cap limits.** PyMuPDF is AGPL (fine now); Marker/Surya code is Apache-2.0 but their model weights carry commercial-use limits (Open RAIL-M, revenue cap); MinerU has extra terms; OpenBB licence is ambiguous. These are optional adapters behind a licence tag, separately deployed, pending legal review. pdf.js for viewer. Pluggable cloud OCR for hard scans; benchmark on sample data.
 - **Orchestration**: LangGraph (chosen for stateful agents) vs LlamaIndex Workflows vs custom. LlamaIndex used for ingestion/retrieval only; avoid framework lock-in via thin adapters.
 - **LLMs**: Claude/GPT for reasoning; open models (Llama, Qwen, Mistral) via vLLM for on-prem tenants. Eval-driven selection.
 - **Embeddings**: OpenAI, Voyage, BGE/E5 (open). Finance-tuned evaluated.
@@ -100,7 +100,7 @@ evals/  data/samples/  infra/{docker,helm}  docs/
 M0 scaffold+CI+auth+RLS. M1 ingest/parse/citation viewer. M2 extraction+verifier+eval harness. M3 hybrid RAG chat with citations. M4 DD workflows + IC memo export. M5 market-data adapters + portfolio tracking. M6 secondary marketplaces, hardening, security review, open-source prep (licence, secrets scrub, docs).
 
 ## 11. Open questions
-Repo name; deployment target (cloud/on-prem); which vendor licences user holds (FactSet/PitchBook); target doc types; open-source licence (Apache-2.0 suggested).
+Repo name; deployment target (cloud/on-prem); which vendor licences user holds (FactSet/PitchBook); target doc types; open-source licence (decided: AGPL-3.0).
 
 ## 12. Revisions from research round 1
 1. **Scope before retrieval.** Retrieval inside the filing is the bottleneck. Resolve company, period, doc type from metadata first, then search within that scope. `retrieve` takes a mandatory scope object; unscoped search is an explicit fallback.
