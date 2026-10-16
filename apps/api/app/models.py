@@ -19,6 +19,7 @@ class ApiKey(Base):
     __tablename__ = "api_key"
     key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False)
+    revoked: Mapped[bool] = mapped_column(default=False, server_default="false")
 
 
 class Document(Base):

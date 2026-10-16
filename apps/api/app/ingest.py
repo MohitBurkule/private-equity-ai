@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import os
 import tempfile
 from pathlib import Path
@@ -78,6 +80,46 @@ def ingest_ixbrl(db: Session, tenant_id: str, data: bytes, filename: str) -> Doc
     return doc
 
 
+ROWS_PER_PAGE = 50
+MAX_CSV_ROWS = 200_000
+
+
+def ingest_csv(db: Session, tenant_id: str, data: bytes, filename: str) -> Document:
+    """CSV/TSV (e.g. a platform account export a user downloads): rows become cell-like lines
+    `row 7: Header=value | Header=value`, 50 rows per page, so facts can cite a row. No platform
+    column layout is assumed. Excel formula-injection prefixes are kept as plain text."""
+    sha = hashlib.sha256(data).hexdigest()
+    doc_id = tenant_doc_id(tenant_id, sha)
+    existing = db.get(Document, doc_id)
+    if existing:
+        return existing
+    text = data.decode("utf-8-sig", errors="replace")
+    try:
+        dialect = csv.Sniffer().sniff(text[:20_000], delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+    rows = list(csv.reader(io.StringIO(text), dialect))
+    if len(rows) < 2 or len(rows[0]) < 2:
+        raise ValueError("CSV needs a header row and at least one data row with 2+ columns")
+    if len(rows) - 1 > MAX_CSV_ROWS:
+        raise ValueError(f"CSV has more than {MAX_CSV_ROWS} rows")
+    head = [h.strip() or f"col{i + 1}" for i, h in enumerate(rows[0])]
+    lines = []
+    for n, r in enumerate(rows[1:], 1):
+        cells = [f"{head[i] if i < len(head) else f'col{i + 1}'}={v.strip()}" for i, v in enumerate(r)
+                 if v.strip()]
+        lines.append(f"row {n}: " + " | ".join(cells))
+    chunks = [lines[i:i + ROWS_PER_PAGE] for i in range(0, len(lines), ROWS_PER_PAGE)]
+    doc = Document(id=doc_id, tenant_id=tenant_id, sha256=sha, filename=filename, n_pages=len(chunks),
+                   kind="csv")
+    doc.pages = [PageRow(number=i, text="Columns: " + " | ".join(head) + "\n" + "\n".join(c),
+                         label=f"rows {(i - 1) * ROWS_PER_PAGE + 1}-{(i - 1) * ROWS_PER_PAGE + len(c)}")
+                 for i, c in enumerate(chunks, 1)]
+    db.add(doc)
+    db.commit()
+    return doc
+
+
 def ingest_upload(db: Session, tenant_id: str, data: bytes, filename: str) -> Document:
     """Dispatch on content, not extension: PDF magic or zip (xlsx) magic."""
     with tempfile.TemporaryDirectory() as d:
@@ -91,4 +133,6 @@ def ingest_upload(db: Session, tenant_id: str, data: bytes, filename: str) -> Do
             return ingest_xlsx(db, tenant_id, p, filename)
     if b"ix:nonfraction" in data[:2_000_000].lower():
         return ingest_ixbrl(db, tenant_id, data, filename)
-    raise ValueError("unsupported file type (expected PDF, XLSX or iXBRL HTML)")
+    if filename.lower().endswith((".csv", ".tsv")):
+        return ingest_csv(db, tenant_id, data, filename)
+    raise ValueError("unsupported file type (expected PDF, XLSX, CSV or iXBRL HTML)")

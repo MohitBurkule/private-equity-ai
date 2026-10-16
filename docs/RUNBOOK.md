@@ -23,5 +23,10 @@ The response contains the API key once; only its hash is stored. Paste it into t
 - `GET /health` liveness.
 - `GET /audit/verify` recomputes the tenant's audit hash chain; `ok:false` returns the first tampered row id.
 
+## Keys, limits
+- Rotate: `POST /admin/tenants/{tenant_id}/keys` (new key), switch clients, then `DELETE /admin/keys/{key_id}` for the old one (both with `X-Admin-Token`). Revoked keys get 401 immediately.
+- `RATE_LIMIT_PER_MIN` (default 600 per tenant, 0 disables; in-memory, so per process: use a shared store before running several replicas). `MAX_UPLOAD_BYTES` (default 100 MB; nginx allows 200 MB, lower it to match).
+- CSV/TSV uploads (for example a platform account export you download yourself) are stored as `row N: Header=value | ...` lines, 50 rows per page, so facts can cite a row. No platform layout is assumed.
+
 ## Known operational gaps
-No backups or restore procedure yet, no key rotation or revocation endpoint, no rate limits, no malware scan on uploads, no request size limit in the API itself (nginx sets 200 MB), uploads are parsed in-process (a hostile PDF can consume memory), sessions of the web app keep the API key in sessionStorage. Treat as pre-production.
+No backups or restore procedure yet, no malware scan on uploads, no user identities or roles (one key = whole tenant), uploads are parsed in-process (a hostile PDF can consume memory), sessions of the web app keep the API key in sessionStorage. Treat as pre-production.

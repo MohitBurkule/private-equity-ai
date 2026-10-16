@@ -8,7 +8,15 @@ from sqlalchemy.orm import Session
 
 from app.answer import answer_question
 from app.audit import log_event, verify_chain
-from app.auth import admin_token_ok, create_tenant, tenant_for_key
+from app.auth import (
+    add_key,
+    admin_token_ok,
+    create_tenant,
+    hash_key,
+    key_id,
+    revoke_key,
+    tenant_for_key,
+)
 from app.db import make_engine, make_session_factory
 from app.edgar import fetch_companyfacts
 from app.facts import CitationError, add_verified_fact
@@ -17,12 +25,14 @@ from app.llm import LLM, NoLLMConfigured, get_llm
 from app.memo import build_memo
 from app.migrate import migrate
 from app.models import Document, PageRow
+from app.models import Tenant as TenantRow
 from app.portfolio import (
     PortfolioCompany,
     current_kpis,
     qoq_change,
     record_observation,
 )
+from app.ratelimit import limiter
 from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
 from app.search import PageIndex
 from app.xbrl import candidates, crosscheck, load_companyfacts
@@ -35,6 +45,8 @@ _owner = make_engine(os.environ.get("MIGRATE_DATABASE_URL")) if os.environ.get("
 migrate(_owner)
 apply_rls(_owner, os.environ.get("APP_DB_ROLE"))
 verify_app_role(engine)
+
+MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
 
 app = FastAPI(title="PE Platform API", version="0.0.1")
 
@@ -53,6 +65,8 @@ def get_tenant(db: Db, authorization: Annotated[str | None, Header()] = None) ->
     tenant = tenant_for_key(db, authorization[7:].strip())
     if tenant is None:
         raise HTTPException(401, "invalid token")
+    if not limiter.allow(tenant):
+        raise HTTPException(429, "rate limit exceeded", headers={"Retry-After": "10"})
     bind_tenant(db, tenant)
     return tenant
 
@@ -74,12 +88,34 @@ def admin_create_tenant(body: TenantIn, db: Db, x_admin_token: Annotated[str | N
     if not admin_token_ok(x_admin_token):
         raise HTTPException(403, "admin token required")
     t, key = create_tenant(db, body.name)
-    return {"tenant_id": t.id, "api_key": key, "note": "store this key now; it is not shown again"}
+    return {"tenant_id": t.id, "api_key": key, "key_id": key_id(hash_key(key)),
+            "note": "store this key now; it is not shown again"}
+
+
+@app.post("/admin/tenants/{tenant_id}/keys", status_code=201)
+def admin_add_key(tenant_id: str, db: Db, x_admin_token: Annotated[str | None, Header()] = None):
+    if not admin_token_ok(x_admin_token):
+        raise HTTPException(403, "admin token required")
+    if db.get(TenantRow, tenant_id) is None:
+        raise HTTPException(404, "tenant not found")
+    kid, key = add_key(db, tenant_id)
+    return {"key_id": kid, "api_key": key, "note": "store this key now; it is not shown again"}
+
+
+@app.delete("/admin/keys/{kid}")
+def admin_revoke_key(kid: str, db: Db, x_admin_token: Annotated[str | None, Header()] = None):
+    if not admin_token_ok(x_admin_token):
+        raise HTTPException(403, "admin token required")
+    if not revoke_key(db, kid):
+        raise HTTPException(404, "key not found")
+    return {"revoked": kid}
 
 
 @app.post("/documents")
 async def upload(file: Annotated[UploadFile, File()], db: Db, tenant: Tenant):
-    data = await file.read()
+    data = await file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
     try:
         doc = ingest_upload(db, tenant, data, file.filename or "upload.pdf")
     except Exception as e:  # corrupt / encrypted / empty files are flagged, never skipped
