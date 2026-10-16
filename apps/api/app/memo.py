@@ -19,6 +19,15 @@ def _fmt(v: Decimal) -> str:
     return f"{v.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP):,}"
 
 
+def _gloss(v: Decimal) -> str:
+    """Exact figure first; large values get a short reading aid, e.g. '74,039,000,000.00 (about 74.04B)'."""
+    a = abs(v)
+    for size, tag in ((Decimal(10) ** 12, "T"), (Decimal(10) ** 9, "B"), (Decimal(10) ** 6, "M")):
+        if a >= size:
+            return f"{_fmt(v)} (about {(v / size).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)}{tag})"
+    return _fmt(v)
+
+
 @dataclass
 class Memo:
     entity: str
@@ -44,7 +53,7 @@ def build_memo_data(db: Session, tenant_id: str, entity: str, scope: set[str] | 
         doc = db.get(Document, src.document_id)
         memo.notes.append(f'[{n}] {doc.filename if doc else src.document_id[:8]}, p.{src.page}: '
                           f'"{src.quote.strip()}"')
-        memo.lines.append(f"{f.metric} ({f.period}, {f.basis}): {_fmt(f.value)} {f.unit} [{n}]")
+        memo.lines.append(f"{f.metric} ({f.period}, {f.basis}): {_gloss(f.value)} {f.unit} [{n}]")
     for (metric, period), f in by_key.items():
         if metric == "net_income" and ("revenue", period) in by_key:
             rev = by_key[("revenue", period)]
