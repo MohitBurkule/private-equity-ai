@@ -2,7 +2,7 @@ import os
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -22,7 +22,7 @@ from app.edgar import fetch_companyfacts
 from app.facts import CitationError, add_verified_fact
 from app.ingest import ingest_upload
 from app.llm import LLM, NoLLMConfigured, get_llm
-from app.memo import build_memo
+from app.memo import build_memo, build_memo_docx
 from app.migrate import migrate
 from app.models import Document, PageRow
 from app.models import Tenant as TenantRow
@@ -174,6 +174,14 @@ def create_fact(body: FactIn, db: Db, tenant: Tenant):
 @app.get("/memo")
 def memo(entity: str, db: Db, tenant: Tenant):
     return {"entity": entity, "markdown": build_memo(db, tenant, entity)}
+
+
+@app.get("/memo.docx")
+def memo_docx(entity: str, db: Db, tenant: Tenant):
+    log_event(db, tenant, "api", "memo.export", {"entity": entity, "format": "docx"})
+    return Response(build_memo_docx(db, tenant, entity), headers={
+        "Content-Disposition": 'attachment; filename="memo.docx"'},
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 @app.get("/search")
