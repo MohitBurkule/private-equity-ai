@@ -3,7 +3,10 @@ services:
     build: apps/api
     ports: ["8000:8000"]
     environment:
-      DATABASE_URL: postgresql+psycopg://pe:pe@db:5432/pe
+      DATABASE_URL: postgresql+psycopg://pe_app:change-me-app@db:5432/pe
+      MIGRATE_DATABASE_URL: postgresql+psycopg://pe_owner:change-me-owner@db:5432/pe
+      APP_DB_ROLE: pe_app
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN to enable tenant creation}
     depends_on: [db, redis]
   web:
     build: apps/web
@@ -12,7 +15,9 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment: {POSTGRES_USER: pe, POSTGRES_PASSWORD: pe, POSTGRES_DB: pe}
-    volumes: [pgdata:/var/lib/postgresql/data]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/db-init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
   redis:
     image: redis:7
 volumes:

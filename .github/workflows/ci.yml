@@ -21,3 +21,35 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+  api-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: {POSTGRES_PASSWORD: pg, POSTGRES_DB: pe_ci}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults: {run: {working-directory: apps/api}}
+    env:
+      PGPASSWORD: pg
+      DATABASE_URL: postgresql+psycopg://pe_app:a@localhost:5432/pe_ci
+      MIGRATE_DATABASE_URL: postgresql+psycopg://pe_owner:o@localhost:5432/pe_ci
+      APP_DB_ROLE: pe_app
+      RLS_TEST_APP_URL: postgresql+psycopg://pe_app:a@localhost:5432/pe_ci
+      RLS_TEST_OWNER_URL: postgresql+psycopg://pe_owner:o@localhost:5432/pe_ci
+      RLS_TEST_APP_ROLE: pe_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Roles (owner owns schema; app role is not superuser and cannot bypass RLS)
+        run: |
+          psql -h localhost -U postgres pe_ci -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE pe_owner LOGIN PASSWORD 'o';
+          CREATE ROLE pe_app LOGIN PASSWORD 'a' NOSUPERUSER NOBYPASSRLS;
+          GRANT ALL ON SCHEMA public TO pe_owner;
+          GRANT USAGE ON SCHEMA public TO pe_app;
+          SQL
+      - run: pip install -e '.[dev]'
+      - run: python -m pytest -q

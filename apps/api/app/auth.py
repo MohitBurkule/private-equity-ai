@@ -19,7 +19,9 @@ def create_tenant(db: Session, name: str) -> tuple[Tenant, str]:
     """Returns the tenant and the plaintext API key (shown once, only the hash is stored)."""
     t = Tenant(id=secrets.token_hex(8), name=name)
     key = "pe_" + secrets.token_urlsafe(32)
-    db.add_all([t, ApiKey(key_hash=hash_key(key), tenant_id=t.id)])
+    db.add(t)
+    db.flush()  # FK order is not inferred without a relationship(); Postgres enforces it
+    db.add(ApiKey(key_hash=hash_key(key), tenant_id=t.id))
     db.commit()
     return t, key
 
