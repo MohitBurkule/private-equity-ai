@@ -38,7 +38,7 @@ def gmail_routes():
 def test_catalog_status():
     h = new_tenant(c, "cat")
     r = {x["name"]: x["status"] for x in c.get("/connectors", headers=h).json()}
-    assert r["gmail"] == "live" and r["salesforce"] == "live" and r["slack"] == "planned" and len(r) >= 15
+    assert r["gmail"] == "live" and r["salesforce"] == "live" and r["intralinks"] == "planned" and len(r) >= 15
 
 
 def test_gmail_sync_cites_source_and_is_idempotent(monkeypatch):
@@ -159,3 +159,18 @@ def test_crm_rejects_foreign_hosts_and_sync_is_idempotent(monkeypatch):
     r = c.post("/connectors/hubspot/sync", json=body, headers=h).json()
     assert len(r["ingested"]) == 1
     assert c.post("/connectors/hubspot/sync", json=body, headers=h).json()["unchanged"] == 1
+
+
+def test_slack_channel_csv_and_errors():
+    import pytest
+
+    from app.connectors.base import ConnectorError
+    from app.connectors.slack import Slack
+    ok = fake({"https://slack.com/api/conversations.list": {"ok": True, "channels": [{"id": "C1", "name": "deal-atlas", "is_member": True}, {"id": "C2", "name": "x", "is_member": False}]},
+               "https://slack.com/api/conversations.history?channel=C1": {"ok": True, "messages": [
+                   {"type": "message", "ts": "1.0", "user": "U1", "text": "Revenue 12m"}, {"type": "message", "subtype": "channel_join", "ts": "2.0"}]}})
+    it = list(Slack("tok", ok, team="T1").items())
+    assert len(it) == 1 and b"Revenue 12m" in it[0].data and b"channel_join" not in it[0].data and it[0].url.endswith("/T1/C1")
+    bad = fake({"https://slack.com/api/conversations.list": {"ok": False, "error": "invalid_auth"}})
+    with pytest.raises(ConnectorError):
+        list(Slack("tok", bad).items())
