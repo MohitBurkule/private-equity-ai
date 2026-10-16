@@ -5,12 +5,16 @@ import hashlib
 import io
 import os
 import tempfile
+import zipfile
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from app.ixbrl import read_ixbrl
 from app.models import Document, PageRow
+from app.parse.eml import parse_eml
+from app.parse.office import RawPage, extract_docx, extract_pptx
 from app.parse.pdf import extract_pages
 from app.parse.xlsx import extract_sheets
 
@@ -136,3 +140,129 @@ def ingest_upload(db: Session, tenant_id: str, data: bytes, filename: str) -> Do
     if filename.lower().endswith((".csv", ".tsv")):
         return ingest_csv(db, tenant_id, data, filename)
     raise ValueError("unsupported file type (expected PDF, XLSX, CSV or iXBRL HTML)")
+
+
+def _store_pages(db: Session, tenant_id: str, data: bytes, filename: str, kind: str,
+                 pages: list[RawPage]) -> Document:
+    """Idempotent store of text pages for non-PDF office/email content."""
+    sha = hashlib.sha256(data).hexdigest()
+    doc_id = tenant_doc_id(tenant_id, sha)
+    existing = db.get(Document, doc_id)
+    if existing:
+        return existing
+    if not pages:
+        raise ValueError("no text found")
+    doc = Document(id=doc_id, tenant_id=tenant_id, sha256=sha, filename=filename, n_pages=len(pages), kind=kind)
+    doc.pages = [PageRow(number=i, text=p.text, label=p.label) for i, p in enumerate(pages, 1)]
+    db.add(doc)
+    db.commit()
+    return doc
+
+
+def ingest_docx(db: Session, tenant_id: str, data: bytes, filename: str) -> Document:
+    return _store_pages(db, tenant_id, data, filename, "docx", extract_docx(data))
+
+
+def ingest_pptx(db: Session, tenant_id: str, data: bytes, filename: str) -> Document:
+    return _store_pages(db, tenant_id, data, filename, "pptx", extract_pptx(data))
+
+
+MAX_ARCHIVE_FILES = 2000
+MAX_ARCHIVE_BYTES = int(os.environ.get("MAX_ARCHIVE_UNCOMPRESSED_BYTES", str(1024**3)))
+MAX_DEPTH = 3
+_JUNK = ("__MACOSX/", ".DS_Store", "Thumbs.db", "~$")
+
+
+@dataclass
+class IngestResult:
+    documents: list[Document] = field(default_factory=list)
+    skipped: list[dict] = field(default_factory=list)  # {"name":..., "reason":...}: never silent
+
+
+def _zip_kind(data: bytes) -> str:
+    """Office files are zips: tell them apart by their content types, not the extension."""
+    try:
+        names = zipfile.ZipFile(io.BytesIO(data)).namelist()
+    except zipfile.BadZipFile:
+        return "bad"
+    if "[Content_Types].xml" in names:
+        if any(n.startswith("word/") for n in names):
+            return "docx"
+        if any(n.startswith("ppt/") for n in names):
+            return "pptx"
+        if any(n.startswith("xl/") for n in names):
+            return "xlsx"
+    return "archive"
+
+
+def _looks_like_email(data: bytes) -> bool:
+    head = data[:4096].lower()
+    return head.startswith((b"from:", b"received:", b"return-path:", b"mime-version:", b"date:")) and b"\nsubject:" in head
+
+
+def ingest_any(db: Session, tenant_id: str, data: bytes, filename: str, _depth: int = 0) -> IngestResult:
+    """Single entry for data-room uploads. Archives and emails expand into several documents whose
+    names keep the folder path (`folder/sub/file.pdf`, `msg.eml/attachment.pdf`). Anything not
+    ingested is reported in `skipped` with a reason."""
+    res = IngestResult()
+    low = filename.lower()
+    try:
+        if data[:2] == b"PK":
+            kind = _zip_kind(data)
+            if kind == "docx":
+                res.documents.append(ingest_docx(db, tenant_id, data, filename))
+            elif kind == "pptx":
+                res.documents.append(ingest_pptx(db, tenant_id, data, filename))
+            elif kind == "xlsx":
+                with tempfile.TemporaryDirectory() as d:
+                    p = Path(d) / "upload.xlsx"
+                    p.write_bytes(data)
+                    res.documents.append(ingest_xlsx(db, tenant_id, p, filename))
+            elif kind == "archive":
+                _ingest_archive(db, tenant_id, data, filename, res, _depth)
+            else:
+                res.skipped.append({"name": filename, "reason": "corrupt zip file"})
+        elif low.endswith(".eml") or _looks_like_email(data):
+            pe = parse_eml(data)
+            res.documents.append(_store_pages(db, tenant_id, data, filename, "email", [RawPage(pe.text, "message")]))
+            for name, payload in pe.attachments:
+                sub = ingest_any(db, tenant_id, payload, f"{filename}/{name}", _depth + 1)
+                res.documents += sub.documents
+                res.skipped += sub.skipped
+        else:
+            res.documents.append(ingest_upload(db, tenant_id, data, filename))
+    except Exception as e:  # noqa: BLE001  one bad file must not sink the batch
+        db.rollback()
+        res.skipped.append({"name": filename, "reason": f"cannot parse: {e}"})
+    return res
+
+
+def _ingest_archive(db: Session, tenant_id: str, data: bytes, filename: str, res: IngestResult,
+                    depth: int) -> None:
+    if depth >= MAX_DEPTH:
+        res.skipped.append({"name": filename, "reason": f"archive nested deeper than {MAX_DEPTH}"})
+        return
+    zf = zipfile.ZipFile(io.BytesIO(data))
+    infos = [i for i in zf.infolist() if not i.is_dir() and not any(j in i.filename for j in _JUNK)]
+    if len(infos) > MAX_ARCHIVE_FILES:
+        res.skipped.append({"name": filename, "reason": f"more than {MAX_ARCHIVE_FILES} files"})
+        return
+    if sum(i.file_size for i in infos) > MAX_ARCHIVE_BYTES:  # declared sizes; also bounded per read below
+        res.skipped.append({"name": filename, "reason": "uncompressed size over limit (zip bomb guard)"})
+        return
+    for info in infos:
+        name = info.filename.lstrip("/")
+        if ".." in Path(name).parts:
+            res.skipped.append({"name": name, "reason": "path escapes archive"})
+            continue
+        if info.flag_bits & 0x1:
+            res.skipped.append({"name": name, "reason": "encrypted"})
+            continue
+        with zf.open(info) as f:
+            payload = f.read(info.file_size + 1)
+        if len(payload) > info.file_size:  # header lied about size
+            res.skipped.append({"name": name, "reason": "size mismatch (corrupt or hostile)"})
+            continue
+        sub = ingest_any(db, tenant_id, payload, f"{filename}/{name}" if depth else name, depth + 1)
+        res.documents += sub.documents
+        res.skipped += sub.skipped

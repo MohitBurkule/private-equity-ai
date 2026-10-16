@@ -31,7 +31,7 @@ from app.auth import (
 from app.db import make_engine, make_session_factory
 from app.edgar import fetch_companyfacts
 from app.facts import CitationError, add_verified_fact
-from app.ingest import ingest_upload
+from app.ingest import ingest_any
 from app.llm import LLM, NoLLMConfigured, get_llm
 from app.memo import build_memo, build_memo_docx
 from app.migrate import migrate
@@ -159,20 +159,32 @@ async def upload(file: Annotated[UploadFile, File()], db: Db, who: Writer,
     data = await file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
-    try:
-        doc = ingest_upload(db, tenant, data, file.filename or "upload.pdf")
-    except Exception as e:  # corrupt / encrypted / empty files are flagged, never skipped
-        raise HTTPException(422, f"cannot parse file: {e}") from e
-    if doc.deal is None and deal:
-        doc.deal = deal
-        db.commit()
-    elif deal and doc.deal != deal:
-        raise HTTPException(409, "identical content already stored under a different deal")
-    if not doc_visible(doc, who):
-        raise HTTPException(409, "identical content already stored outside this key's scope")
-    log_event(db, tenant, actor(who), "document.upload",
-              {"document_id": doc.id, "filename": doc.filename, "deal": doc.deal})
-    return {"id": doc.id, "filename": doc.filename, "n_pages": doc.n_pages, "deal": doc.deal}
+    res = ingest_any(db, tenant, data, file.filename or "upload.pdf")
+    kept, skipped = [], list(res.skipped)
+    for doc in {d.id: d for d in res.documents}.values():  # same bytes twice in one upload = once
+        if doc.deal is None and deal:
+            doc.deal = deal
+        elif deal and doc.deal != deal:
+            skipped.append({"name": doc.filename, "reason": "identical content already stored under a different deal"})
+            continue
+        if not doc_visible(doc, who):
+            skipped.append({"name": doc.filename, "reason": "identical content already stored outside this key's scope"})
+            continue
+        kept.append(doc)
+    db.commit()
+    if not kept:  # nothing usable: keep the old single-file error contract
+        reason = skipped[0]["reason"] if skipped else "no documents"
+        code = 409 if "already stored" in reason else 422
+        raise HTTPException(code, reason if code == 409 else f"cannot parse file: {reason}")
+    for doc in kept:
+        log_event(db, tenant, actor(who), "document.upload",
+                  {"document_id": doc.id, "filename": doc.filename, "deal": doc.deal})
+    first = kept[0]
+    out = {"id": first.id, "filename": first.filename, "n_pages": first.n_pages, "deal": first.deal}
+    if len(kept) > 1 or skipped:
+        out["documents"] = [{"id": d.id, "filename": d.filename, "n_pages": d.n_pages, "kind": d.kind} for d in kept]
+        out["skipped"] = skipped
+    return out
 
 
 def _own_doc(db: Session, who: Principal, doc_id: str) -> Document:
