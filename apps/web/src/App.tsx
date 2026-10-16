@@ -38,7 +38,7 @@ export function App() {
 
       <section>
         <h2>Documents</h2>
-        <input type="file" accept=".pdf,.xlsx" onChange={(e) => {
+        <input type="file" accept=".pdf,.xlsx,.docx,.pptx,.eml,.zip,.csv,.html" onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) void run(async () => { await api.upload(f); await refresh(); });
         }} />
