@@ -16,6 +16,7 @@ from fastapi import (
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app import jobs as jobs_mod
 from app.acl import Principal, doc_visible, fact_visible, visible_doc_ids
 from app.answer import answer_question
 from app.audit import log_event, verify_chain
@@ -34,11 +35,11 @@ from app.edgar import fetch_companyfacts
 from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.facts import CitationError, add_verified_fact, review_fact
-from app.ingest import ingest_any
+from app.ingest import finalize_upload, ingest_any
 from app.llm import LLM, NoLLMConfigured, get_llm
 from app.memo import build_memo, build_memo_docx
 from app.migrate import migrate
-from app.models import Document, Fact, PageRow
+from app.models import Document, Fact, IngestJob, PageRow
 from app.models import Tenant as TenantRow
 from app.portfolio import (
     PortfolioCompany,
@@ -60,6 +61,7 @@ migrate(_owner)
 apply_rls(_owner, os.environ.get("APP_DB_ROLE"))
 verify_app_role(engine)
 
+jobs_mod.requeue_pending(SessionLocal)
 MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
 
 app = FastAPI(title="PE Platform API", version="0.0.1")
@@ -163,18 +165,7 @@ async def upload(file: Annotated[UploadFile, File()], db: Db, who: Writer,
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
     res = ingest_any(db, tenant, data, file.filename or "upload.pdf")
-    kept, skipped = [], list(res.skipped)
-    for doc in {d.id: d for d in res.documents}.values():  # same bytes twice in one upload = once
-        if doc.deal is None and deal:
-            doc.deal = deal
-        elif deal and doc.deal != deal:
-            skipped.append({"name": doc.filename, "reason": "identical content already stored under a different deal"})
-            continue
-        if not doc_visible(doc, who):
-            skipped.append({"name": doc.filename, "reason": "identical content already stored outside this key's scope"})
-            continue
-        kept.append(doc)
-    db.commit()
+    kept, skipped = finalize_upload(db, who, res, deal)
     if not kept:  # nothing usable: keep the old single-file error contract
         reason = skipped[0]["reason"] if skipped else "no documents"
         code = 409 if "already stored" in reason else 422
@@ -188,6 +179,50 @@ async def upload(file: Annotated[UploadFile, File()], db: Db, who: Writer,
         out["documents"] = [{"id": d.id, "filename": d.filename, "n_pages": d.n_pages, "kind": d.kind} for d in kept]
         out["skipped"] = skipped
     return out
+
+
+@app.post("/documents/async", status_code=202)
+async def upload_async(file: Annotated[UploadFile, File()], db: Db, who: Writer,
+                       deal: Annotated[str | None, Form()] = None):
+    """Same rules as /documents, but parsing happens in the background. Poll GET /jobs/{id}."""
+    deal = (deal or "").strip() or None
+    if who.restricted and deal not in who.deals:
+        raise HTTPException(403, "deal is required and must be within this key's scope")
+    data = await file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
+    job = jobs_mod.submit(db, who, data, file.filename or "upload.pdf", deal, SessionLocal)
+    return {"job_id": job.id, "status": job.status}
+
+
+def _job_out(j: IngestJob) -> dict:
+    import json as _json
+    return {"job_id": j.id, "filename": j.filename, "status": j.status, "stage": j.stage, "attempts": j.attempts,
+            "error": j.error, "created_at": j.created_at, "updated_at": j.updated_at,
+            "result": _json.loads(j.result) if j.result else None}
+
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: str, db: Db, who: Who):
+    j = db.get(IngestJob, job_id)
+    if j is None or j.tenant_id != who.tenant or (who.restricted and j.key_id != who.key_id):
+        raise HTTPException(404, "job not found")  # walled keys see only their own jobs
+    return _job_out(j)
+
+
+@app.get("/jobs")
+def list_jobs(db: Db, who: Who):
+    q = db.query(IngestJob).filter_by(tenant_id=who.tenant)
+    if who.restricted:
+        q = q.filter_by(key_id=who.key_id)
+    return [_job_out(j) for j in q.order_by(IngestJob.created_at.desc()).limit(100).all()]
+
+
+@app.post("/admin/jobs/requeue")
+def admin_requeue(x_admin_token: Annotated[str | None, Header()] = None):
+    if not admin_token_ok(x_admin_token):
+        raise HTTPException(403, "admin token required")
+    return {"requeued": jobs_mod.requeue_pending(SessionLocal)}
 
 
 def _own_doc(db: Session, who: Principal, doc_id: str) -> Document:

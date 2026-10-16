@@ -75,3 +75,23 @@ class FactSource(Base):
     page: Mapped[int] = mapped_column(Integer, nullable=False)
     quote: Mapped[str] = mapped_column(Text, nullable=False)
     fact: Mapped[Fact] = relationship(back_populates="sources")
+
+
+class IngestJob(Base):
+    """Background upload. Bytes are spooled to disk so a restart can pick the job up again."""
+    __tablename__ = "ingest_job"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    filename: Mapped[str] = mapped_column(String(512))
+    deal: Mapped[str | None] = mapped_column(String(128), default=None)
+    role: Mapped[str] = mapped_column(String(16), default="analyst")
+    scope: Mapped[str | None] = mapped_column(Text, default=None)  # comma deals of the submitting key
+    key_id: Mapped[str] = mapped_column(String(32), default="")
+    status: Mapped[str] = mapped_column(String(16), default="queued")  # queued|running|done|failed
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    stage: Mapped[str] = mapped_column(String(64), default="queued")
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    result: Mapped[str | None] = mapped_column(Text, default=None)  # JSON
+    spool_path: Mapped[str] = mapped_column(String(512), default="")
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+    updated_at: Mapped[str] = mapped_column(String(40), default="")

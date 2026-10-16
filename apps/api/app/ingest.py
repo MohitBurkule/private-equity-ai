@@ -266,3 +266,23 @@ def _ingest_archive(db: Session, tenant_id: str, data: bytes, filename: str, res
         sub = ingest_any(db, tenant_id, payload, f"{filename}/{name}" if depth else name, depth + 1)
         res.documents += sub.documents
         res.skipped += sub.skipped
+
+
+def finalize_upload(db: Session, who, res: IngestResult, deal: str | None) -> tuple[list[Document], list[dict]]:
+    """Apply the deal tag and the caller's wall to freshly ingested documents (shared by the
+    synchronous endpoint and the background worker)."""
+    from app.acl import doc_visible
+    kept: list[Document] = []
+    skipped = list(res.skipped)
+    for doc in {d.id: d for d in res.documents}.values():  # same bytes twice in one upload = once
+        if doc.deal is None and deal:
+            doc.deal = deal
+        elif deal and doc.deal != deal:
+            skipped.append({"name": doc.filename, "reason": "identical content already stored under a different deal"})
+            continue
+        if not doc_visible(doc, who):
+            skipped.append({"name": doc.filename, "reason": "identical content already stored outside this key's scope"})
+            continue
+        kept.append(doc)
+    db.commit()
+    return kept, skipped
