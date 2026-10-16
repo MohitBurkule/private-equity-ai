@@ -37,3 +37,23 @@ def test_dealscan_leads_cite_filing():
     assert len(ls) == 5 and all(x.url.startswith("https://www.sec.gov/Archives/edgar/data/") for x in ls)
     assert all(x.accession.replace("-", "") in x.url and x.form for x in ls)
     assert "startdt=2026-09-01" in seen[0] and "%22agreement+and+plan+of+merger%22" in seen[0]
+
+
+def test_news_items_and_filter_and_entity_rejection():
+    from app import newsfeed
+    blob = (FX / "bbc_rss.xml").read_bytes()
+    items = newsfeed.parse("bbc_business", blob)
+    assert len(items) == 3 and all(i.link.startswith("https://") and i.published for i in items)
+    assert newsfeed.headlines("bbc_business", "zzzz-none", lambda u: blob) == []
+    with pytest.raises(ValueError):
+        newsfeed.parse("x", b'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY a "b">]><rss/>')
+    with pytest.raises(KeyError):
+        newsfeed.headlines("nope")
+
+
+def test_wikidata_hits():
+    import json
+
+    from app import wikidata
+    hs = wikidata.parse(json.loads((FX / "wikidata_search.json").read_text()))
+    assert hs[0].qid == "Q880942" and hs[0].label == "Blackstone Inc." and hs[0].url.endswith("/Q880942")
