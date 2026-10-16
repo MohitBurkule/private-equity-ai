@@ -693,6 +693,76 @@ def uk_accounts(number: str, tenant: Tenant, fetch: Annotated[Callable, Depends(
         raise HTTPException(503, str(e)) from e
 
 
+def _ch_call(fn, number, fetch):
+    from dataclasses import asdict
+
+    from app.chfeed import CompanyNotFound
+    try:
+        return [asdict(x) for x in fn(number, fetch)]
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except CompanyNotFound as e:
+        raise HTTPException(404, "company not found") from e
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from e
+
+
+@app.get("/uk/company/{number}/officers")
+def uk_officers(number: str, tenant: Tenant, fetch: Annotated[Callable, Depends(get_ch_fetch)]):
+    from app import chfeed
+    return _ch_call(chfeed.officers, number, fetch)
+
+
+@app.get("/uk/company/{number}/psc")
+def uk_psc(number: str, tenant: Tenant, fetch: Annotated[Callable, Depends(get_ch_fetch)]):
+    """People with significant control from the live API (needs COMPANIES_HOUSE_API_KEY). Ceased
+    entries are included with ceased_on set; nothing is dropped or defaulted."""
+    from app import chfeed
+    return _ch_call(chfeed.pscs, number, fetch)
+
+
+@app.post("/uk/psc/extract")
+async def uk_psc_extract(file: Annotated[UploadFile, File()], who: Who, companies: str):
+    """Pick the named companies out of an uploaded PSC snapshot (.jsonl, or .zip holding one) and return
+    their records with the source line number. `companies` is comma separated. Unreadable lines are
+    counted and the first few reported."""
+    import io as _io
+    import zipfile
+
+    from app.chbulk import iter_psc_snapshot
+    from app.chfeed import normalise_number
+
+    try:
+        want = {normalise_number(x) for x in companies.split(",") if x.strip()}
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    if not want or len(want) > 500:
+        raise HTTPException(422, "give between 1 and 500 company numbers")
+    data = await file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
+    if data[:2] == b"PK":
+        try:
+            z = zipfile.ZipFile(_io.BytesIO(data))
+            names = [n for n in z.namelist() if n.lower().endswith((".jsonl", ".txt", ".json"))]
+            if not names:
+                raise HTTPException(422, "no .jsonl file in the zip")
+            lines = z.open(names[0])
+        except zipfile.BadZipFile as e:
+            raise HTTPException(422, "corrupt zip") from e
+    else:
+        lines = _io.BytesIO(data)
+    found, errors = [], []
+    from dataclasses import asdict
+    for rec in iter_psc_snapshot(lines, want):
+        if isinstance(rec, dict):
+            errors.append(rec)
+        else:
+            found.append(asdict(rec))
+    missing = sorted(want - {r["company_number"] for r in found})
+    return {"records": found, "not_in_file": missing, "unreadable_lines": len(errors), "unreadable_sample": errors[:5]}
+
+
 @app.get("/memo.docx")
 def memo_docx(entity: str, db: Db, who: Who):
     log_event(db, who.tenant, actor(who), "memo.export", {"entity": entity, "format": "docx"})

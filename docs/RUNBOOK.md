@@ -124,3 +124,9 @@ when the file states none). Default is a preview that stores nothing. Each fact 
 Scale in a header such as `Post Valuation (GBP mm)` is applied; a row with no readable currency or date is listed
 in `rejected`, never guessed. Header presets live in `app/vendorfacts.py` and are not verified against real
 exports; add the headers you see there.
+## Companies House ownership and officers
+
+- `GET /uk/company/{number}/officers` and `/psc`: live API, needs `COMPANIES_HOUSE_API_KEY`; ceased entries are kept with `ceased_on`.
+- `POST /uk/psc/extract?companies=01234567,...` with the free PSC snapshot (`.jsonl` or `.zip`) picks those companies out with the source line number. For the multi-GB national file use `app/chbulk.iter_psc_snapshot` from a script instead of uploading it.
+- `app/chbulk.iter_basic_company_csv` reads the Basic Company Data CSV. A missing status, category or notification date stays missing; the parsers never default them. Ported from your `companyhousev1` project's formats, without its defaults.
+- Nominee holders (platforms) hide individual owners in PSC data; treat a corporate PSC as a lead, not an answer.
