@@ -17,6 +17,7 @@ from fastapi import (
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app import comps as comps_mod
 from app import jobs as jobs_mod
 from app.acl import Principal, doc_visible, fact_visible, visible_doc_ids
 from app.answer import answer_question
@@ -1072,6 +1073,24 @@ def calc_waterfall(body: WaterfallIn, who: Who):
         raise HTTPException(422, str(e)) from e
     return {"status": r.status, "detail": r.detail, "converted": r.converted,
             "payouts": {k: str(v) for k, v in r.payouts.items()}}
+
+
+class CompsIn(BaseModel):
+    target: str
+    peers: list[str]
+    period: str
+    metrics: list[str] = ["revenue", "ebitda"]
+    target_period: str | None = None
+    ev_period: str | None = None
+
+
+@app.post("/calc/comps")
+def calc_comps(body: CompsIn, db: Db, who: Who):
+    """Trading comps (or precedents: peers are deal entities with enterprise_value facts) and implied range."""
+    if len(body.peers) > 200 or len(body.metrics) > 10:
+        raise HTTPException(422, "too many peers or metrics")
+    return comps_mod.run(db, who.tenant, body.target, body.peers, body.period, body.metrics,
+                         visible_doc_ids(db, who), body.target_period, body.ev_period)
 
 
 @app.get("/portfolio/report")
