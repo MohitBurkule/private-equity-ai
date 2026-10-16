@@ -6,6 +6,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from app.ixbrl import read_ixbrl
 from app.models import Document, PageRow
 from app.parse.pdf import extract_pages
 from app.parse.xlsx import extract_sheets
@@ -50,6 +51,31 @@ def ingest_xlsx(db: Session, tenant_id: str, path: Path, filename: str | None = 
     return doc
 
 
+def ingest_ixbrl(db: Session, tenant_id: str, data: bytes, filename: str) -> Document:
+    """UK iXBRL accounts: one page of headline balance-sheet lines. A failing identity puts an
+    UNRELIABLE banner at the top of the page so it travels with every quote and answer."""
+    sha = hashlib.sha256(data).hexdigest()
+    doc_id = tenant_doc_id(tenant_id, sha)
+    existing = db.get(Document, doc_id)
+    if existing:
+        return existing
+    rep = read_ixbrl(data.decode("utf-8", errors="replace"))
+    lines = []
+    if not rep.reliable:
+        failed = ", ".join(k for k, v in rep.checks.items() if v is False)
+        lines.append(f"[UNRELIABLE: balance sheet fails internal arithmetic ({failed}); do not rely on figures]")
+    if rep.instant:
+        lines.append(f"Balance sheet at {rep.instant}")
+    lines += [f"{k}: {v:,}" for k, v in sorted(rep.facts.items())]
+    if not rep.facts:
+        lines.append("[no balance-sheet figures found in this filing]")
+    doc = Document(id=doc_id, tenant_id=tenant_id, sha256=sha, filename=filename, n_pages=1, kind="ixbrl")
+    doc.pages = [PageRow(number=1, text="\n".join(lines), label=rep.instant)]
+    db.add(doc)
+    db.commit()
+    return doc
+
+
 def ingest_upload(db: Session, tenant_id: str, data: bytes, filename: str) -> Document:
     """Dispatch on content, not extension: PDF magic or zip (xlsx) magic."""
     with tempfile.TemporaryDirectory() as d:
@@ -61,4 +87,6 @@ def ingest_upload(db: Session, tenant_id: str, data: bytes, filename: str) -> Do
             p = Path(d) / "upload.xlsx"
             p.write_bytes(data)
             return ingest_xlsx(db, tenant_id, p, filename)
-    raise ValueError("unsupported file type (expected PDF or XLSX)")
+    if b"ix:nonfraction" in data[:2_000_000].lower():
+        return ingest_ixbrl(db, tenant_id, data, filename)
+    raise ValueError("unsupported file type (expected PDF, XLSX or iXBRL HTML)")
