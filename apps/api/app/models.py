@@ -247,3 +247,4 @@ class Alert(Base):
     fact_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON list of fact ids
     status: Mapped[str] = mapped_column(String(16), default="new", server_default="new")
     created_at: Mapped[str] = mapped_column(String(40), default="")
+    emailed_at: Mapped[str | None] = mapped_column(String(40), default=None)

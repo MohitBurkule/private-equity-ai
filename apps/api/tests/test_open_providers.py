@@ -28,3 +28,12 @@ def test_fred_skips_missing_and_cites_series():
 def test_fred_empty_raises():
     with pytest.raises(LookupError):
         fred.latest("X", lambda u: b"observation_date,X\n")
+
+
+def test_dealscan_leads_cite_filing():
+    from app import dealscan
+    seen = []
+    ls = dealscan.scan("2026-09-01", "2026-10-15", fetch=lambda u: (seen.append(u), (FX / "efts_merger.json").read_bytes())[1])
+    assert len(ls) == 5 and all(x.url.startswith("https://www.sec.gov/Archives/edgar/data/") for x in ls)
+    assert all(x.accession.replace("-", "") in x.url and x.form for x in ls)
+    assert "startdt=2026-09-01" in seen[0] and "%22agreement+and+plan+of+merger%22" in seen[0]
