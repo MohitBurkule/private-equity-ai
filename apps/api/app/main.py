@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app import comps as comps_mod
 from app import jobs as jobs_mod
+from app import legal as legal_mod
 from app.acl import Principal, doc_visible, fact_visible, visible_doc_ids
 from app.answer import answer_question
 from app.audit import log_event, verify_chain
@@ -1095,6 +1096,20 @@ def calc_comps(body: CompsIn, db: Db, who: Who):
         raise HTTPException(422, "too many peers or metrics")
     return comps_mod.run(db, who.tenant, body.target, body.peers, body.period, body.metrics,
                          visible_doc_ids(db, who), body.target_period, body.ev_period)
+
+
+@app.get("/documents/{doc_id}/legal-terms")
+def legal_terms(doc_id: str, doc_type: str, db: Db, who: Who):
+    """Key terms (governing law, term, caps, covenants...) as cited sentences. doc_type: nda | spa | credit."""
+    _own_doc(db, who, doc_id)
+    pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc_id).order_by(PageRow.number)]
+    try:
+        out = legal_mod.extract(pages, doc_type)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    for f in out["findings"]:
+        f["document_id"] = doc_id
+    return out
 
 
 @app.get("/portfolio/report")
