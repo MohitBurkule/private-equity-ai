@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import logging
 import smtplib
 import threading
 from datetime import UTC, datetime
@@ -15,6 +16,7 @@ from app.alerts import scan
 from app.models import Alert, Tenant
 from app.rls import bind_tenant
 
+log = logging.getLogger(__name__)
 _ADDR = re.compile(r"^[^@\s<>,;]+@[^@\s<>,;]+\.[^@\s<>,;]+$")
 
 
@@ -93,7 +95,7 @@ def start_periodic_scan(session_factory: sessionmaker) -> threading.Event | None
             try:
                 scan_all(session_factory)
             except Exception:  # noqa: BLE001  one bad tick must not kill the scheduler
-                pass
+                log.exception("periodic alert scan failed")
 
     threading.Thread(target=loop, name="alert-scan", daemon=True).start()
     return stop
