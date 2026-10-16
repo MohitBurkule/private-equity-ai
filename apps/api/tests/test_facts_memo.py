@@ -118,6 +118,7 @@ def test_pptx_endpoint_auth_and_type():
 
 def test_gloss_adds_reading_aid_for_large_values():
     from decimal import Decimal
+
     from app.memo import _gloss
-    assert _gloss(Decimal("74039000000")) == "74,039,000,000.00 (about 74.04B)"
-    assert _gloss(Decimal("1000")) == "1,000.00"
+    assert _gloss(Decimal(74039000000)) == "74,039,000,000.00 (about 74.04B)"
+    assert _gloss(Decimal(1000)) == "1,000.00"
