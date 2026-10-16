@@ -727,6 +727,39 @@ def extract(doc_id: str, body: ExtractIn, db: Db, who: Writer, llm: Annotated[LL
                        for r in res.results]}
 
 
+class DDQIn(BaseModel):
+    questions: list[str]
+
+
+@app.post("/ddq")
+def ddq(body: DDQIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_dependency)]):
+    """Answer a questionnaire. Each question is answered on its own with cited claims only.
+    Anything not answered (abstained, failed, empty) is flagged for a human; nothing is filled in."""
+    qs = [q.strip() for q in body.questions]
+    if not qs or len(qs) > 200:
+        raise HTTPException(422, "send 1 to 200 questions")
+    scope = visible_doc_ids(db, who)
+    items = []
+    for i, q in enumerate(qs, 1):
+        if not q:
+            items.append({"n": i, "question": q, "status": "skipped", "detail": "empty question",
+                          "claims": [], "needs_human": True})
+            continue
+        try:
+            a = answer_question(db, who.tenant, llm, q, None, scope=scope)
+        except Exception as e:  # noqa: BLE001 - one bad question must not sink the batch
+            items.append({"n": i, "question": q, "status": "error", "detail": type(e).__name__,
+                          "claims": [], "needs_human": True})
+            continue
+        items.append({"n": i, "question": q, "status": a.status, "detail": a.detail,
+                      "claims": [{"text": c.text, "document_id": c.doc_id, "page": c.page, "quote": c.quote}
+                                 for c in a.claims],
+                      "needs_human": a.status != "answered" or not a.claims})
+    log_event(db, who.tenant, actor(who), "ddq", {"questions": len(qs),
+                                                   "needs_human": sum(x["needs_human"] for x in items)})
+    return {"items": items, "needs_human": sum(x["needs_human"] for x in items), "total": len(items)}
+
+
 @app.post("/ask")
 def ask(body: AskIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_dependency)]):
     tenant = who.tenant
