@@ -44,7 +44,7 @@ def _amt(v: str) -> Decimal | None:
 
 def _date(v: str) -> str:
     try:
-        return datetime.strptime(v.strip().title(), "%d-%b-%Y").date().isoformat()  # noqa: DTZ007
+        return datetime.strptime(v.strip().title(), "%d-%b-%Y").date().isoformat()
     except ValueError:
         return v.strip()
 
