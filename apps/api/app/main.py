@@ -40,7 +40,7 @@ from app.ingest import finalize_upload, ingest_any
 from app.llm import LLM, NoLLMConfigured, get_llm
 from app.memo import build_memo, build_memo_docx, build_memo_pptx
 from app.migrate import migrate
-from app.models import DDRequest, Document, Fact, IngestJob, PageRow
+from app.models import STAGES, DDRequest, Deal, Document, Fact, IngestJob, PageRow
 from app.models import Tenant as TenantRow
 from app.portfolio import (
     Covenant,
@@ -469,6 +469,66 @@ def dd_summary(deal: str, db: Db, who: Who):
     return {"deal": deal, "total": len(rows), "closed": done,
             "pct_complete": round(100 * done / len(rows), 1) if rows else None,
             "by_category": cats, "missing": [_dd_out(r) for r in rows if r.status == "open"]}
+
+
+class DealIn(BaseModel):
+    name: str
+    stage: str = "sourcing"
+    note: str | None = None
+
+
+class DealUpdate(BaseModel):
+    stage: str | None = None
+    note: str | None = None
+
+
+def _deal_out(db: Session, who: Principal, d: Deal) -> dict:
+    dd = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=d.name).all()
+    docs = db.query(Document).filter_by(tenant_id=who.tenant, deal=d.name).count()
+    closed = sum(r.status != "open" for r in dd)
+    return {"name": d.name, "stage": d.stage, "note": d.note, "updated_at": d.updated_at,
+            "documents": docs, "dd_total": len(dd), "dd_open": len(dd) - closed}
+
+
+@app.post("/deals", status_code=201)
+def deal_create(body: DealIn, db: Db, who: Writer):
+    if who.deals is not None:
+        raise HTTPException(403, "walled keys cannot create deals")
+    if body.stage not in STAGES:
+        raise HTTPException(422, f"stage must be one of {STAGES}")
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(422, "name required")
+    if db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first():
+        raise HTTPException(409, "deal already exists")
+    d = Deal(tenant_id=who.tenant, name=name, stage=body.stage, note=body.note, updated_at=_now_iso())
+    db.add(d)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "deal.create", {"name": name, "stage": d.stage})
+    return _deal_out(db, who, d)
+
+
+@app.get("/deals")
+def deal_list(db: Db, who: Who):
+    rows = db.query(Deal).filter_by(tenant_id=who.tenant).order_by(Deal.id).all()
+    return [_deal_out(db, who, d) for d in rows if _dd_scope_ok(who, d.name)]
+
+
+@app.patch("/deals/{name}")
+def deal_update(name: str, body: DealUpdate, db: Db, who: Writer):
+    d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
+    if d is None or not _dd_scope_ok(who, name):
+        raise HTTPException(404, "deal not found")
+    if body.stage is not None:
+        if body.stage not in STAGES:
+            raise HTTPException(422, f"stage must be one of {STAGES}")
+        d.stage = body.stage
+    if body.note is not None:
+        d.note = body.note
+    d.updated_at = _now_iso()
+    db.commit()
+    log_event(db, who.tenant, actor(who), "deal.update", {"name": name, "stage": d.stage})
+    return _deal_out(db, who, d)
 
 
 @app.get("/memo")
