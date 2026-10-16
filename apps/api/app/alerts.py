@@ -9,11 +9,11 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.models import Alert
+from app.models import Alert, DDRequest, Deal
 from app.portfolio import Covenant, PortfolioCompany, evaluate_covenant
 
 SEVERITIES = ("info", "warning", "critical")
@@ -62,6 +62,47 @@ def covenant_watch(db: Session, tenant_id: str) -> list[AlertDraft]:
             out.append(AlertDraft("covenant", sev, title, detail,
                                   f"covenant:{cov.id}:{t['period']}:{t['status']}:{t['value']}", ids))
     return out
+
+
+STALL_DAYS = 30
+DD_OPEN_DAYS = 14
+
+
+def _age_days(stamp: str | None) -> int | None:
+    try:
+        return (datetime.now(UTC) - datetime.fromisoformat(stamp)).days if stamp else None
+    except ValueError:
+        return None
+
+
+def _week() -> str:
+    return (datetime.now(UTC) - timedelta(days=datetime.now(UTC).weekday())).date().isoformat()
+
+
+@register_watcher("stalled_deals")
+def stalled_deals(db: Session, tenant_id: str) -> list[AlertDraft]:
+    """Live deals untouched for STALL_DAYS. Re-alerts weekly while still stalled."""
+    out = []
+    for d in db.query(Deal).filter_by(tenant_id=tenant_id):
+        age = _age_days(d.updated_at)
+        if d.stage in ("signed", "closed", "passed") or age is None or age < STALL_DAYS:
+            continue
+        out.append(AlertDraft("deal", "warning", f"{d.name}: no update for {age} days (stage {d.stage})",
+                              f"Last change {d.updated_at}.", f"stalled:{d.id}:{_week()}"))
+    return out
+
+
+@register_watcher("overdue_dd")
+def overdue_dd(db: Session, tenant_id: str) -> list[AlertDraft]:
+    """Open DD requests that have sat unchanged for DD_OPEN_DAYS, one alert per deal per week."""
+    per_deal: dict[str, list[DDRequest]] = {}
+    for r in db.query(DDRequest).filter_by(tenant_id=tenant_id, status="open"):
+        age = _age_days(r.updated_at)
+        if age is not None and age >= DD_OPEN_DAYS:
+            per_deal.setdefault(r.deal, []).append(r)
+    return [AlertDraft("dd", "warning", f"{deal}: {len(rows)} DD request(s) open for {DD_OPEN_DAYS}+ days",
+                       "; ".join(f"{r.category}: {r.title}" for r in rows[:5]) + (" ..." if len(rows) > 5 else ""),
+                       f"dd_overdue:{deal}:{_week()}") for deal, rows in per_deal.items()]
 
 
 def _now() -> str:
