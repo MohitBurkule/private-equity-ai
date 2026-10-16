@@ -65,3 +65,34 @@ def fund_metrics(flows: list[tuple[date, Decimal]], nav: Decimal, as_of: date) -
     series = [(d, float(a)) for d, a in flows] + ([(as_of, float(nav))] if nav else [])
     irr, note = xirr(series)
     return FundMetrics(paid, dist, nav, dpi, rvpi, tvpi, irr, note)
+
+
+@dataclass
+class Cohort:
+    vintage: int
+    funds: int
+    paid_in: Decimal
+    distributed: Decimal
+    nav: Decimal
+    pooled_tvpi: Decimal | None
+    median_tvpi: Decimal | None  # None when any fund in the cohort has nothing paid in
+
+
+def vintage_cohorts(funds: list[tuple[str, int, list[tuple[date, Decimal]], Decimal]], as_of: date) -> list[Cohort]:
+    """Group funds (name, vintage year, flows, nav) by vintage. Pooled TVPI sums money, then divides."""
+    by: dict[int, list[FundMetrics]] = {}
+    for _name, vintage, flows, nav in funds:
+        by.setdefault(vintage, []).append(fund_metrics(flows, nav, as_of))
+    out = []
+    for v in sorted(by):
+        ms = by[v]
+        paid = sum((m.paid_in for m in ms), Decimal(0))
+        dist = sum((m.distributed for m in ms), Decimal(0))
+        nav = sum((m.nav for m in ms), Decimal(0))
+        tv = sorted(m.tvpi for m in ms if m.tvpi is not None)
+        med = None
+        if len(tv) == len(ms):
+            mid = len(tv) // 2
+            med = tv[mid] if len(tv) % 2 else (tv[mid - 1] + tv[mid]) / 2
+        out.append(Cohort(v, len(ms), paid, dist, nav, (dist + nav) / paid if paid else None, med))
+    return out
