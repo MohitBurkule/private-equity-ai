@@ -87,3 +87,30 @@ def test_docx_endpoint_requires_auth_and_returns_word_file():
     assert c.get("/memo.docx", params={"entity": "X"}).status_code == 401
     r = c.get("/memo.docx", params={"entity": "X"}, headers=new_tenant(c, "docx-t"))
     assert r.status_code == 200 and r.content[:2] == b"PK" and "wordprocessingml" in r.headers["content-type"]
+
+
+def test_pptx_export_has_figures_sources_and_respects_empty():
+    import io
+
+    from pptx import Presentation
+
+    from app.memo import build_memo_pptx
+    s, doc = setup_db()
+    kw = {"tenant_id": "t", "entity": "Acme", "period": "FY24", "unit": "USD", "document_id": doc, "page": 1}
+    add_verified_fact(s, metric="revenue", value=Decimal(1000), quote="Total revenues 1,000", **kw)
+
+    def texts(data):
+        return "\n".join(sh.text_frame.text for sl in Presentation(io.BytesIO(data)).slides
+                         for sh in sl.shapes if sh.has_text_frame)
+    t = texts(build_memo_pptx(s, "t", "Acme"))
+    assert "DRAFT" in t and "revenue (FY24, GAAP): 1,000.00 USD [1]" in t and '[1] acme.pdf, p.1: "Total revenues 1,000"' in t
+    assert "Nothing to report" in texts(build_memo_pptx(s, "t", "Nobody"))
+
+
+def test_pptx_endpoint_auth_and_type():
+    from app.main import app
+    from tests.helpers import new_tenant
+    c = TestClient(app)
+    assert c.get("/memo.pptx", params={"entity": "X"}).status_code == 401
+    r = c.get("/memo.pptx", params={"entity": "X"}, headers=new_tenant(c, "pptx-t"))
+    assert r.status_code == 200 and r.content[:2] == b"PK" and "presentationml" in r.headers["content-type"]

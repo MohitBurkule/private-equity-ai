@@ -87,3 +87,37 @@ def build_memo_docx(db: Session, tenant_id: str, entity: str, scope: set[str] | 
     buf = io.BytesIO()
     d.save(buf)
     return buf.getvalue()
+
+
+def build_memo_pptx(db: Session, tenant_id: str, entity: str, scope: set[str] | None = None) -> bytes:
+    """IC deck: title, figures (8 per slide, each with its footnote marker), derived numbers, sources.
+    Same verified-only data as the text and Word memo."""
+    from pptx import Presentation
+    from pptx.util import Pt
+    m = build_memo_data(db, tenant_id, entity, scope)
+    prs = Presentation()
+
+    def bullets(title: str, items: list[str], size: int = 16):
+        sl = prs.slides.add_slide(prs.slide_layouts[1])
+        sl.shapes.title.text = title
+        tf = sl.placeholders[1].text_frame
+        tf.clear()
+        for i, t in enumerate(items):
+            para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            para.text = t
+            para.font.size = Pt(size)
+
+    t = prs.slides.add_slide(prs.slide_layouts[0])
+    t.shapes.title.text = f"{entity}: financial summary"
+    t.placeholders[1].text = "DRAFT. Analyst review required. Only figures whose quote and number were verified against the cited page."
+    if m.empty:
+        bullets("No verified facts", ["Nothing to report."])
+    for i in range(0, len(m.lines), 8):
+        bullets("Figures" + (f" ({i // 8 + 1})" if len(m.lines) > 8 else ""), m.lines[i:i + 8])
+    if m.derived:
+        bullets("Derived (computed in code)", m.derived)
+    for i in range(0, len(m.notes), 6):
+        bullets("Sources" + (f" ({i // 6 + 1})" if len(m.notes) > 6 else ""), m.notes[i:i + 6], 11)
+    buf = io.BytesIO()
+    prs.save(buf)
+    return buf.getvalue()
