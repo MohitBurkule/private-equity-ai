@@ -43,8 +43,11 @@ from app.migrate import migrate
 from app.models import DDRequest, Document, Fact, IngestJob, PageRow
 from app.models import Tenant as TenantRow
 from app.portfolio import (
+    Covenant,
     PortfolioCompany,
+    add_covenant,
     current_kpis,
+    evaluate_covenant,
     qoq_change,
     record_observation,
 )
@@ -552,6 +555,37 @@ def kpis(company_id: int, db: Db, who: Who):
     return [{"metric": o.metric, "period": o.period, "value": str(o.value), "unit": o.unit,
              "fact_id": o.fact_id} for o in current_kpis(db, who.tenant, company_id)
             if fact_visible(db.get(Fact, o.fact_id), scope)]
+
+
+class CovenantIn(BaseModel):
+    kpi_metric: str
+    operator: str
+    threshold_fact_id: int
+
+
+@app.post("/portfolio/companies/{company_id}/covenants", status_code=201)
+def create_covenant(company_id: int, body: CovenantIn, db: Db, who: Writer):
+    f = db.get(Fact, body.threshold_fact_id)
+    if f is not None and f.tenant_id == who.tenant and not fact_visible(f, visible_doc_ids(db, who)):
+        raise HTTPException(422, "covenant threshold must be a verified, cited fact")
+    try:
+        cov = add_covenant(db, who.tenant, company_id, body.kpi_metric, body.operator, body.threshold_fact_id)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    log_event(db, who.tenant, actor(who), "covenant.create", {"covenant_id": cov.id, "company_id": company_id})
+    return {"id": cov.id}
+
+
+@app.get("/portfolio/companies/{company_id}/covenants")
+def covenant_status(company_id: int, db: Db, who: Who):
+    """Every covenant of the company with its tests; `breaches` lists the alerts."""
+    scope = visible_doc_ids(db, who)
+    covs = db.query(Covenant).filter_by(tenant_id=who.tenant, company_id=company_id).all()
+    out = [{"id": c.id, "kpi_metric": c.kpi_metric, "operator": c.operator,
+            "tests": evaluate_covenant(db, c, scope)} for c in covs]
+    breaches = [{"covenant_id": c["id"], "kpi_metric": c["kpi_metric"], **t}
+                for c in out for t in c["tests"] if t["status"] in ("breach", "unit_mismatch")]
+    return {"covenants": out, "breaches": breaches}
 
 
 @app.get("/portfolio/companies/{company_id}/change")
