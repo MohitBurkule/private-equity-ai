@@ -1301,6 +1301,17 @@ def targets_facets(db: Db, who: Who):
     return out
 
 
+@app.get("/targets/benchmark")
+def targets_benchmark(db: Db, who: Who, sector: str | None = None, target_id: int | None = None):
+    """Revenue median and quartiles for a sector, and where one target sits. Excludes targets with no revenue."""
+    t = None
+    if target_id is not None:
+        t = db.get(Target, target_id)
+        if t is None or t.tenant_id != who.tenant:
+            raise HTTPException(404, "target not found")
+    return tg_mod.benchmark(db, who.tenant, sector, t)
+
+
 @app.post("/targets/screen")
 def targets_screen(body: Screen, db: Db, who: Who):
     """Apply strategy criteria. verdict: match | review (some criterion unknown) | fail. Failures are omitted."""

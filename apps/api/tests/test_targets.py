@@ -76,3 +76,18 @@ def test_outreach_drafts_use_only_known_facts():
     assert "USD 150.0 million for FY2023 (http://sec/x)" in full and "software" in full
     assert "revenue" not in bare and "invest in" not in bare  # nothing invented for the sparse target
     assert c.post("/targets/outreach", headers=other, json={"target_ids": ids, "sender": "s", "firm": "f"}).status_code == 404
+
+
+def test_sector_benchmark_excludes_unknown_and_places_target():
+    h = new_tenant(c, "tg5")
+    rows = [{"name": f"S{v}", "source_ref": f"s{v}", "sector": "Software", "revenue": str(v),
+             "revenue_url": "http://x"} for v in (10, 20, 30, 40)]
+    rows += [{"name": "NoRev", "source_ref": "nr", "sector": "Software"},
+             {"name": "Other", "source_ref": "o", "sector": "Mining", "revenue": "999", "revenue_url": "http://x"}]
+    c.post("/targets", headers=h, json=rows)
+    tid = next(t["id"] for t in c.get("/targets?q=S30", headers=h).json()["items"])
+    b = c.get(f"/targets/benchmark?sector=software&target_id={tid}", headers=h).json()
+    assert b["peers"] == 4 and b["excluded_no_revenue"] == 1
+    assert Decimal(b["median"]) == 25 and Decimal(b["min"]) == 10 and Decimal(b["max"]) == 40
+    assert b["target"]["percentile"] == 50  # 30 is above 10 and 20 of 4 peers
+    assert c.get("/targets/benchmark?target_id=999999", headers=h).status_code == 404
