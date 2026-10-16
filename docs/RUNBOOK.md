@@ -87,3 +87,7 @@ Some filing text drops blank cells, so a row has fewer values than columns. `POS
 ## Companies House
 
 `GET /uk/company/{number}/accounts` lists accounts filings with document links. Needs `COMPANIES_HOUSE_API_KEY` (503 without). Tests use a SYNTHETIC fixture (`tests/fixtures/ch_filing_history_SYNTHETIC.json`); replace it with a saved real response once a key exists. Add the variable to `docs/DEPLOY.md` settings.
+
+## Holdings import (Seedrs/Republic, Crowdcube, any CSV)
+
+`POST /holdings/import` (multipart: `file`, `platform`, optional `currency`, optional `mapping` JSON) imports a holdings export the user downloaded. No scraping and no assumed platform layout: columns are found by common names or by your mapping; currency is never assumed; dates must be ISO. Bad rows are rejected with their line number. Every holding keeps its source document and line. Re-importing the same file returns 409. `GET /holdings` lists them. Walled keys cannot import or list. The test CSV is a made-up layout, not a real platform export; send a real one to add a named mapper.
