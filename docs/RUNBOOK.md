@@ -103,3 +103,7 @@ Some filing text drops blank cells, so a row has fewer values than columns. `POS
 ## Evals dashboard
 
 `python evals/record.py DATA_DIR [suite ...]` (with `PE_API_URL` and `PE_API_KEY`) runs the golden, retrieval, uk and xbrl suites and posts each result to `POST /evals`; the Evals tab shows the latest run per suite against the previous one and lists misses. A suite that cannot run is reported and not recorded. Last local runs: golden 9 of 9 rows found, uk 45 of 45 correct, xbrl 118 of 118 match (4 items have no inline/API pair and are counted separately).
+
+## Retrieval choice
+
+Search uses BM25. A hybrid index (BM25 plus char-trigram ranker, fused with RRF) exists in `app/hybrid.py` but is not wired in: on the 14 FinanceBench questions whose filings are available it gave recall@1 0.143 / @3 0.429 / @5 0.429 / @10 0.5 against BM25 0.143 / 0.286 / 0.5 / 0.571, so it is not clearly better and n is small. Dense rankers plug in through the `Ranker` protocol once model access exists; wire hybrid only if the eval shows a gain on a larger set.
