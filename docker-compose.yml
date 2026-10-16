@@ -7,6 +7,9 @@ services:
       MIGRATE_DATABASE_URL: postgresql+psycopg://pe_owner:change-me-owner@db:5432/pe
       APP_DB_ROLE: pe_app
       ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN to enable tenant creation}
+      SPOOL_DIR: /spool
+    volumes:
+      - spool:/spool
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_started}
@@ -28,3 +31,4 @@ services:
     image: redis:7
 volumes:
   pgdata:
+  spool:
