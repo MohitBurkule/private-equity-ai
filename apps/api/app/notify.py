@@ -2,9 +2,9 @@
 sent to an address configured globally."""
 from __future__ import annotations
 
+import logging
 import os
 import re
-import logging
 import smtplib
 import threading
 from datetime import UTC, datetime
@@ -94,7 +94,7 @@ def start_periodic_scan(session_factory: sessionmaker) -> threading.Event | None
         while not stop.wait(interval):
             try:
                 scan_all(session_factory)
-            except Exception:  # noqa: BLE001  one bad tick must not kill the scheduler
+            except Exception:
                 log.exception("periodic alert scan failed")
 
     threading.Thread(target=loop, name="alert-scan", daemon=True).start()
