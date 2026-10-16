@@ -43,6 +43,13 @@ export interface DDRow { id: number; deal: string; category: string; title: stri
 export interface EvalRunRow { id: number; suite: string; ran_at: string; note: string | null; metrics: Record<string, unknown> }
 export interface Breach { company: string; kpi_metric: string; period: string; status: string; value: string; threshold: string; unit?: string }
 export interface Conflict { entity: string; metric: string; period: string; spread_pct: string; likely_rounding: boolean }
+export interface Connector { name: string; label: string; category: string; auth: string; status: "live" | "planned" }
+export interface CompsOut {
+  target: string; period: string;
+  peers: { entity: string; multiples: Record<string, string | null> }[];
+  stats: Record<string, { n: number; min: string | null; q1: string | null; median: string | null; q3: string | null; max: string | null }>;
+  implied: { metric: string; multiple: string; low?: string | null; mid?: string | null; high?: string | null; unit?: string; note: string; target_value?: string }[];
+}
 export interface Report {
   breaches: Breach[];
   companies: { id: number; name: string; kpis: { metric: string; period: string; value: string; unit: string; sources: { document_id: string; page: number }[] }[] }[];
@@ -67,6 +74,10 @@ export const api2 = {
   ddSeed: (deal: string) => call<{ created: number }>("/dd/requests/seed", "POST", { deal }),
   ddStatus: (id: number, status: string) => call<DDRow>(`/dd/requests/${id}`, "PATCH", { status }),
   report: () => call<Report>("/portfolio/report"),
+  connectors: () => call<Connector[]>("/connectors"),
+  syncConnector: (name: string, token: string, deal: string) =>
+    call<{ ingested: unknown[]; skipped?: unknown[] }>(`/connectors/${name}/sync`, "POST", { token, deal: deal || null, limit: 50 }),
+  comps: (body: { target: string; peers: string[]; period: string; metrics: string[] }) => call<CompsOut>("/calc/comps", "POST", body),
   conflicts: () => call<Conflict[]>("/facts/conflicts"),
   evals: () => call<EvalRunRow[]>("/evals?limit=200"),
 };

@@ -1,10 +1,12 @@
-import { BarChart3, FileText, FlaskConical, LayoutGrid, LogOut, MessageSquare, ShieldCheck, Briefcase } from "lucide-react";
+import { BarChart3, Calculator, FileText, Plug, FlaskConical, LayoutGrid, LogOut, MessageSquare, ShieldCheck, Briefcase } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { api, getApiKey, setApiKey } from "./api";
 import { Chat } from "./Chat";
 import { Dashboards } from "./Dashboards";
+import { Comps } from "./Comps";
 import { Documents } from "./Documents";
+import { Integrations } from "./Integrations";
 import { Inbox } from "./Inbox";
 import { Deals, EvalDashboard, PortfolioPanel, ReviewQueue } from "./Panels";
 import { SourceProvider } from "./source";
@@ -17,6 +19,8 @@ const NAV: { id: string; icon: ReactNode }[] = [
   { id: "Deals", icon: <Briefcase size={16} /> },
   { id: "Portfolio", icon: <LayoutGrid size={16} /> },
   { id: "Dashboards", icon: <BarChart3 size={16} /> },
+  { id: "Comps", icon: <Calculator size={16} /> },
+  { id: "Integrations", icon: <Plug size={16} /> },
   { id: "Review", icon: <ShieldCheck size={16} /> },
   { id: "Evals", icon: <FlaskConical size={16} /> },
 ];
@@ -79,6 +83,8 @@ export function App() {
         {tab === "Deals" && <Deals />}
         {tab === "Portfolio" && <PortfolioPanel />}
         {tab === "Dashboards" && <Dashboards />}
+        {tab === "Comps" && <Comps />}
+        {tab === "Integrations" && <Integrations />}
         {tab === "Review" && <ReviewQueue />}
         {tab === "Evals" && <EvalDashboard />}
       </SourceProvider>

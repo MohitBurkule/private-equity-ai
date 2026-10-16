@@ -15,6 +15,8 @@ An analyst loads deal documents, searches them, and every number in the output l
 | Interactive dashboards | Deals and diligence tracker |
 | ![Portfolio](docs/screenshots/07-portfolio.png) | ![Documents](docs/screenshots/05-documents.png) |
 | Covenant breach from cited facts | Documents, search, memo |
+| ![Comps](docs/screenshots/11-comps.png) | ![Integrations](docs/screenshots/12-integrations.png) |
+| Comps with a cited implied range | Integrations catalog and import |
 
 Known rough edges: `/ask` and auto-extraction need an LLM key and have not run against a real model.
 
