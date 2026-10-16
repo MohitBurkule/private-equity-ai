@@ -88,3 +88,38 @@ def test_unknown_connector_and_bad_response(monkeypatch):
     assert c.post("/connectors/nope/sync", json={"token": "t"}, headers=h).status_code == 404
     monkeypatch.setattr(m, "CONNECTOR_HTTP", lambda u, hd: b"<html>")
     assert c.post("/connectors/gmail/sync", json={"token": "t"}, headers=h).status_code == 502
+
+
+def test_gdrive_exports_native_sheets_and_recurses(monkeypatch):
+    D = "https://www.googleapis.com/drive/v3/files"
+    plain = eml("drv", "hello")
+    routes = {
+        f"{D}/s1/export": plain, f"{D}/p1?alt=media": plain,
+        D + "?q=%27sub%27": {"files": [{"id": "p1", "name": "n.eml", "mimeType": "message/rfc822", "webViewLink": "https://d/p1", "modifiedTime": "t1"}]},
+        D + "?q=%27root%27": {"files": [
+            {"id": "sub", "name": "Legal", "mimeType": "application/vnd.google-apps.folder"},
+            {"id": "s1", "name": "Model", "mimeType": "application/vnd.google-apps.spreadsheet", "webViewLink": "https://d/s1", "modifiedTime": "t0"},
+            {"id": "f", "name": "Form", "mimeType": "application/vnd.google-apps.form"}]},
+    }
+    from app.connectors.files import GoogleDrive
+    names = [(i.name, i.url) for i in GoogleDrive("tok", fake(routes)).items()]
+    assert ("Model.xlsx", "https://d/s1") in names and ("Legal/n.eml", "https://d/p1") in names
+    assert len(names) == 2  # form skipped
+
+
+def test_box_and_dropbox_paths():
+    from app.connectors.files import Box, Dropbox
+    plain = eml("b", "x")
+    box = fake({"https://api.box.com/2.0/folders/0/items": {"total_count": 1, "entries": [{"id": "9", "name": "a.eml", "type": "file", "etag": "3"}]},
+                "https://api.box.com/2.0/files/9/content": plain})
+    it = list(Box("tok", box).items())
+    assert it[0].url == "https://app.box.com/file/9" and it[0].version == "3"
+
+    def dbx(url, headers):
+        assert headers["Authorization"] == "Bearer tok"
+        if url.endswith("list_folder"):
+            return json.dumps({"entries": [{".tag": "file", "id": "id:1", "path_display": "/Deals/a.eml", "rev": "r1"}], "has_more": False}).encode()
+        assert json.loads(headers["Dropbox-API-Arg"]) == {"path": "id:1"}
+        return plain
+    d = list(Dropbox("tok", dbx).items())
+    assert d[0].name == "Deals/a.eml" and d[0].url.endswith("/Deals/a.eml")
