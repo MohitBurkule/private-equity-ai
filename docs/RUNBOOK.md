@@ -73,3 +73,5 @@ No point-in-time recovery, no per-person identity (OIDC), uploads are parsed in-
 ## Portfolio report
 
 `GET /portfolio/report` (JSON) and `/portfolio/report.docx`: covenant alerts first, then each company's current KPIs with source document and page. Only facts the key may see are used.
+
+See `docs/DEPLOY.md` for production settings and request tracing.
