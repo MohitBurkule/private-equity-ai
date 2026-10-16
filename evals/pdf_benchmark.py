@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps" / "api"))
-from app.parse import engines  # noqa: E402
+from app.parse import engines
 
 NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
@@ -42,14 +42,14 @@ def items(data: Path):
             labels = [p.strip() for p in s["row_label"].split(";")]
             if len(labels) != len(parts):
                 labels = [""] * len(parts)
-            out.append(dict(id=r["id"], file=f, page=s["pdf_page_1based"], parts=list(zip(labels, parts)), kind="golden_v1"))
+            out.append({"id": r["id"], "file": f, "page": s["pdf_page_1based"], "parts": list(zip(labels, parts)), "kind": "golden_v1"})
     for l in (gdir / "golden_sh01_v1.jsonl").open():
         r = json.loads(l)
         for s in r["sources"]:
             if s["type"] == "pdf-text" or s["type"] == "pdf-ocr" or s["type"].startswith("pdf"):
                 f = data / s["file"]
                 if f.exists():
-                    out.append(dict(id=r["id"], file=f, page=s["page"], parts=[("", s["quote"])], kind="sh01"))
+                    out.append({"id": r["id"], "file": f, "page": s["page"], "parts": [("", s["quote"])], "kind": "sh01"})
     return out
 
 

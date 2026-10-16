@@ -97,8 +97,8 @@ def _pdftotext(path, pages):
         out = subprocess.run(["pdftotext", "-bbox-layout", "-f", str(p), "-l", str(p), str(path), "-"],
                              capture_output=True, text=True, check=False).stdout
         lines = []
-        for m in re.finditer(r'<line xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">(.*?)</line>', out, re.S):
-            ws = re.findall(r"<word[^>]*>(.*?)</word>", m.group(5), re.S)
+        for m in re.finditer(r'<line xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">(.*?)</line>', out, re.DOTALL):
+            ws = re.findall(r"<word[^>]*>(.*?)</word>", m.group(5), re.DOTALL)
             txt = " ".join(ws).replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"').replace("&#39;", "'")
             lines.append(Line(txt, tuple(float(m.group(i)) for i in range(1, 5)), "pdftotext"))
         yield PageResult("pdftotext", p, lines)
