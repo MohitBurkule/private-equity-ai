@@ -31,6 +31,8 @@ from app.auth import (
 from app.calc import Calc, ltm, net_debt, nwc
 from app.db import make_engine, make_session_factory
 from app.edgar import fetch_companyfacts
+from app.extract.run import extract_schema
+from app.extract.schemas import SCHEMAS
 from app.facts import CitationError, add_verified_fact, review_fact
 from app.ingest import ingest_any
 from app.llm import LLM, NoLLMConfigured, get_llm
@@ -432,6 +434,34 @@ def llm_dependency() -> LLM:
 class AskIn(BaseModel):
     question: str
     doc_id: str | None = None
+
+
+class ExtractIn(BaseModel):
+    schema_name: str
+    entity: str
+    period: str
+
+
+@app.get("/extract/schemas")
+def extract_schemas(tenant: Tenant):
+    return {k: [{"metric": f.metric, "unit": f.unit, "description": f.description} for f in v]
+            for k, v in SCHEMAS.items()}
+
+
+@app.post("/documents/{doc_id}/extract")
+def extract(doc_id: str, body: ExtractIn, db: Db, who: Writer, llm: Annotated[LLM, Depends(llm_dependency)]):
+    doc = _own_doc(db, who, doc_id)
+    if body.schema_name not in SCHEMAS:
+        raise HTTPException(422, f"schema must be one of {sorted(SCHEMAS)}")
+    res = extract_schema(db, who.tenant, llm, doc, body.schema_name, body.entity, body.period)
+    log_event(db, who.tenant, actor(who), "extract",
+              {"document_id": doc.id, "schema": body.schema_name,
+               "accepted": sum(r.status == "accepted" for r in res.results)})
+    return {"schema": res.schema, "detail": res.detail,
+            "note": "accepted values are stored as status 'auto'; accept them in the review queue to use them",
+            "fields": [{"metric": r.metric, "status": r.status, "value": None if r.value is None else str(r.value),
+                        "page": r.page, "quote": r.quote, "reason": r.reason, "fact_id": r.fact_id}
+                       for r in res.results]}
 
 
 @app.post("/ask")
