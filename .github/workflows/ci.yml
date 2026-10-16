@@ -48,6 +48,7 @@ jobs:
           psql -h localhost -U postgres pe_ci -v ON_ERROR_STOP=1 <<'SQL'
           CREATE ROLE pe_owner LOGIN PASSWORD 'o';
           CREATE ROLE pe_app LOGIN PASSWORD 'a' NOSUPERUSER NOBYPASSRLS;
+          ALTER DATABASE pe_ci OWNER TO pe_owner;
           GRANT ALL ON SCHEMA public TO pe_owner;
           GRANT USAGE ON SCHEMA public TO pe_app;
           SQL
