@@ -33,3 +33,9 @@ def test_search_scoped_and_ranked():
     ])
     hits = idx.search("capex", k=3, doc_ids={"a"})
     assert [(h.doc_id, h.page) for h in hits] == [("a", 2)]
+
+
+def test_dollar_signs_and_spacing_stripped_from_raw():
+    line = "Net income attributable to Pfizer Inc.      $         21,979      $       9,159"
+    (row,) = extract_rows(line, 57)
+    assert row.raw_values == ("21,979", "9,159")
