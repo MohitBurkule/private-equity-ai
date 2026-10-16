@@ -23,6 +23,7 @@ from app import comps as comps_mod
 from app import firm_knowledge as fk
 from app import jobs as jobs_mod
 from app import legal as legal_mod
+from app import notify
 from app.acl import Principal, doc_visible, fact_visible, visible_doc_ids
 from app.answer import answer_question
 from app.audit import log_event, verify_chain
@@ -98,6 +99,7 @@ apply_rls(_owner, os.environ.get("APP_DB_ROLE"))
 verify_app_role(engine)
 
 jobs_mod.requeue_pending(SessionLocal)
+notify.start_periodic_scan(SessionLocal)
 MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
 
 app = FastAPI(title="PE Platform API", version="0.0.1")
@@ -1423,3 +1425,23 @@ def alerts_status(alert_id: int, body: AlertStatusIn, db: Db, who: Writer):
     if a is None:
         raise HTTPException(404, "not found")
     return al.alert_dict(a)
+
+
+class DigestIn(BaseModel):
+    to: list[str]
+
+
+@app.post("/alerts/digest")
+def alerts_digest(body: DigestIn, db: Db, who: Writer):
+    """Email the alerts that have not been emailed yet to the given addresses."""
+    _unrestricted(who)
+    try:
+        n = notify.send_digest(db, who.tenant, body.to)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except notify.MailNotConfigured as e:
+        raise HTTPException(503, str(e)) from e
+    except OSError as e:
+        raise HTTPException(502, f"mail server error: {e}") from e
+    log_event(db, who.tenant, actor(who), "alerts.digest", {"sent": n, "recipients": len(body.to)})
+    return {"sent": n}

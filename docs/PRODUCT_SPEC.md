@@ -42,7 +42,7 @@ Target modules: `firm_knowledge.py` (profile), `agent.py` (tool registry, workfl
 | 6 | Precedent transactions | MISSING | Holdings import has deal rows; needs multiple calc + dataset | comps |
 | 7 | Legal review (NDA, SPA, covenants) | PARTIAL | Covenants table, extract schemas, cap table, share ledger, waterfall. Missing: clause library, playbook compare, red-flag table | workflows |
 | 8 | Portfolio tracking | BUILT (core) | Companies, KPI observations, covenants, change report, DOCX report, fund metrics, cohorts | - |
-| 9 | Scheduled workflows and proactive alerts (inbox, email) | PARTIAL | Alert inbox + covenant watcher (`/alerts`), workflow runs (`/agent`). Missing: cron scheduler, email delivery, filing/KPI/screening watchers | agent core |
+| 9 | Scheduled workflows and proactive alerts (inbox, email) | PARTIAL | Alert inbox + covenant watcher (`/alerts`), workflow runs (`/agent`). Email digest (`/alerts/digest`, SMTP) and periodic scan (`ALERT_SCAN_INTERVAL_S`) built. Missing: filing, KPI, screening watchers; per-user recipients | agent core |
 | 10 | Document generation (decks, research, outreach emails) | PARTIAL | memo DOCX/PPTX, portfolio DOCX. Missing: outreach email batch, research report | workflows |
 | 11 | Interactive dashboards | PARTIAL | React app, KPI panels. Missing: filterable target map, quarterly KPI board | UI |
 | 12 | Integrations (FactSet, PitchBook, DealCloud, SharePoint, Outlook, Gmail, Drive, LinkedIn, Cap IQ) | PARTIAL | FactSet quote, PitchBook export, Yahoo/Stooq, SEC, CH. Missing: OAuth connectors, DealCloud, SharePoint, Outlook, Drive | integrations |
