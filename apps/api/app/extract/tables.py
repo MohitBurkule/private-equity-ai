@@ -48,7 +48,7 @@ def extract_rows(page_text: str, page: int) -> list[Row]:
         m = _ROW.match(line)
         if not m:
             continue
-        raws = tuple(x.strip() for x in _NUM.findall(m.group("nums")))
+        raws = tuple(re.sub(r"[\s$]", "", x) for x in _NUM.findall(m.group("nums")))
         vals = tuple(p.value for r in raws if (p := parse_number(r)) is not None)
         if not vals or len(vals) != len(raws):
             continue
