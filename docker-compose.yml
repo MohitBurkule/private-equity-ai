@@ -8,6 +8,7 @@ services:
       APP_DB_ROLE: pe_app
       ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN to enable tenant creation}
       SPOOL_DIR: /spool
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - spool:/spool
     depends_on:
