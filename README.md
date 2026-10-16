@@ -17,6 +17,8 @@ An analyst loads deal documents, searches them, and every number in the output l
 | Covenant breach from cited facts | Documents, search, memo |
 | ![Comps](docs/screenshots/11-comps.png) | ![Integrations](docs/screenshots/12-integrations.png) |
 | Comps with a cited implied range | Integrations catalog and import |
+| ![Firm profile](docs/screenshots/13-firm-profile.png) | ![Workflows](docs/screenshots/14-workflows.png) |
+| Firm profile: rules found in your documents | Workflows built from the agent tools |
 
 Known rough edges: `/ask` and auto-extraction need an LLM key and have not run against a real model.
 
