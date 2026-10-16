@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from openpyxl import Workbook
 
 from app import agent as ag
-from app.main import app, llm_dependency
+from app.main import app, llm_dependency, optional_llm_dependency
 from tests.helpers import new_tenant
 
 c = TestClient(app)
@@ -98,3 +98,18 @@ def test_profile_tool_returns_accepted_only():
     h = new_tenant(c, "ag5")
     ag.register_workflow(ag.Workflow("test_prof", "t", {}, (ag.Step("p", "get_firm_profile"),)))
     assert c.post("/agent/workflows/test_prof/run", headers=h, json={}).json()["result"] == {}
+
+
+def test_build_firm_profile_workflow_extracts_then_reports_gaps():
+    h = new_tenant(c, "ag6")
+    doc = upload(h, ["Board meets quarterly"])
+    llm = Script([json.dumps({"values": [
+        {"key": "board_meeting_frequency", "value": "quarterly", "page": 1, "quote": "Board meets quarterly"}]})])
+    app.dependency_overrides[optional_llm_dependency] = lambda: llm
+    try:
+        r = c.post("/agent/workflows/build_firm_profile/run", headers=h, json={"inputs": {"document_id": doc}}).json()
+    finally:
+        app.dependency_overrides.pop(optional_llm_dependency)
+    assert r["status"] == "done", r
+    assert len(r["steps"][0]["output"]["saved"]) == 1
+    assert "board_meeting_frequency" in r["result"]["missing"]  # pending is not known until accepted
