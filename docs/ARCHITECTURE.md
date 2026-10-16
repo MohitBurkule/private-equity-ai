@@ -1,6 +1,6 @@
 # PE Platform Architecture (v0.1 draft)
 
-Status: draft. Research (/research) and sample data (/data) not yet available; revise when they land.
+Status: v0.2. Revised with research round 1 (research/00-INDEX.md) and sample-data notes (data/NOTES.md). Research items tagged unverified there stay unverified here.
 
 ## 1. Principles
 1. **Every number carries provenance.** No claim exists without a pointer to source doc + page + bbox/cell + extraction run. Unsourced output is rejected by the system, not by the reviewer.
@@ -74,7 +74,7 @@ Status: draft. Research (/research) and sample data (/data) not yet available; r
 ## 6. Alternatives considered
 - **Vector DB**: pgvector (chosen v1, one DB, RLS-compatible) vs Qdrant/Weaviate (scale, filtering) vs Elasticsearch dense. Interface-wrapped to swap.
 - **Lexical search**: Elasticsearch vs OpenSearch (licence) vs Postgres FTS. Start Postgres FTS + OpenSearch optional; hybrid needed for exact numbers/names.
-- **Parsing**: Docling / Unstructured / LlamaParse / Azure Document Intelligence / Textract. Default open-source Docling, pluggable cloud for hard scans; benchmark on sample data.
+- **Parsing**: Docling / Unstructured / LlamaParse / Azure Document Intelligence / Textract. Default Docling (permissive). **No AGPL/GPL parsers in core** (PyMuPDF, Marker, Surya, MinerU; OpenBB core): only as separately-deployed optional services, licence reviewed. pdf.js for viewer. Pluggable cloud OCR for hard scans; benchmark on sample data.
 - **Orchestration**: LangGraph (chosen for stateful agents) vs LlamaIndex Workflows vs custom. LlamaIndex used for ingestion/retrieval only; avoid framework lock-in via thin adapters.
 - **LLMs**: Claude/GPT for reasoning; open models (Llama, Qwen, Mistral) via vLLM for on-prem tenants. Eval-driven selection.
 - **Embeddings**: OpenAI, Voyage, BGE/E5 (open). Finance-tuned evaluated.
@@ -101,3 +101,16 @@ M0 scaffold+CI+auth+RLS. M1 ingest/parse/citation viewer. M2 extraction+verifier
 
 ## 11. Open questions
 Repo name; deployment target (cloud/on-prem); which vendor licences user holds (FactSet/PitchBook); target doc types; open-source licence (Apache-2.0 suggested).
+
+## 12. Revisions from research round 1
+1. **Scope before retrieval.** Retrieval inside the filing is the bottleneck. Resolve company, period, doc type from metadata first, then search within that scope. `retrieve` takes a mandatory scope object; unscoped search is an explicit fallback.
+2. **Numbers are code-checked, never LLM-judged.** `verify` compares claimed numbers to structured sources (XBRL companyfacts for filings, table cells for PDFs/Excel) with deterministic code. LLM judges only qualitative entailment.
+3. **Span-level citations.** Evidence = doc id, PDF page (1-based), printed page label, bbox/line, table id + row label + column period. Code verifies the cited span contains the claimed value. A valid link alone is not enough.
+4. **Abstention is first-class.** Answers may be "not found". Eval reports wrong-answer rate separately from abstention rate.
+5. **Table extraction rules from hand tests (data/NOTES.md):** unit+scale bound per table (not per row); keep raw string and sign convention (parentheses = outflow) plus normalized value; column-to-period binding from header row; strip inline footnote numbers from row labels; same label in several statements needs statement-type disambiguation (e.g. MD&A vs cash-flow capex); `basis` tag GAAP/non-GAAP (earnings releases redefine items); narrative questions need paragraph-span citations, not cells.
+6. **Page indexing:** source datasets (FinanceBench) are 0-indexed; store 1-based PDF page everywhere, convert at import.
+7. **Restatements:** same company, multiple vintages; facts carry `as_reported_in` document and `restated_by` link. Test pair: 3M 2018 vs 2019 10-K.
+8. **Eval data licensing:** FinanceBench is non-commercial, internal eval only, never shipped in the open-source repo. Build a PE golden set (CIMs, QoE, Excel models) since no public benchmark covers them; needs user-supplied documents.
+9. **Secondary markets (Seedrs/Crowdcube):** no official API found. Ingest user-uploaded exports; no scrapers.
+10. **Permissions-aware retrieval, ethical walls, audit trail from M0** (already in section 5; now a hard M0 gate).
+11. **Untested:** OCR path (all 10 sample docs have text layers), restatement handling, XBRL cross-check. Blocked on network allowlist for sec.gov, data.sec.gov, Companies House.
