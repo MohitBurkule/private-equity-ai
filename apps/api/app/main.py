@@ -17,7 +17,9 @@ from fastapi import (
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app import agent as ag
 from app import comps as comps_mod
+from app import firm_knowledge as fk
 from app import jobs as jobs_mod
 from app import legal as legal_mod
 from app import targets as tg_mod
@@ -53,6 +55,7 @@ from app.memo import build_memo, build_memo_docx, build_memo_pptx
 from app.migrate import migrate
 from app.models import (
     STAGES,
+    AgentRun,
     DDRequest,
     Deal,
     Document,
@@ -1435,6 +1438,104 @@ def ask(body: AskIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_dependenc
     cite = lambda c: {"text": c.text, "document_id": c.doc_id, "page": c.page, "quote": c.quote}
     return {"status": a.status, "detail": a.detail, "claims": [cite(c) for c in a.claims],
             "rejected": [{**cite(c), "reason": c.reason} for c in a.rejected]}
+
+
+class FKExtractIn(BaseModel):
+    document_id: str
+    keys: list[str] | None = None
+
+
+class FKReviewIn(BaseModel):
+    status: str
+    value: str | None = None
+
+
+@app.get("/firm-knowledge/terms")
+def fk_terms(who: Who):
+    return [{"key": t.key, "group": t.group, "label": t.label, "hint": t.hint} for t in fk.TERMS]
+
+
+@app.get("/firm-knowledge")
+def fk_profile(db: Db, who: Who, include_pending: bool = False):
+    return {"profile": fk.profile(db, who.tenant, include_pending), "coverage": fk.coverage(db, who.tenant)}
+
+
+@app.post("/firm-knowledge/extract")
+def fk_extract(body: FKExtractIn, db: Db, who: Writer, llm: Annotated[LLM, Depends(llm_dependency)]):
+    doc = _own_doc(db, who, body.document_id)
+    bad = [k for k in body.keys or [] if k not in fk.BY_KEY]
+    if bad:
+        raise HTTPException(422, f"unknown keys: {bad}")
+    res = fk.extract_profile(db, who.tenant, llm, doc, body.keys)
+    log_event(db, who.tenant, actor(who), "firm_knowledge.extract",
+              {"document_id": doc.id, "saved": len(res.saved), "rejected": len(res.rejected)})
+    return {"saved": [fk.row_dict(r) for r in res.saved], "rejected": res.rejected, "detail": res.detail}
+
+
+@app.post("/firm-knowledge/{fk_id}/review")
+def fk_review(fk_id: int, body: FKReviewIn, db: Db, who: Writer):
+    try:
+        r = fk.review(db, who.tenant, fk_id, body.status, body.value)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    if r is None:
+        raise HTTPException(404, "not found")
+    log_event(db, who.tenant, actor(who), "firm_knowledge.review", {"id": fk_id, "status": r.status})
+    return fk.row_dict(r)
+
+
+class AgentIn(BaseModel):
+    goal: str
+    max_steps: int = 6
+
+
+class WorkflowIn(BaseModel):
+    inputs: dict = {}
+
+
+@app.get("/agent/tools")
+def agent_tools(who: Who):
+    return [{"name": t.name, "description": t.description, "params": t.params, "writes": t.writes}
+            for t in ag.TOOLS.values()]
+
+
+@app.get("/agent/workflows")
+def agent_workflows(who: Who):
+    return [{"name": w.name, "description": w.description, "inputs": w.inputs,
+             "steps": [{"id": s.id, "tool": s.tool} for s in w.steps]} for w in ag.WORKFLOWS.values()]
+
+
+@app.post("/agent/run")
+def agent_run(body: AgentIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_dependency)]):
+    if not body.goal.strip():
+        raise HTTPException(422, "goal is required")
+    r = ag.run_agent(ag.Ctx(db, who, llm), body.goal.strip(), body.max_steps)
+    log_event(db, who.tenant, actor(who), "agent.run", {"run_id": r.id, "status": r.status})
+    return ag.run_dict(r)
+
+
+@app.post("/agent/workflows/{name}/run")
+def agent_workflow_run(name: str, body: WorkflowIn, db: Db, who: Who):
+    try:
+        r = ag.run_workflow(ag.Ctx(db, who, _optional_llm(), allow_writes=who.can_write), name, body.inputs)
+    except ag.ToolError as e:
+        raise HTTPException(422 if "unknown workflow" not in str(e) else 404, str(e)) from e
+    log_event(db, who.tenant, actor(who), "agent.workflow", {"run_id": r.id, "name": name, "status": r.status})
+    return ag.run_dict(r)
+
+
+@app.get("/agent/runs")
+def agent_runs(db: Db, who: Who, limit: int = 20):
+    rows = (db.query(AgentRun).filter_by(tenant_id=who.tenant).order_by(AgentRun.id.desc())
+            .limit(max(1, min(limit, 100))).all())
+    return [ag.run_dict(r) for r in rows]
+
+
+def _optional_llm():
+    try:
+        return get_llm()
+    except NoLLMConfigured:
+        return None
 
 
 CONNECTOR_HTTP = default_http  # tests replace this with recorded responses

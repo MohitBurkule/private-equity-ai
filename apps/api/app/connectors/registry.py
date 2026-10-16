@@ -4,11 +4,14 @@
 from __future__ import annotations
 
 from app.connectors.base import Connector
+from app.connectors.crm import Affinity, DealCloud, HubSpot, Salesforce
 from app.connectors.files import Box, Dropbox, GoogleDrive
 from app.connectors.gmail import Gmail
 from app.connectors.graph import OneDriveSharePoint, Outlook
+from app.connectors.slack import Slack
 
-IMPLEMENTED: dict[str, type[Connector]] = {c.name: c for c in (Gmail, Outlook, OneDriveSharePoint, GoogleDrive, Box, Dropbox)}
+IMPLEMENTED: dict[str, type[Connector]] = {c.name: c for c in (Gmail, Outlook, OneDriveSharePoint, GoogleDrive, Box, Dropbox,
+                                                                     Salesforce, HubSpot, Affinity, DealCloud, Slack)}
 
 CATALOG = [  # (name, label, category, auth)
     ("gmail", "Gmail", "email", "OAuth2"), ("outlook", "Outlook / Exchange", "email", "OAuth2 (Graph)"),
