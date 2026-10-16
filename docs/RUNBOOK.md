@@ -33,6 +33,10 @@ The response contains the API key once; only its hash is stored. Paste it into t
 - Limits: 2000 files, `MAX_ARCHIVE_UNCOMPRESSED_BYTES` (1 GB), nesting depth 3. Encrypted members, path-escaping names and size-mismatched members are skipped with a reason. A `deal` tag applies to every member.
 - DOCX has no real pages: text is cut into ~3000-char chunks labelled by the nearest heading, so a citation page is a chunk, not a printed page. Legacy .doc/.ppt/.msg are not supported. No malware scan yet.
 
+## Contradictions and DD requests
+- `GET /facts/conflicts[?entity=]`: same entity, metric, period, basis and unit with different values across facts (rejected ignored). Reports spread and `likely_rounding` (under 0.5%); never picks a winner. It only sees facts that were created, so it is as complete as the extraction and review work.
+- DD list: `POST /dd/requests/seed {deal, categories?}` (standard template: financial, commercial, legal, tax, hr, it_esg), `POST /dd/requests`, `GET /dd/requests?deal=&status=`, `PATCH /dd/requests/{id}` (status open/received/waived, or `document_id` which must belong to the same deal and marks it received), `GET /dd/summary?deal=` (percent complete, missing items). Walled keys only see and change their own deals.
+
 ## Background ingest
 - `POST /documents/async` (same fields and walls as `/documents`) returns 202 `{job_id}`; poll `GET /jobs/{id}` (status queued/running/done/failed, stage, attempts, result with `documents` and `skipped`). `GET /jobs` lists the latest 100; walled keys see only their own jobs.
 - Env: `INGEST_WORKERS` (2), `SPOOL_DIR` (system temp; put it on a persistent volume), `SCAN_COMMAND` (for example `clamdscan --no-summary`; the file path is appended; non-zero exit fails the job and removes the file; unset = no scan).

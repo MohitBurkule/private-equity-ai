@@ -95,3 +95,17 @@ class IngestJob(Base):
     spool_path: Mapped[str] = mapped_column(String(512), default="")
     created_at: Mapped[str] = mapped_column(String(40), default="")
     updated_at: Mapped[str] = mapped_column(String(40), default="")
+
+
+class DDRequest(Base):
+    """One line of a due-diligence request list. Linking a document marks it received."""
+    __tablename__ = "dd_request"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    deal: Mapped[str] = mapped_column(String(128), index=True)
+    category: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(512))
+    status: Mapped[str] = mapped_column(String(16), default="open")  # open | received | waived
+    document_id: Mapped[str | None] = mapped_column(ForeignKey("document.id"), default=None)
+    note: Mapped[str | None] = mapped_column(Text, default=None)
+    updated_at: Mapped[str] = mapped_column(String(40), default="")
