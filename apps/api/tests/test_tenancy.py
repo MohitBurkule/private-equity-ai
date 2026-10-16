@@ -57,7 +57,7 @@ def test_cannot_read_search_or_cite_other_tenants_document(two_tenants):
     r = c.post("/facts", headers=b, json={
         "entity": "X", "metric": "revenue", "period": "FY", "value": "1234", "unit": "USD",
         "document_id": doc, "page": 1, "quote": "Sheet!B1: 1,234"})
-    assert r.status_code == 422
+    assert r.status_code == 404
 
 
 def test_memo_and_portfolio_are_tenant_scoped(two_tenants):
