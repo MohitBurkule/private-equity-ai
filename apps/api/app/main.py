@@ -643,6 +643,41 @@ def market_quote(symbol: str, provider: str, who: Who, fetch: Annotated[Callable
     return {"symbol": q.symbol, "price": str(q.price), "currency": q.currency, "as_of": q.as_of, "source": q.source}
 
 
+@app.post("/documents/{doc_id}/vendor-facts")
+def vendor_facts(doc_id: str, db: Db, who: Writer, preset: str, commit: bool = False,
+                 currency: str | None = None):
+    """Propose (or with commit=true store) cited facts from an uploaded PitchBook, Crowdcube or Seedrs/Republic
+    CSV export. Each fact quotes its `Header=value` cell and passes the normal gate; rows whose currency
+    or date cannot be read come back in `rejected`. Header presets are unverified against real exports."""
+    from app.vendorfacts import PRESETS, propose
+
+    doc = _own_doc(db, who, doc_id)
+    if preset not in PRESETS:
+        raise HTTPException(422, f"preset must be one of {sorted(PRESETS)}")
+    if doc.kind != "csv":
+        raise HTTPException(422, "vendor-facts reads documents uploaded as CSV exports")
+    pages = [(p.number, p.text) for p in sorted(doc.pages, key=lambda p: p.number)]
+    props, rejected = propose(pages, preset, currency)
+    stored, refused = [], []
+    for pr in props:
+        item = {"entity": pr.entity, "metric": pr.metric, "period": pr.period, "value": str(pr.value),
+                "unit": pr.unit, "page": pr.page, "quote": pr.quote, "row": pr.row}
+        if not commit:
+            stored.append(item)
+            continue
+        try:
+            f = add_verified_fact(db, tenant_id=who.tenant, entity=pr.entity, metric=pr.metric, period=pr.period,
+                                  value=pr.value, unit=pr.unit, document_id=doc_id, page=pr.page, quote=pr.quote,
+                                  scale=pr.scale, basis=preset)
+            log_event(db, who.tenant, actor(who), "fact.create", {"fact_id": f.id, "entity": pr.entity,
+                                                                  "metric": pr.metric, "period": pr.period})
+            stored.append({**item, "id": f.id, "status": f.status})
+        except CitationError as e:
+            db.rollback()
+            refused.append({**item, "reason": str(e)})
+    return {"committed": commit, "facts": stored, "refused": refused, "rejected": rejected}
+
+
 @app.get("/uk/company/{number}/accounts")
 def uk_accounts(number: str, tenant: Tenant, fetch: Annotated[Callable, Depends(get_ch_fetch)]):
     from dataclasses import asdict

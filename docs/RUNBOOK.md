@@ -116,6 +116,14 @@ Search uses BM25. A hybrid index (BM25 plus char-trigram ranker, fused with RRF)
 
 `POST /calc/waterfall` splits an exit value across preferred classes and common: seniority ranks (equal ranks pro rata), liquidation-preference multiple, participating with optional cap, and conversion to common when that pays more. Payouts add up to the exit value to the cent. It does NOT apply dividends, anti-dilution adjustments, option exercise prices or management carve-outs; read those from the charter and treat the result as a first pass.
 
+## Vendor and platform exports to cited facts
+
+Upload the CSV you downloaded from PitchBook, Crowdcube or Seedrs/Republic as an ordinary document, then
+`POST /documents/{id}/vendor-facts?preset=pitchbook|crowdcube|seedrs` (add `&commit=true` to store; `&currency=GBP`
+when the file states none). Default is a preview that stores nothing. Each fact quotes its `Header=value` cell.
+Scale in a header such as `Post Valuation (GBP mm)` is applied; a row with no readable currency or date is listed
+in `rejected`, never guessed. Header presets live in `app/vendorfacts.py` and are not verified against real
+exports; add the headers you see there.
 ## Companies House ownership and officers
 
 - `GET /uk/company/{number}/officers` and `/psc`: live API, needs `COMPANIES_HOUSE_API_KEY`; ceased entries are kept with `ceased_on`.
