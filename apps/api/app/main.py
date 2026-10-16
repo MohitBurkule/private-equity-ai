@@ -35,6 +35,7 @@ from app.dd import STATUSES, TEMPLATE
 from app.edgar import fetch_companyfacts
 from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
+from app.extract.tieout import tie_out
 from app.facts import CitationError, add_verified_fact, review_fact
 from app.ingest import finalize_upload, ingest_any
 from app.llm import LLM, NoLLMConfigured, get_llm
@@ -657,6 +658,20 @@ def covenant_status(company_id: int, db: Db, who: Who):
     breaches = [{"covenant_id": c["id"], "kpi_metric": c["kpi_metric"], **t}
                 for c in out for t in c["tests"] if t["status"] in ("breach", "unit_mismatch")]
     return {"covenants": out, "breaches": breaches}
+
+
+class TieOutIn(BaseModel):
+    rows: dict[str, list[Decimal | None]]  # null = a dash printed in the table
+    base: list[Decimal]
+    total: list[Decimal]
+
+
+@app.post("/calc/tieout")
+def calc_tieout(body: TieOutIn, who: Who):
+    """Place short table rows into columns using the printed column totals. Never guesses."""
+    r = tie_out(body.rows, body.base, body.total)
+    return {"status": r.status, "solutions": r.solutions, "detail": r.detail,
+            "rows": None if r.rows is None else {k: [str(x) for x in v] for k, v in r.rows.items()}}
 
 
 @app.get("/portfolio/report")

@@ -75,3 +75,7 @@ No point-in-time recovery, no per-person identity (OIDC), uploads are parsed in-
 `GET /portfolio/report` (JSON) and `/portfolio/report.docx`: covenant alerts first, then each company's current KPIs with source document and page. Only facts the key may see are used.
 
 See `docs/DEPLOY.md` for production settings and request tracing.
+
+## Dropped table cells
+
+Some filing text drops blank cells, so a row has fewer values than columns. `POST /calc/tieout` takes the short rows (null = printed dash), the base row and the printed total row, tries every order-preserving placement and keeps only those where each column adds up. One survivor is `resolved`; several are `ambiguous`; none is `no_solution`; too many to try is `too_large`. Verified on the Alliance Laundry 424B4 Adjusted EBITDA bridge (see `tests/test_tieout.py`).
