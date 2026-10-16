@@ -151,3 +151,16 @@ class EvalRun(Base):
     note: Mapped[str | None] = mapped_column(Text, default=None)
     ran_at: Mapped[str] = mapped_column(String(40))
     recorded_by: Mapped[str] = mapped_column(String(64))
+
+
+class FirmKnowledge(Base):
+    """One cited rule or preference of the firm (see firm_knowledge.py). Quote is mandatory."""
+    __tablename__ = "firm_knowledge"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    key: Mapped[str] = mapped_column(String(64), index=True)
+    value: Mapped[str] = mapped_column(Text)
+    document_id: Mapped[str] = mapped_column(ForeignKey("document.id"))
+    page: Mapped[int] = mapped_column(Integer)
+    quote: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")

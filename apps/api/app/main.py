@@ -17,6 +17,7 @@ from fastapi import (
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app import firm_knowledge as fk
 from app import jobs as jobs_mod
 from app.acl import Principal, doc_visible, fact_visible, visible_doc_ids
 from app.answer import answer_question
@@ -1202,3 +1203,47 @@ def ask(body: AskIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_dependenc
     cite = lambda c: {"text": c.text, "document_id": c.doc_id, "page": c.page, "quote": c.quote}
     return {"status": a.status, "detail": a.detail, "claims": [cite(c) for c in a.claims],
             "rejected": [{**cite(c), "reason": c.reason} for c in a.rejected]}
+
+
+class FKExtractIn(BaseModel):
+    document_id: str
+    keys: list[str] | None = None
+
+
+class FKReviewIn(BaseModel):
+    status: str
+    value: str | None = None
+
+
+@app.get("/firm-knowledge/terms")
+def fk_terms(who: Who):
+    return [{"key": t.key, "group": t.group, "label": t.label, "hint": t.hint} for t in fk.TERMS]
+
+
+@app.get("/firm-knowledge")
+def fk_profile(db: Db, who: Who, include_pending: bool = False):
+    return {"profile": fk.profile(db, who.tenant, include_pending), "coverage": fk.coverage(db, who.tenant)}
+
+
+@app.post("/firm-knowledge/extract")
+def fk_extract(body: FKExtractIn, db: Db, who: Writer, llm: Annotated[LLM, Depends(llm_dependency)]):
+    doc = _own_doc(db, who, body.document_id)
+    bad = [k for k in body.keys or [] if k not in fk.BY_KEY]
+    if bad:
+        raise HTTPException(422, f"unknown keys: {bad}")
+    res = fk.extract_profile(db, who.tenant, llm, doc, body.keys)
+    log_event(db, who.tenant, actor(who), "firm_knowledge.extract",
+              {"document_id": doc.id, "saved": len(res.saved), "rejected": len(res.rejected)})
+    return {"saved": [fk.row_dict(r) for r in res.saved], "rejected": res.rejected, "detail": res.detail}
+
+
+@app.post("/firm-knowledge/{fk_id}/review")
+def fk_review(fk_id: int, body: FKReviewIn, db: Db, who: Writer):
+    try:
+        r = fk.review(db, who.tenant, fk_id, body.status, body.value)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    if r is None:
+        raise HTTPException(404, "not found")
+    log_event(db, who.tenant, actor(who), "firm_knowledge.review", {"id": fk_id, "status": r.status})
+    return fk.row_dict(r)

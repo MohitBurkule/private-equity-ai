@@ -19,6 +19,8 @@ Plainly: no, but the chat box is one door into it. A chatbot with RAG answers qu
  Trust layer      fact gate, citation verifier, conflict detector, ACL/RLS, audit chain
 ```
 
+Product shape (user, 2026-10-16): a chat-first system that is also proactive. Chat gives cited answers on demand. Background agents run on schedules and events and push findings to an inbox and email: covenant breaches, new SEC/CH filings for watched companies, portfolio KPI changes, new targets matching the firm's screening criteria, weekly briefs. Same tools, same workflows, same citation gate for both.
+
 Rules that follow:
 1. Workflows are code with typed steps. The LLM fills in judgment steps only. Arithmetic is always code.
 2. The agent may call any tool but cannot emit a number without a verified source. Failing claims are dropped (already enforced in `answer.py`).
@@ -40,7 +42,7 @@ Target modules: `firm_knowledge.py` (profile), `agent.py` (tool registry, workfl
 | 6 | Precedent transactions | MISSING | Holdings import has deal rows; needs multiple calc + dataset | comps |
 | 7 | Legal review (NDA, SPA, covenants) | PARTIAL | Covenants table, extract schemas, cap table, share ledger, waterfall. Missing: clause library, playbook compare, red-flag table | workflows |
 | 8 | Portfolio tracking | BUILT (core) | Companies, KPI observations, covenants, change report, DOCX report, fund metrics, cohorts | - |
-| 9 | Scheduled workflows | PARTIAL | Job queue for ingest only. Agent core adds runs; scheduler is a follow-up | agent core |
+| 9 | Scheduled workflows and proactive alerts (inbox, email) | PARTIAL | Job queue for ingest only. Agent core adds runs; scheduler is a follow-up | agent core |
 | 10 | Document generation (decks, research, outreach emails) | PARTIAL | memo DOCX/PPTX, portfolio DOCX. Missing: outreach email batch, research report | workflows |
 | 11 | Interactive dashboards | PARTIAL | React app, KPI panels. Missing: filterable target map, quarterly KPI board | UI |
 | 12 | Integrations (FactSet, PitchBook, DealCloud, SharePoint, Outlook, Gmail, Drive, LinkedIn, Cap IQ) | PARTIAL | FactSet quote, PitchBook export, Yahoo/Stooq, SEC, CH. Missing: OAuth connectors, DealCloud, SharePoint, Outlook, Drive | integrations |
@@ -114,4 +116,4 @@ Not every term appears in every firm. Missing keys stay empty; the agent asks ra
 ## 4. Build order (this thread)
 1. Firm-knowledge profile: term catalogue, cited extraction from documents and emails, review, API. (PR 2)
 2. Agent core: tool registry, workflow runner, bounded agent loop, run log, firm profile in context. (PR 3)
-3. Scheduler for workflows, once a workflow exists from the workflows thread.
+3. Proactive layer: watchers (covenants, filings, KPIs, screening matches) write alerts to an inbox; email delivery via integrations; scheduler for workflows.
