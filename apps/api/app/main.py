@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app import comps as comps_mod
 from app import jobs as jobs_mod
 from app import legal as legal_mod
+from app import workflows as wf_mod
 from app.acl import Principal, doc_visible, fact_visible, visible_doc_ids
 from app.answer import answer_question
 from app.audit import log_event, verify_chain
@@ -60,6 +61,7 @@ from app.models import (
     Holding,
     IngestJob,
     PageRow,
+    WorkflowSchedule,
 )
 from app.models import Tenant as TenantRow
 from app.parse.sh01 import parse_capital_form
@@ -1110,6 +1112,61 @@ def legal_terms(doc_id: str, doc_type: str, db: Db, who: Who):
     for f in out["findings"]:
         f["document_id"] = doc_id
     return out
+
+
+class WorkflowIn(BaseModel):
+    name: str
+    kind: str
+    every_days: int
+    params: dict = {}
+    recipients: list[str] = []
+
+
+def _wf_out(w) -> dict:
+    return {"id": w.id, "name": w.name, "kind": w.kind, "every_days": w.every_days, "next_run": w.next_run,
+            "last_run": w.last_run, "last_status": w.last_status, "active": bool(w.active)}
+
+
+@app.post("/workflows", status_code=201)
+def workflow_create(body: WorkflowIn, db: Db, who: Writer):
+    try:
+        w = wf_mod.create(db, who.tenant, body.name, body.kind, body.every_days, body.params, body.recipients)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    log_event(db, who.tenant, actor(who), "workflow.create", {"id": w.id, "kind": w.kind})
+    return _wf_out(w)
+
+
+@app.get("/workflows")
+def workflow_list(db: Db, who: Who):
+    return [_wf_out(w) for w in db.query(WorkflowSchedule).filter_by(tenant_id=who.tenant).order_by(WorkflowSchedule.id)]
+
+
+@app.get("/workflows/{wid}/last")
+def workflow_last(wid: int, db: Db, who: Who):
+    w = db.get(WorkflowSchedule, wid)
+    if w is None or w.tenant_id != who.tenant:
+        raise HTTPException(404, "workflow not found")
+    return {**_wf_out(w), "last_result": w.last_result}
+
+
+@app.delete("/workflows/{wid}")
+def workflow_delete(wid: int, db: Db, who: Writer):
+    w = db.get(WorkflowSchedule, wid)
+    if w is None or w.tenant_id != who.tenant:
+        raise HTTPException(404, "workflow not found")
+    w.active = 0
+    db.commit()
+    log_event(db, who.tenant, actor(who), "workflow.delete", {"id": wid})
+    return {"id": wid, "active": False}
+
+
+@app.post("/workflows/run-due")
+def workflow_run_due(db: Db, who: Writer):
+    """Run every due schedule of this tenant now. Call from cron; emails when SMTP_HOST is set."""
+    runs = wf_mod.run_due(db, who.tenant, visible_doc_ids(db, who), wf_mod.smtp_mailer())
+    log_event(db, who.tenant, actor(who), "workflow.run_due", {"ran": len(runs)})
+    return runs
 
 
 @app.get("/portfolio/report")

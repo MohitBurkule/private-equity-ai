@@ -163,3 +163,20 @@ class DocumentSource(Base):
     external_id: Mapped[str] = mapped_column(String(512))
     version: Mapped[str] = mapped_column(String(128))
     url: Mapped[str] = mapped_column(Text)
+
+
+class WorkflowSchedule(Base):
+    """A recurring job (portfolio report, comps) run on a cadence; result is mailed or left in the outbox."""
+    __tablename__ = "workflow_schedule"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    kind: Mapped[str] = mapped_column(String(32))  # portfolio_report | comps
+    params: Mapped[str] = mapped_column(Text, default="{}")  # JSON
+    every_days: Mapped[int] = mapped_column(Integer)
+    recipients: Mapped[str] = mapped_column(Text, default="")  # comma separated
+    next_run: Mapped[str] = mapped_column(String(40))  # ISO UTC
+    last_run: Mapped[str | None] = mapped_column(String(40), default=None)
+    last_status: Mapped[str | None] = mapped_column(String(16), default=None)  # ok | failed
+    last_result: Mapped[str | None] = mapped_column(Text, default=None)  # JSON or error text
+    active: Mapped[int] = mapped_column(Integer, default=1)
