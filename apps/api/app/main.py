@@ -5,11 +5,18 @@ from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.audit import log_event, verify_chain
 from app.db import Base, make_engine, make_session_factory
 from app.facts import CitationError, add_verified_fact
 from app.ingest import ingest_upload
 from app.memo import build_memo
 from app.models import Document, PageRow
+from app.portfolio import (
+    PortfolioCompany,
+    current_kpis,
+    qoq_change,
+    record_observation,
+)
 from app.search import PageIndex
 
 engine = make_engine()
@@ -75,6 +82,8 @@ def create_fact(body: FactIn, db: Db):
         f = add_verified_fact(db, **body.model_dump())
     except CitationError as e:
         raise HTTPException(422, str(e)) from e
+    log_event(db, "api", "fact.create", {"fact_id": f.id, "entity": body.entity,
+                                          "metric": body.metric, "period": body.period})
     return {"id": f.id, "status": f.status}
 
 
@@ -94,3 +103,47 @@ def search(q: str, db: Db, doc_id: str | None = None, k: int = 5):
     return [{"document_id": h.doc_id, "page": h.page, "score": round(h.score, 3),
              "snippet": text[(h.doc_id, h.page)][:300]}
             for h in index.search(q, k=k, doc_ids={doc_id} if doc_id else None)]
+
+
+class CompanyIn(BaseModel):
+    name: str
+    sector: str | None = None
+    ownership_pct: Decimal | None = None
+
+
+@app.post("/portfolio/companies", status_code=201)
+def create_company(body: CompanyIn, db: Db):
+    c = PortfolioCompany(**body.model_dump())
+    db.add(c)
+    db.commit()
+    log_event(db, "api", "company.create", {"company_id": c.id, "name": c.name})
+    return {"id": c.id, "name": c.name}
+
+
+@app.post("/portfolio/companies/{company_id}/observations", status_code=201)
+def add_observation(company_id: int, fact_id: int, db: Db):
+    try:
+        o = record_observation(db, company_id, fact_id)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    log_event(db, "api", "kpi.record", {"observation_id": o.id, "fact_id": fact_id})
+    return {"id": o.id, "metric": o.metric, "period": o.period, "value": str(o.value)}
+
+
+@app.get("/portfolio/companies/{company_id}/kpis")
+def kpis(company_id: int, db: Db):
+    return [{"metric": o.metric, "period": o.period, "value": str(o.value), "unit": o.unit,
+             "fact_id": o.fact_id} for o in current_kpis(db, company_id)]
+
+
+@app.get("/portfolio/companies/{company_id}/change")
+def change(company_id: int, metric: str, new: str, old: str, db: Db):
+    v = qoq_change(db, company_id, metric, new, old)
+    return {"metric": metric, "new": new, "old": old,
+            "pct_change": None if v is None else str(v.quantize(Decimal("0.01")))}
+
+
+@app.get("/audit/verify")
+def audit_verify(db: Db):
+    ok, bad = verify_chain(db)
+    return {"ok": ok, "first_bad_id": bad}
