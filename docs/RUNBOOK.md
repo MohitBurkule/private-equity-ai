@@ -91,3 +91,7 @@ Some filing text drops blank cells, so a row has fewer values than columns. `POS
 ## Holdings import (Seedrs/Republic, Crowdcube, any CSV)
 
 `POST /holdings/import` (multipart: `file`, `platform`, optional `currency`, optional `mapping` JSON) imports a holdings export the user downloaded. No scraping and no assumed platform layout: columns are found by common names or by your mapping; currency is never assumed; dates must be ISO. Bad rows are rejected with their line number. Every holding keeps its source document and line. Re-importing the same file returns 409. `GET /holdings` lists them. Walled keys cannot import or list. The test CSV is a made-up layout, not a real platform export; send a real one to add a named mapper.
+
+## Share ledger (SH01, SH02, SH19)
+
+`POST /calc/share-ledger` takes an opening share total and the capital events read from Companies House forms (allot, statement, consolidate) and keeps one running total. Same-day forms stated against the same prior base are combined, not chained; a consolidation must start from the running total and gives the ratio; a form that fits none of these is listed as unreconciled and does not move the total. Verified on the Monzo numbers in the golden set (same-day SH01s, SH19 to SH01 to SH02 chain). Reading the numbers off the scanned PDFs needs OCR or a vision model, which is not available in the build environment; until then a person or the extraction pipeline supplies the values and cites the page.
