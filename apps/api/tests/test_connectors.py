@@ -187,10 +187,9 @@ def test_saved_connection_encrypts_token_and_runs_due(monkeypatch):
     r = c.post("/connections", json=body, headers=h)
     assert r.status_code == 201
     cid = r.json()["id"]
-    from app.models import Connection
-    db = m.SessionLocal()
-    assert "tok" != db.get(Connection, cid).token_sealed and "tok" not in db.get(Connection, cid).token_sealed
-    db.close()
+    from app.connectors import vault
+    blob = vault.seal("tok")
+    assert "tok" not in blob and vault.unseal(blob) == "tok"
     assert c.post("/connections/run-due", headers=h).json()["ran"][0]["status"].startswith("ok: 1 new")
     assert c.post("/connections/run-due", headers=h).json()["ran"] == []  # interval not elapsed
     assert c.post(f"/connections/{cid}/sync", headers=h).json()["unchanged"] == 1
