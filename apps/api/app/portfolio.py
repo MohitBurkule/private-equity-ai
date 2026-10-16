@@ -20,7 +20,8 @@ from app.models import Fact
 class PortfolioCompany(Base):
     __tablename__ = "portfolio_company"
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(256), unique=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(256))
     sector: Mapped[str | None] = mapped_column(String(128), default=None)
     ownership_pct: Mapped[Decimal | None] = mapped_column(Numeric(7, 4), default=None)
 
@@ -28,6 +29,7 @@ class PortfolioCompany(Base):
 class KpiObservation(Base):
     __tablename__ = "kpi_observation"
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("portfolio_company.id"), nullable=False)
     metric: Mapped[str] = mapped_column(String(128))
     period: Mapped[str] = mapped_column(String(64))
@@ -38,11 +40,14 @@ class KpiObservation(Base):
     superseded_by: Mapped[int | None] = mapped_column(Integer, default=None)
 
 
-def record_observation(db: Session, company_id: int, fact_id: int) -> KpiObservation:
+def record_observation(db: Session, tenant_id: str, company_id: int, fact_id: int) -> KpiObservation:
+    company = db.get(PortfolioCompany, company_id)
+    if company is None or company.tenant_id != tenant_id:
+        raise ValueError("company not found")
     fact = db.get(Fact, fact_id)
-    if fact is None or fact.status != "verified" or not fact.sources:
+    if fact is None or fact.tenant_id != tenant_id or fact.status != "verified" or not fact.sources:
         raise ValueError("observation requires a verified, cited fact")
-    obs = KpiObservation(company_id=company_id, metric=fact.metric, period=fact.period,
+    obs = KpiObservation(tenant_id=tenant_id, company_id=company_id, metric=fact.metric, period=fact.period,
                          value=fact.value, unit=fact.unit, fact_id=fact.id,
                          observed_at=datetime.now(UTC).isoformat())
     db.add(obs)
@@ -56,15 +61,16 @@ def record_observation(db: Session, company_id: int, fact_id: int) -> KpiObserva
     return obs
 
 
-def current_kpis(db: Session, company_id: int) -> list[KpiObservation]:
+def current_kpis(db: Session, tenant_id: str, company_id: int) -> list[KpiObservation]:
     return list(db.scalars(select(KpiObservation).where(
-        KpiObservation.company_id == company_id, KpiObservation.superseded_by.is_(None))
+        KpiObservation.tenant_id == tenant_id, KpiObservation.company_id == company_id, KpiObservation.superseded_by.is_(None))
         .order_by(KpiObservation.metric, KpiObservation.period)))
 
 
-def qoq_change(db: Session, company_id: int, metric: str, p_new: str, p_old: str) -> Decimal | None:
+def qoq_change(db: Session, tenant_id: str, company_id: int, metric: str, p_new: str,
+               p_old: str) -> Decimal | None:
     """Percent change computed in code from current observations; None if either missing/zero."""
-    cur = {o.period: o for o in current_kpis(db, company_id) if o.metric == metric}
+    cur = {o.period: o for o in current_kpis(db, tenant_id, company_id) if o.metric == metric}
     if p_new not in cur or p_old not in cur or cur[p_old].value == 0:
         return None
     if cur[p_new].unit != cur[p_old].unit:

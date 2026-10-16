@@ -9,9 +9,24 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db import Base
 
 
+class Tenant(Base):
+    __tablename__ = "tenant"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(256))
+
+
+class ApiKey(Base):
+    __tablename__ = "api_key"
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False)
+
+
 class Document(Base):
     __tablename__ = "document"
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # sha256
+    # id = sha256(tenant_id:content_sha256): same file in two tenants never collides or leaks existence
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    sha256: Mapped[str] = mapped_column(String(64))
     filename: Mapped[str] = mapped_column(String(512))
     n_pages: Mapped[int] = mapped_column(Integer)
     kind: Mapped[str] = mapped_column(String(16), default="pdf")
@@ -32,6 +47,7 @@ class PageRow(Base):
 class Fact(Base):
     __tablename__ = "fact"
     id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     entity: Mapped[str] = mapped_column(String(256))
     metric: Mapped[str] = mapped_column(String(256))
     period: Mapped[str] = mapped_column(String(64))

@@ -14,6 +14,7 @@ from app.db import Base
 class AuditEvent(Base):
     __tablename__ = "audit_event"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     ts: Mapped[str] = mapped_column(String(40))
     actor: Mapped[str] = mapped_column(String(128))
     action: Mapped[str] = mapped_column(String(64))
@@ -27,22 +28,25 @@ def _digest(prev: str, ts: str, actor: str, action: str, payload: str) -> str:
     return hashlib.sha256("\x1f".join(parts).encode()).hexdigest()
 
 
-def log_event(db: Session, actor: str, action: str, payload: dict) -> AuditEvent:
-    last = db.scalars(select(AuditEvent).order_by(AuditEvent.id.desc()).limit(1)).first()
+def log_event(db: Session, tenant_id: str, actor: str, action: str, payload: dict) -> AuditEvent:
+    """One hash chain per tenant."""
+    last = db.scalars(select(AuditEvent).where(AuditEvent.tenant_id == tenant_id)
+                      .order_by(AuditEvent.id.desc()).limit(1)).first()
     prev = last.hash if last else "0" * 64
     ts = datetime.now(UTC).isoformat()
     body = json.dumps(payload, sort_keys=True, default=str)
-    ev = AuditEvent(ts=ts, actor=actor, action=action, payload=body, prev_hash=prev,
+    ev = AuditEvent(tenant_id=tenant_id, ts=ts, actor=actor, action=action, payload=body, prev_hash=prev,
                     hash=_digest(prev, ts, actor, action, body))
     db.add(ev)
     db.commit()
     return ev
 
 
-def verify_chain(db: Session) -> tuple[bool, int | None]:
+def verify_chain(db: Session, tenant_id: str) -> tuple[bool, int | None]:
     """Returns (ok, first_bad_id)."""
     prev = "0" * 64
-    for ev in db.scalars(select(AuditEvent).order_by(AuditEvent.id)):
+    for ev in db.scalars(select(AuditEvent).where(AuditEvent.tenant_id == tenant_id)
+                         .order_by(AuditEvent.id)):
         if ev.prev_hash != prev or ev.hash != _digest(prev, ev.ts, ev.actor, ev.action, ev.payload):
             return False, ev.id
         prev = ev.hash

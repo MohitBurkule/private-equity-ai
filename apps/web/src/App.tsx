@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, DocumentInfo, Hit, PageData } from "./api";
+import { api, DocumentInfo, getApiKey, Hit, PageData, setApiKey } from "./api";
 import { splitAtQuote } from "./highlight";
 
 export function App() {
@@ -12,6 +12,7 @@ export function App() {
   const [entity, setEntity] = useState("");
   const [memo, setMemo] = useState("");
   const [error, setError] = useState("");
+  const [key, setKey] = useState(getApiKey());
 
   const run = async (f: () => Promise<void>) => {
     setError("");
@@ -26,6 +27,11 @@ export function App() {
   return (
     <main style={{ fontFamily: "system-ui", maxWidth: 1100, margin: "0 auto", padding: 16 }}>
       <h1>PE Platform</h1>
+      <label>
+        API key{" "}
+        <input type="password" value={key} onChange={(e) => { setKey(e.target.value); setApiKey(e.target.value); }}
+          onBlur={() => void refresh()} placeholder="pe_..." />
+      </label>
       {error && <p role="alert" style={{ color: "crimson" }}>{error}</p>}
 
       <section>
