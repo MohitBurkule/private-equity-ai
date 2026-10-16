@@ -1544,10 +1544,18 @@ def agent_run(body: AgentIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_d
     return ag.run_dict(r)
 
 
-@app.post("/agent/workflows/{name}/run")
-def agent_workflow_run(name: str, body: WorkflowIn, db: Db, who: Who):
+def optional_llm_dependency():
     try:
-        r = ag.run_workflow(ag.Ctx(db, who, _optional_llm(), allow_writes=who.can_write), name, body.inputs)
+        return get_llm()
+    except NoLLMConfigured:
+        return None
+
+
+@app.post("/agent/workflows/{name}/run")
+def agent_workflow_run(name: str, body: WorkflowIn, db: Db, who: Who,
+                       llm: Annotated[LLM | None, Depends(optional_llm_dependency)]):
+    try:
+        r = ag.run_workflow(ag.Ctx(db, who, llm, allow_writes=who.can_write), name, body.inputs)
     except ag.ToolError as e:
         raise HTTPException(422 if "unknown workflow" not in str(e) else 404, str(e)) from e
     log_event(db, who.tenant, actor(who), "agent.workflow", {"run_id": r.id, "name": name, "status": r.status})
@@ -1560,12 +1568,6 @@ def agent_runs(db: Db, who: Who, limit: int = 20):
             .limit(max(1, min(limit, 100))).all())
     return [ag.run_dict(r) for r in rows]
 
-
-def _optional_llm():
-    try:
-        return get_llm()
-    except NoLLMConfigured:
-        return None
 
 
 CONNECTOR_HTTP = default_http  # tests replace this with recorded responses

@@ -109,6 +109,27 @@ def _profile(ctx: Ctx, keys: list[str] | None = None):
     return {k: v for k, v in p.items() if not keys or k in keys}
 
 
+@register_tool("firm_profile_gaps", "Firm-knowledge terms with no accepted value yet, so the user can be asked or documents mined.", {})
+def _gaps(ctx: Ctx):
+    return fk.coverage(ctx.db, ctx.tenant)
+
+
+@register_tool("extract_firm_knowledge", "Extract firm rules from one document into the pending review queue (cited).",
+               {"document_id": "id", "keys?": "list of term keys"}, writes=True)
+def _extract_fk(ctx: Ctx, document_id: str, keys: list[str] | None = None):
+    if ctx.llm is None:
+        raise ToolError("no LLM configured")
+    ids = visible_doc_ids(ctx.db, ctx.who)
+    doc = ctx.db.get(Document, document_id)
+    if doc is None or doc.tenant_id != ctx.tenant or (ids is not None and document_id not in ids):
+        raise ToolError("document not found")
+    bad = [k for k in keys or [] if k not in fk.BY_KEY]
+    if bad:
+        raise ToolError(f"unknown keys: {bad}")
+    r = fk.extract_profile(ctx.db, ctx.tenant, ctx.llm, doc, keys)
+    return {"saved": [fk.row_dict(x) for x in r.saved], "rejected": r.rejected}
+
+
 @register_tool("list_facts", "Verified facts, each with source. Filter by entity.", {"entity?": "text"})
 def _facts(ctx: Ctx, entity: str | None = None):
     q = ctx.db.query(Fact).filter(Fact.tenant_id == ctx.tenant, Fact.status != "rejected")
@@ -282,3 +303,10 @@ def run_dict(r: AgentRun) -> dict:
     return {"id": r.id, "kind": r.kind, "name": r.name, "goal": r.goal, "status": r.status,
             "steps": json.loads(r.steps), "result": json.loads(r.result) if r.result else None,
             "error": r.error, "created_at": r.created_at}
+
+
+register_workflow(Workflow(
+    "build_firm_profile", "Mine one document for firm rules, then report what is still unknown.",
+    {"document_id": "document to mine"},
+    (Step("extract", "extract_firm_knowledge", {"document_id": "$input.document_id"}),
+     Step("gaps", "firm_profile_gaps"))))
