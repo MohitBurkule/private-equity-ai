@@ -120,3 +120,6 @@ Repo name; deployment target (cloud/on-prem); which vendor licences user holds (
 
 ## 14. Excel ingest (implemented)
 Workbooks ingest as one page per sheet; each cell is a line `Sheet!B7: value [=formula]` so quotes and citations address cells and formulas stay visible next to cached values. Hidden sheets are flagged in the text. Upload dispatch is by content (PDF or zip magic), not extension. Not yet done: external links, number formats, date system, very-hidden detection beyond sheet_state, header-path grids (research/06 s18).
+
+## 15. Negative result: char-trigram hybrid
+BM25 + char-trigram TF-IDF fused by RRF (`app/hybrid.py`) scored recall@10 0.50 vs 0.57 for BM25 alone on the 14 sample questions (n is tiny; difference is noise, but there is no gain), so `/search` stays on BM25. The `Ranker` protocol and RRF are kept as the plug-in point for dense embeddings and a cross-encoder reranker. Dense models could not be evaluated here: Hugging Face is blocked from the build sandbox. Needs a run with model access (suggested first candidates: bge-m3 or e5-large via fastembed/sentence-transformers, and an API embedding for comparison) on the larger golden sets.
