@@ -93,3 +93,18 @@ def test_adv_roster_parse_search_and_urls():
     a = adv.search(rows, "apollo capital")[0]
     assert (a.crd, a.pe_funds, a.private_funds, a.private_fund_gross_assets_usd) == ("143161", 214, 711, Decimal("405948410054.00"))
     assert a.url == "https://adviserinfo.sec.gov/firm/summary/143161" and adv.search(rows, "") == []
+
+
+def test_sanctions_screen_exact_tokens_alias_and_short_query():
+    from app import sanctions
+    es = sanctions.parse((FX / "sdn_sample.csv").read_text())
+    assert len(es) == 5
+    ex = sanctions.screen(es, "michael kuajien")
+    assert [(m.entry.name, m.how) for m in ex] == [("Michael Kuajien", "exact")]
+    rv = sanctions.screen(es, "KUAJIEN Michael")
+    assert rv and rv[0].how == "tokens"
+    al = sanctions.screen(es, "Bahrami Ali JADALI")
+    assert al and al[0].entry.name == "Bahram Ali SHAYESTEH" and al[0].matched_on == "Bahrami Ali JADALI"
+    assert sanctions.screen(es, "Blackstone Inc") == [] and sanctions.screen(es, "ab") == []
+    assert ex[0].entry.url.startswith("https://www.opensanctions.org/entities/NK-")
+    assert sanctions.norm("Café—Ünïon, Ltd.") == "cafe union ltd"
