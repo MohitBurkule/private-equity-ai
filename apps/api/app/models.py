@@ -109,3 +109,18 @@ class DDRequest(Base):
     document_id: Mapped[str | None] = mapped_column(ForeignKey("document.id"), default=None)
     note: Mapped[str | None] = mapped_column(Text, default=None)
     updated_at: Mapped[str] = mapped_column(String(40), default="")
+
+
+STAGES = ["sourcing", "screening", "dd", "ic", "signed", "closed", "passed"]
+
+
+class Deal(Base):
+    """A deal workspace: name, stage and note. Documents and DD items refer to it by name."""
+    __tablename__ = "deal"
+    __table_args__ = (UniqueConstraint("tenant_id", "name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    stage: Mapped[str] = mapped_column(String(16), default="sourcing")
+    note: Mapped[str | None] = mapped_column(Text, default=None)
+    updated_at: Mapped[str] = mapped_column(String(40), default="")
