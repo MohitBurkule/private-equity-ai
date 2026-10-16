@@ -20,5 +20,6 @@ Dense retrieval (BM25 recall@10 is 0.57 on the sample set), OCR for scanned file
 export ADMIN_TOKEN=$(openssl rand -hex 16)
 docker compose up --build          # api :8000, web :8080, Postgres (RLS), Redis
 python scripts/smoke.py http://localhost:8000 $ADMIN_TOKEN
+python scripts/seed_demo.py http://localhost:8000 $ADMIN_TOKEN   # demo tenant + API key for the UI
 ```
 Local dev: `cd apps/api && pip install -e '.[dev]' && python -m pytest`; `cd apps/web && npm ci && npm run dev`.
