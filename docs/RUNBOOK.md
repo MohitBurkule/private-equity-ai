@@ -83,3 +83,7 @@ Some filing text drops blank cells, so a row has fewer values than columns. `POS
 ## Sum checks
 
 `POST /calc/sumcheck` compares printed parts with a printed total and returns the exact gap. Verified on the Alliance Laundry 600-share inconsistency and the Netskope Class B share count (`tests/test_sumcheck.py`).
+
+## Companies House
+
+`GET /uk/company/{number}/accounts` lists accounts filings with document links. Needs `COMPANIES_HOUSE_API_KEY` (503 without). Tests use a SYNTHETIC fixture (`tests/fixtures/ch_filing_history_SYNTHETIC.json`); replace it with a saved real response once a key exists. Add the variable to `docs/DEPLOY.md` settings.

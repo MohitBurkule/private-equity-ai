@@ -26,6 +26,7 @@ This covers what to change from the sample `docker-compose.yml` before real data
 | `OCR_ENABLED` | Scanned-page OCR |
 | `LLM_PROVIDER`, `ANTHROPIC_MODEL` | Model for /ask, /ddq and extraction; without a provider those return 503 |
 | `SEC_USER_AGENT` | Required by SEC for `/sec/filings` |
+| `COMPANIES_HOUSE_API_KEY` | Free key for `/uk/company/{number}/accounts` |
 
 ## Operating
 

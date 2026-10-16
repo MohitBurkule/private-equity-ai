@@ -557,6 +557,26 @@ def sec_filings(ticker: str, tenant: Tenant, fetch: Annotated[Callable, Depends(
         raise HTTPException(503, str(e)) from e
 
 
+def get_ch_fetch():
+    from app.chfeed import default_fetch
+    return default_fetch
+
+
+@app.get("/uk/company/{number}/accounts")
+def uk_accounts(number: str, tenant: Tenant, fetch: Annotated[Callable, Depends(get_ch_fetch)]):
+    from dataclasses import asdict
+
+    from app.chfeed import CompanyNotFound, accounts_filings
+    try:
+        return [asdict(f) for f in accounts_filings(number, fetch)]
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except CompanyNotFound as e:
+        raise HTTPException(404, "company not found") from e
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from e
+
+
 @app.get("/memo.docx")
 def memo_docx(entity: str, db: Db, who: Who):
     log_event(db, who.tenant, actor(who), "memo.export", {"entity": entity, "format": "docx"})

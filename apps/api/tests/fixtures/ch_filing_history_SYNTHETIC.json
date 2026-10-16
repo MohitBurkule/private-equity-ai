@@ -1,0 +1,9 @@
+{"_note": "SYNTHETIC. Shaped from the Companies House API reference; not a real company. Replace with a saved real response once an API key exists.",
+ "items": [
+  {"category": "accounts", "date": "2024-09-30", "type": "AA", "transaction_id": "MzAwMDAwMDAwMGFkaXF6a2N4",
+   "description": "accounts-with-accounts-type-micro-entity", "description_values": {"made_up_date": "2024-03-31"},
+   "links": {"document_metadata": "/document/AbCdEf123"}},
+  {"category": "confirmation-statement", "date": "2024-05-01", "type": "CS01", "transaction_id": "X1", "description": "confirmation-statement-with-updates"},
+  {"category": "accounts", "date": "2023-12-20", "type": "AA", "transaction_id": "MzAwMDAwMDAwMGFkaXF6a2N5",
+   "description": "accounts-with-accounts-type-small", "description_values": {"made_up_date": "2023-03-31"}}
+ ]}
