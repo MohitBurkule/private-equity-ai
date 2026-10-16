@@ -1,14 +1,14 @@
 """alert emailed_at
 
-Revision ID: 0015
-Revises: 0014
+Revision ID: 0017
+Revises: 0016
 """
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = '0015'
-down_revision = '0014'
+revision = '0017'
+down_revision = '0016'
 branch_labels = None
 depends_on = None
 

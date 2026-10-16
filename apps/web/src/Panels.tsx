@@ -4,6 +4,7 @@ import { useLoad } from "./hooks";
 import { SourceChip } from "./source";
 import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input } from "./ui";
 import { useState } from "react";
+import { DealWorkspace } from "./DealWorkspace";
 
 const Page = ({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) => (
   <div className="mx-auto max-w-4xl space-y-5 p-6">
@@ -81,6 +82,7 @@ export function Deals() {
           </tbody>
         </table>
       </Card>
+      {sel && <DealWorkspace deal={sel} />}
       {sel && (
         <Card>
           <CardHead title={`Due diligence: ${sel}`} right={<Button onClick={() => api2.ddSeed(sel).then(dd.reload).catch(fail)}>Add standard request list</Button>} />
