@@ -11,7 +11,7 @@ Status: early but running. Private repo, planned to be open-sourced. Architectur
 - Cited question answering with a verification gate and abstention (`/ask`, batch `/ddq`; needs an LLM provider, not yet run against a real model).
 - Calculators that never default a missing input: LTM, net debt, NWC, table tie-out and sum checks, share-ledger reconciliation, fund metrics (DPI, TVPI, XIRR, vintage cohorts), exit waterfall.
 - Deals pipeline with a DD request tracker; portfolio KPIs that must link to a cited fact, covenant tests, portfolio report (JSON and Word).
-- Data sources: SEC XBRL cross-check and filings list; Companies House filing list (keyed API), SH01 capital-form reader; holdings CSV import (Seedrs, Crowdcube and similar exports, header-mapped); market quotes from Yahoo, Stooq and FactSet (`/market/quote`).
+- Data sources: SEC XBRL cross-check and filings list; Companies House filing list, officers and PSC (keyed API), PSC snapshot extractor, Basic Company Data parser, SH01 capital-form reader; holdings CSV import (Seedrs, Crowdcube and similar exports, header-mapped); market quotes from Yahoo, Stooq and FactSet (`/market/quote`).
 - Eval dashboard in the UI; React UI for all of the above.
 
 ## What does not work yet

@@ -115,3 +115,10 @@ Search uses BM25. A hybrid index (BM25 plus char-trigram ranker, fused with RRF)
 ## Exit waterfall
 
 `POST /calc/waterfall` splits an exit value across preferred classes and common: seniority ranks (equal ranks pro rata), liquidation-preference multiple, participating with optional cap, and conversion to common when that pays more. Payouts add up to the exit value to the cent. It does NOT apply dividends, anti-dilution adjustments, option exercise prices or management carve-outs; read those from the charter and treat the result as a first pass.
+
+## Companies House ownership and officers
+
+- `GET /uk/company/{number}/officers` and `/psc`: live API, needs `COMPANIES_HOUSE_API_KEY`; ceased entries are kept with `ceased_on`.
+- `POST /uk/psc/extract?companies=01234567,...` with the free PSC snapshot (`.jsonl` or `.zip`) picks those companies out with the source line number. For the multi-GB national file use `app/chbulk.iter_psc_snapshot` from a script instead of uploading it.
+- `app/chbulk.iter_basic_company_csv` reads the Basic Company Data CSV. A missing status, category or notification date stays missing; the parsers never default them. Ported from your `companyhousev1` project's formats, without its defaults.
+- Nominee holders (platforms) hide individual owners in PSC data; treat a corporate PSC as a lead, not an answer.

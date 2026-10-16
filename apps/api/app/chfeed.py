@@ -78,3 +78,16 @@ def accounts_filings(number: str, fetch: Fetch = default_fetch) -> list[Accounts
     n = normalise_number(number)
     raw = fetch(f"{BASE}/company/{n}/filing-history?category=accounts&items_per_page=100")
     return parse_filing_history(json.loads(raw), n)
+
+
+def officers(number: str, fetch: Fetch = default_fetch):
+    from app.chbulk import parse_officers
+    n = normalise_number(number)
+    return parse_officers(json.loads(fetch(f"{BASE}/company/{n}/officers?items_per_page=100")))
+
+
+def pscs(number: str, fetch: Fetch = default_fetch):
+    from app.chbulk import parse_psc_data
+    n = normalise_number(number)
+    doc = json.loads(fetch(f"{BASE}/company/{n}/persons-with-significant-control?items_per_page=100"))
+    return [parse_psc_data(n, it) for it in doc.get("items", [])]
