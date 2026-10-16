@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db import Base, make_engine, make_session_factory
 from app.facts import CitationError, add_verified_fact
-from app.ingest import ingest_bytes
+from app.ingest import ingest_upload
 from app.memo import build_memo
 from app.models import Document, PageRow
 from app.search import PageIndex
@@ -36,9 +36,9 @@ def health() -> dict[str, str]:
 async def upload(file: Annotated[UploadFile, File()], db: Db):
     data = await file.read()
     try:
-        doc = ingest_bytes(db, data, file.filename or "upload.pdf")
+        doc = ingest_upload(db, data, file.filename or "upload.pdf")
     except Exception as e:  # corrupt / encrypted / empty PDFs are flagged, never skipped
-        raise HTTPException(422, f"cannot parse PDF: {e}") from e
+        raise HTTPException(422, f"cannot parse file: {e}") from e
     return {"id": doc.id, "filename": doc.filename, "n_pages": doc.n_pages}
 
 
