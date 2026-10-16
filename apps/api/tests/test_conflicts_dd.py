@@ -42,11 +42,15 @@ def test_conflicts_found_across_documents_with_rounding_flag_and_rejection():
     fact(h, d1, 200, 2, "ebitda"), fact(h, d2, 200, 2, "ebitda")  # agree: no conflict
     out = c.get("/facts/conflicts", headers=h).json()
     assert len(out) == 1 and out[0]["metric"] == "revenue" and out[0]["likely_rounding"] is False
+    assert out[0]["severity"] == "material" and out[0]["cross_document"] is True
+    assert {d["filename"] for x in out[0]["sources"] for d in x["documents"]} == {"cim.xlsx", "qoe.xlsx"}
+    assert all(d["quote"] for x in out[0]["sources"] for d in x["documents"])
     assert out[0]["spread_pct"] == "9.09" and {v["fact_id"] for v in out[0]["values"]} == {f1, f2}
     f3 = fact(h, d3, 1001)
     assert len(c.get("/facts/conflicts", headers=h).json()[0]["values"]) == 3
     c.post(f"/facts/{f2}/review", headers=h, json={"action": "reject"})
     out = c.get("/facts/conflicts", headers=h).json()
+    assert out[0]["severity"] == "rounding"
     assert out[0]["likely_rounding"] is True and {v["fact_id"] for v in out[0]["values"]} == {f1, f3}
 
 

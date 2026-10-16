@@ -12,7 +12,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.acl import fact_visible
-from app.models import Fact
+from app.models import Document, Fact
 
 
 @dataclass
@@ -102,6 +102,9 @@ class Conflict:
     values: list[tuple[Decimal, int]]  # (value, fact_id), ascending by value
     spread_pct: Decimal  # (max - min) / |max| * 100
     likely_rounding: bool
+    severity: str = "material"  # rounding | minor (<5%) | material
+    sources: list[dict] = field(default_factory=list)  # per fact: id, value, cited documents (file, page, quote)
+    cross_document: bool = False  # the disagreeing facts cite different documents
 
 
 ROUNDING_PCT = Decimal("0.5")
@@ -125,5 +128,14 @@ def find_conflicts(db: Session, tenant: str, scope: set[str] | None = None,
             continue
         lo, hi = vals[0][0], vals[-1][0]
         spread = (hi - lo) / abs(hi) * 100 if hi else Decimal(0)
-        out.append(Conflict(ent, metric, period, basis, vals, spread, spread <= ROUNDING_PCT))
+        rounding = spread <= ROUNDING_PCT
+        names = {d.id: d.filename for d in db.query(Document).filter(
+            Document.id.in_({s.document_id for f in fs for s in f.sources}))} if fs else {}
+        srcs = [{"fact_id": f.id, "value": str(f.value), "documents": [
+            {"document_id": s.document_id, "filename": names.get(s.document_id), "page": s.page, "quote": s.quote}
+            for s in f.sources]} for f in sorted(fs, key=lambda x: (x.value, x.id))]
+        docs_per_value = {v: {s.document_id for f in fs if f.value == v for s in f.sources} for v, _ in vals}
+        cross = len({frozenset(d) for d in docs_per_value.values()}) > 1
+        out.append(Conflict(ent, metric, period, basis, vals, spread, rounding,
+                            "rounding" if rounding else "minor" if spread < 5 else "material", srcs, cross))
     return out
