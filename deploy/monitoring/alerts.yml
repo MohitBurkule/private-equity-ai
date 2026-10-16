@@ -1,0 +1,28 @@
+# Prometheus alert rules for the API. Metric names come from apps/api/app/tracing.py (render_metrics).
+# Load with: prometheus --config.file=prometheus.yml (rule_files: [alerts.yml]). Thresholds are starting
+# points for a single-replica deployment; tune them on real traffic before paging anyone.
+groups:
+  - name: pe-api
+    rules:
+      - alert: PeApiDown
+        expr: up{job="pe-api"} == 0
+        for: 2m
+        labels: {severity: page}
+        annotations: {summary: "API target is down", runbook: "docs/DEPLOY.md"}
+      - alert: PeApiServerErrors
+        expr: |
+          sum(rate(pe_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(pe_requests_total[5m])), 1e-9) > 0.02
+        for: 10m
+        labels: {severity: page}
+        annotations: {summary: "More than 2% of requests return 5xx"}
+      - alert: PeAuthFailureSpike
+        expr: sum(rate(pe_requests_total{status=~"401|403"}[5m])) > 5
+        for: 10m
+        labels: {severity: ticket}
+        annotations: {summary: "Sustained auth failures; possible key leak or scan"}
+      - alert: PeRateLimitedHard
+        expr: sum(rate(pe_requests_total{status="429"}[10m])) > 1
+        for: 15m
+        labels: {severity: ticket}
+        annotations: {summary: "Tenants are hitting the rate limit; check RATE_LIMIT_PER_MIN"}
