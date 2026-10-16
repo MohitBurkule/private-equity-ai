@@ -1118,6 +1118,16 @@ def calc_comps(body: CompsIn, db: Db, who: Who):
                          visible_doc_ids(db, who), body.target_period, body.ev_period)
 
 
+@app.post("/calc/comps.docx")
+def calc_comps_docx(body: CompsIn, db: Db, who: Who):
+    """Word note of the comps result with a source for every input."""
+    res = comps_mod.run(db, who.tenant, body.target, body.peers, body.period, body.metrics,
+                        visible_doc_ids(db, who), body.target_period, body.ev_period)
+    log_event(db, who.tenant, actor(who), "comps.export", {"format": "docx", "target": body.target})
+    return Response(comps_mod.to_docx(db, res), headers={"Content-Disposition": 'attachment; filename="comps.docx"'},
+                    media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
 @app.get("/documents/{doc_id}/legal-terms")
 def legal_terms(doc_id: str, doc_type: str, db: Db, who: Who):
     """Key terms (governing law, term, caps, covenants...) as cited sentences. doc_type: nda | spa | credit."""
