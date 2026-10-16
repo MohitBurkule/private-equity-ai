@@ -153,6 +153,34 @@ class EvalRun(Base):
     recorded_by: Mapped[str] = mapped_column(String(64))
 
 
+class FirmKnowledge(Base):
+    """One cited rule or preference of the firm (see firm_knowledge.py). Quote is mandatory."""
+    __tablename__ = "firm_knowledge"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    key: Mapped[str] = mapped_column(String(64), index=True)
+    value: Mapped[str] = mapped_column(Text)
+    document_id: Mapped[str] = mapped_column(ForeignKey("document.id"))
+    page: Mapped[int] = mapped_column(Integer)
+    quote: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")
+
+
+class AgentRun(Base):
+    """One workflow or agent run: its steps and result, kept for audit and replay."""
+    __tablename__ = "agent_run"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # workflow | agent
+    name: Mapped[str] = mapped_column(String(64))
+    goal: Mapped[str | None] = mapped_column(Text, default=None)
+    status: Mapped[str] = mapped_column(String(16))  # done | failed
+    steps: Mapped[str] = mapped_column(Text)  # JSON
+    result: Mapped[str | None] = mapped_column(Text, default=None)  # JSON
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 class DocumentSource(Base):
     """Where a connector-synced document came from: the link every citation can open."""
     __tablename__ = "document_source"

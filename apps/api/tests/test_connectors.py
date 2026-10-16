@@ -38,7 +38,7 @@ def gmail_routes():
 def test_catalog_status():
     h = new_tenant(c, "cat")
     r = {x["name"]: x["status"] for x in c.get("/connectors", headers=h).json()}
-    assert r["gmail"] == "live" and r["salesforce"] == "planned" and len(r) >= 15
+    assert r["gmail"] == "live" and r["salesforce"] == "live" and r["intralinks"] == "planned" and len(r) >= 15
 
 
 def test_gmail_sync_cites_source_and_is_idempotent(monkeypatch):
@@ -123,3 +123,54 @@ def test_box_and_dropbox_paths():
         return plain
     d = list(Dropbox("tok", dbx).items())
     assert d[0].name == "Deals/a.eml" and d[0].url.endswith("/Deals/a.eml")
+
+
+def test_crm_connectors_make_cited_csv(monkeypatch):
+    from app.connectors.crm import Affinity, DealCloud, HubSpot, Salesforce, to_csv
+    assert to_csv([{"a": 1, "n": {"x": 1}, "b": None}, {"a": 2, "c": "z"}]).decode().splitlines() == ["a,b,c", "1,,", "2,,z"]
+    sf = fake({"https://acme.my.salesforce.com/services/data/v60.0/query": {"records": [
+        {"attributes": {"type": "Account"}, "Id": "1", "Name": "Atlas", "AnnualRevenue": 5000000}]}})
+    it = list(Salesforce("tok", sf, instance_url="https://acme.my.salesforce.com", objects="Account").items())
+    assert b"Atlas" in it[0].data and it[0].url.endswith("/lightning/o/Account/list")
+    hs = fake({"https://api.hubapi.com/crm/v3/objects/deals": {"results": [{"id": "9", "properties": {"dealname": "Atlas"}}]}})
+    assert b"dealname" in next(iter(HubSpot("tok", hs, objects="deals").items())).data
+
+    def aff(url, headers):
+        assert headers["Authorization"] == "Basic " + base64.b64encode(b":tok").decode()
+        return json.dumps({"organizations": [{"id": 1, "name": "Atlas"}]}).encode()
+    assert b"Atlas" in next(iter(Affinity("tok", aff, objects="organizations").items())).data
+    dc = fake({"https://acme.dealcloud.com/api/rest/v4/data/entrydata/rows/Company": {"rows": [{"EntryId": 1, "Name": "Atlas"}]}})
+    assert list(DealCloud("tok", dc, site="acme.dealcloud.com", objects="Company").items())
+
+
+def test_crm_rejects_foreign_hosts_and_sync_is_idempotent(monkeypatch):
+    import pytest
+
+    from app.connectors.base import ConnectorError
+    from app.connectors.crm import DealCloud, Salesforce
+    with pytest.raises(ConnectorError):
+        list(Salesforce("t", fake({}), instance_url="https://evil.example.com", objects="Account").items())
+    with pytest.raises(ConnectorError):
+        list(DealCloud("t", fake({}), site="evil.com", objects="x").items())
+    hs = fake({"https://api.hubapi.com/crm/v3/objects/deals": {"results": [{"id": "9", "properties": {"dealname": "Atlas", "amount": "100"}}]}})
+    monkeypatch.setattr(m, "CONNECTOR_HTTP", hs)
+    h = new_tenant(c, "crm")
+    body = {"token": "tok", "deal": "atlas", "options": {"objects": "deals"}}
+    r = c.post("/connectors/hubspot/sync", json=body, headers=h).json()
+    assert len(r["ingested"]) == 1
+    assert c.post("/connectors/hubspot/sync", json=body, headers=h).json()["unchanged"] == 1
+
+
+def test_slack_channel_csv_and_errors():
+    import pytest
+
+    from app.connectors.base import ConnectorError
+    from app.connectors.slack import Slack
+    ok = fake({"https://slack.com/api/conversations.list": {"ok": True, "channels": [{"id": "C1", "name": "deal-atlas", "is_member": True}, {"id": "C2", "name": "x", "is_member": False}]},
+               "https://slack.com/api/conversations.history?channel=C1": {"ok": True, "messages": [
+                   {"type": "message", "ts": "1.0", "user": "U1", "text": "Revenue 12m"}, {"type": "message", "subtype": "channel_join", "ts": "2.0"}]}})
+    it = list(Slack("tok", ok, team="T1").items())
+    assert len(it) == 1 and b"Revenue 12m" in it[0].data and b"channel_join" not in it[0].data and it[0].url.endswith("/T1/C1")
+    bad = fake({"https://slack.com/api/conversations.list": {"ok": False, "error": "invalid_auth"}})
+    with pytest.raises(ConnectorError):
+        list(Slack("tok", bad).items())
