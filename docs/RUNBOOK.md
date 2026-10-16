@@ -33,6 +33,10 @@ The response contains the API key once; only its hash is stored. Paste it into t
 - Limits: 2000 files, `MAX_ARCHIVE_UNCOMPRESSED_BYTES` (1 GB), nesting depth 3. Encrypted members, path-escaping names and size-mismatched members are skipped with a reason. A `deal` tag applies to every member.
 - DOCX has no real pages: text is cut into ~3000-char chunks labelled by the nearest heading, so a citation page is a chunk, not a printed page. Legacy .doc/.ppt/.msg are not supported. No malware scan yet.
 
+## Structured extraction
+- `GET /extract/schemas` lists schemas (debt, customer_concentration, arr, ebitda_bridge). `POST /documents/{id}/extract` `{schema_name, entity, period}` needs `LLM_PROVIDER`. The model proposes value, page and quote per field; code accepts only if the quote is on that page and the value is a number printed in it (USD fields may use the page's own "in millions/thousands" scale; the model cannot supply a scale). Masked terms (`[***]`) come back as `redacted`, never filled.
+- Accepted values are stored with status `auto`: not in memos or calc until a person accepts them via `POST /facts/{id}/review`. Never run against a real model yet; the golden text set (25 items) is for that evaluation.
+
 ## Roles and deal walls (ethical walls)
 - `POST /admin/tenants/{id}/keys` body `{"role": "admin|analyst|viewer", "deals": ["alpha"]}`. First key of a tenant is admin, unrestricted. `deals` omitted = sees every document; `deals: []` = sees nothing.
 - A walled key sees only documents tagged with its deals (upload with form field `deal`; walled keys must set an in-scope deal). Untagged documents are hidden from walled keys. Facts, memos, KPIs, search and /ask are filtered the same way, and a model citation of a walled document is rejected.
