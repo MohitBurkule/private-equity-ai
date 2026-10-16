@@ -1,0 +1,103 @@
+# PE Platform Architecture (v0.1 draft)
+
+Status: draft. Research (/research) and sample data (/data) not yet available; revise when they land.
+
+## 1. Principles
+1. **Every number carries provenance.** No claim exists without a pointer to source doc + page + bbox/cell + extraction run. Unsourced output is rejected by the system, not by the reviewer.
+2. **Extract deterministically, reason probabilistically.** Numbers come from structured extraction with validation (sums, cross-foots, units). LLM never "recalls" a figure; it quotes retrieved spans.
+3. **Verify before display.** A separate verifier checks every generated claim against its cited span (NLI + numeric match). Fails -> flagged or dropped.
+4. **Human in loop for IC output.** Drafts only; analyst approves; full audit log.
+5. **Tenant isolation.** Deal rooms hold confidential/MNPI data. Row-level security, per-deal ACL, ethical walls, no cross-tenant training.
+6. **Provider-agnostic.** LLM, embedding, data vendor behind interfaces.
+
+## 2. Modules
+| Module | Job |
+|---|---|
+| ingest | Upload/connectors (SharePoint, Drive, email, VDR dumps: Intralinks, Datasite). Dedupe by hash, virus scan, OCR, versioning. |
+| parse | PDF/XLSX/DOCX/PPTX -> layout-aware blocks + tables (Docling/Unstructured; OCR fallback Tesseract/cloud). Keeps page, bbox, sheet, cell. |
+| extract | Schema-driven extraction (financials, KPIs, covenants, cap table, legal terms). Pydantic schemas, LLM + validators, confidence. |
+| index | Chunk (structure-aware), embed, store in pgvector/Qdrant; BM25 in Elasticsearch/OpenSearch. |
+| retrieve | Hybrid (BM25+dense) + rerank (cross-encoder), metadata filters (deal, doc type, date, ACL applied pre-retrieval). |
+| agents | Due-diligence workflows (QoE, commercial, legal red-flags, mgmt Q&A), IC memo generator, enterprise Q&A. Orchestrated by LangGraph; LlamaIndex for ingestion/retrieval. |
+| verify | Claim-to-evidence checker, numeric reconciler, contradiction detector across docs. |
+| market-data | Adapters: FactSet, PitchBook, free (SEC EDGAR, Companies House, Crunchbase-free, Yahoo/OpenBB), secondary platforms (Seedrs, Crowdcube, scraped only if ToS allows; otherwise manual import). |
+| portfolio | Portfolio company tracking: KPI time series, covenant monitoring, valuation marks, alerts. |
+| reports | IC memo/deck export (DOCX/PPTX) with footnoted citations linking back to viewer. |
+| api | FastAPI, REST + SSE streaming, OIDC auth. |
+| web | React+TS: doc viewer with highlight-on-citation, chat, deal workspace, review queue. |
+| ops | Celery/Arq workers, Redis, Postgres, object store (S3/MinIO), OpenTelemetry, Langfuse. |
+
+## 3. Data model (Postgres)
+- `tenant`, `user`, `deal`, `deal_member` (ACL), `ethical_wall`.
+- `document(id, deal_id, sha256, filename, mime, version, source, uploaded_by, status)`.
+- `page(document_id, n, image_ref, text)`; `block(id, document_id, page, type, bbox, text, table_json, parse_run_id)`.
+- `chunk(id, block_ids[], text, embedding, tsv)`.
+- `fact(id, deal_id, entity_id, metric, period, value, unit, currency, scale, basis(GAAP/adj), extraction_run_id, confidence, status(auto/verified/rejected))`.
+- `fact_source(fact_id, block_id, quote, cell_ref)` -- **mandatory, FK not null**.
+- `entity(id, name, aliases, identifiers[LEI, CRN, CIK])` with resolution table.
+- `claim(id, output_id, text)`, `claim_evidence(claim_id, fact_id|block_id, verdict, score)`.
+- `output(id, kind[memo,answer,table], model, prompt_version, created_by)`.
+- `run` tables (parse/extract/llm) store model, version, params, cost for reproducibility.
+- `audit_log` append-only.
+
+## 4. Citation-to-source design
+1. Parser emits blocks with stable IDs + bbox. IDs never change within a doc version.
+2. Generation prompt provides numbered evidence blocks; model must output JSON `{claim, evidence_ids[], quote}` per claim (structured output), not free prose.
+3. Verifier: (a) quote is substring of block text (fuzzy, normalized); (b) numbers in claim match numbers in quote after unit/scale normalization; (c) NLI entailment for qualitative claims.
+4. Renderer turns evidence_ids into links `/doc/{id}?page=n&block=b` highlighting bbox. Exports carry footnotes with doc name, page.
+5. Anything failing check shown as "unverified" and excluded from exports by default.
+6. Derived numbers (EBITDA margin) are computed in code from cited facts; formula + inputs shown.
+
+## 5. Failure modes and mitigations
+| Failure | Mitigation |
+|---|---|
+| OCR/table misparse (merged cells, multi-page tables, rotated scans) | Layout model + table-structure model; render-and-compare; cross-foot totals; low-confidence -> review queue |
+| Units/scale errors ($000 vs $m, FY vs LTM, currency) | Explicit unit/scale/period fields; sanity ranges; reject mixed units |
+| Adjusted vs reported metrics confusion | `basis` field; require definition citation |
+| Hallucinated numbers/citations | Structured output + verifier; no verifier pass = no export |
+| Stale/superseded docs (v3 vs v5 model) | Versioning, supersedes links, recency in rank, warn on conflicts |
+| Conflicting figures across docs | Contradiction detector; surface both with sources |
+| Entity ambiguity (same names, subsidiaries) | Entity resolution with identifiers; ask user on ambiguity |
+| Retrieval miss on tables/numbers | Hybrid search, table-as-row chunks with headers, query rewriting, eval on recall |
+| Prompt injection in uploaded docs | Treat doc text as data; delimiters; no tool actions from doc content; output filter |
+| Data leakage across deals/tenants | RLS, ACL filter before retrieval, per-tenant index namespaces, test suite |
+| Vendor API limits/licence (FactSet/PitchBook redistribution) | Cache per licence, store provenance + as-of date, adapter interface; free-source fallback |
+| Scraping ToS (Seedrs/Crowdcube) | Prefer official/partner data or manual import; legal review before scraping |
+| Model drift / provider outage | Pin versions, fallback chain, regression eval before upgrade |
+| Cost blowups | Cache by (doc hash, schema version), batch, small models for triage |
+| Large files (10k-page VDR) | Async pipeline, per-page idempotent tasks, progress, resumability |
+| Password-protected/corrupt files | Detect, flag, request password; never silently skip |
+| Non-English docs | Multilingual embeddings; flag translation, cite original |
+| Regulatory (MNPI, GDPR, SOC2) | Encryption, audit, retention policies, EU region option, self-host/open-model path |
+| Stale live data | Show as-of timestamp always |
+
+## 6. Alternatives considered
+- **Vector DB**: pgvector (chosen v1, one DB, RLS-compatible) vs Qdrant/Weaviate (scale, filtering) vs Elasticsearch dense. Interface-wrapped to swap.
+- **Lexical search**: Elasticsearch vs OpenSearch (licence) vs Postgres FTS. Start Postgres FTS + OpenSearch optional; hybrid needed for exact numbers/names.
+- **Parsing**: Docling / Unstructured / LlamaParse / Azure Document Intelligence / Textract. Default open-source Docling, pluggable cloud for hard scans; benchmark on sample data.
+- **Orchestration**: LangGraph (chosen for stateful agents) vs LlamaIndex Workflows vs custom. LlamaIndex used for ingestion/retrieval only; avoid framework lock-in via thin adapters.
+- **LLMs**: Claude/GPT for reasoning; open models (Llama, Qwen, Mistral) via vLLM for on-prem tenants. Eval-driven selection.
+- **Embeddings**: OpenAI, Voyage, BGE/E5 (open). Finance-tuned evaluated.
+- **Queue**: Celery vs Arq vs Temporal (durable workflows; consider v2).
+- **Long-context stuffing vs RAG**: RAG needed for citation, cost, ACL; long context used for single-doc deep reads.
+- **Graph RAG**: considered for entity/relationship queries; defer until eval shows need.
+
+## 7. Evaluation (build first)
+- Gold set: sample CIMs, 10-K/annual reports, financial models with hand-labelled facts.
+- Metrics: extraction exact-match by field, citation precision/recall, retrieval recall@k, answer faithfulness, numeric accuracy (target 99%+ with verified flag), latency, cost.
+- CI regression on gold set; every prompt/model change must pass.
+
+## 8. Deployment
+Docker Compose (dev), Helm/K8s (prod). Services: api, worker, web, postgres, redis, minio, opensearch(optional), vllm(optional). Observability: OpenTelemetry + Langfuse. Secrets via env/Vault. CI: GitHub Actions (lint, mypy, pytest, eval, image build).
+
+## 9. Repo layout (proposed)
+```
+apps/api (FastAPI)  apps/web (React/TS)  packages/{ingest,parse,extract,retrieve,agents,verify,connectors}
+evals/  data/samples/  infra/{docker,helm}  docs/
+```
+
+## 10. Roadmap
+M0 scaffold+CI+auth+RLS. M1 ingest/parse/citation viewer. M2 extraction+verifier+eval harness. M3 hybrid RAG chat with citations. M4 DD workflows + IC memo export. M5 market-data adapters + portfolio tracking. M6 secondary marketplaces, hardening, security review, open-source prep (licence, secrets scrub, docs).
+
+## 11. Open questions
+Repo name; deployment target (cloud/on-prem); which vendor licences user holds (FactSet/PitchBook); target doc types; open-source licence (Apache-2.0 suggested).
