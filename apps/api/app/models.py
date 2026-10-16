@@ -180,3 +180,27 @@ class WorkflowSchedule(Base):
     last_status: Mapped[str | None] = mapped_column(String(16), default=None)  # ok | failed
     last_result: Mapped[str | None] = mapped_column(Text, default=None)  # JSON or error text
     active: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class Target(Base):
+    """An acquisition / add-on candidate with its provenance. Revenue is only set when a source states it."""
+    __tablename__ = "target"
+    __table_args__ = (UniqueConstraint("tenant_id", "source", "source_ref"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(256))
+    source: Mapped[str] = mapped_column(String(32))  # sec | companies_house | manual
+    source_ref: Mapped[str] = mapped_column(String(64))  # CIK, company number, or your own key
+    source_url: Mapped[str | None] = mapped_column(Text, default=None)
+    sector: Mapped[str | None] = mapped_column(String(128), default=None, index=True)
+    sic: Mapped[str | None] = mapped_column(String(8), default=None)
+    country: Mapped[str | None] = mapped_column(String(64), default=None, index=True)
+    region: Mapped[str | None] = mapped_column(String(64), default=None)
+    lat: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), default=None)
+    lng: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), default=None)
+    revenue: Mapped[Decimal | None] = mapped_column(Numeric(24, 2), default=None)
+    currency: Mapped[str | None] = mapped_column(String(8), default=None)
+    revenue_period: Mapped[str | None] = mapped_column(String(32), default=None)
+    revenue_url: Mapped[str | None] = mapped_column(Text, default=None)  # where the revenue figure is filed
+    status: Mapped[str] = mapped_column(String(16), default="new")  # new | screened | contacted | passed
+    notes: Mapped[str | None] = mapped_column(Text, default=None)

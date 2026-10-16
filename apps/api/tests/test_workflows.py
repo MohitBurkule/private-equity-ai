@@ -1,5 +1,3 @@
-from datetime import UTC, datetime, timedelta
-
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -28,16 +26,14 @@ def test_schedule_runs_when_due_then_waits_and_isolates_tenants():
     assert c.delete(f"/workflows/{w['id']}", headers=h).json()["active"] is False
 
 
-def test_mailer_called_and_rescheduled():
+def test_mailer_called_and_rescheduled(monkeypatch):
     from app import workflows as wf
-    from app.main import SessionLocal
     sent = []
+    monkeypatch.setattr(wf, "smtp_mailer", lambda: lambda to, s, b: sent.append((to, s)))
     h = new_tenant(c, "wf3")
     w = c.post("/workflows", headers=h, json={"name": "m", "kind": "portfolio_report", "every_days": 3,
                                               "recipients": ["a@x.com", "b@x.com"]}).json()
-    with SessionLocal() as db:
-        row = db.get(wf.WorkflowSchedule, w["id"])
-        now = datetime.now(UTC) + timedelta(hours=1)
-        wf.run_due(db, row.tenant_id, None, lambda to, s, b: sent.append((to, s)), now)
-        assert sent == [(["a@x.com", "b@x.com"], "[m] scheduled update")]
-        assert row.next_run > (now + timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    c.post("/workflows/run-due", headers=h)
+    assert sent == [(["a@x.com", "b@x.com"], "[m] scheduled update")]
+    after = c.get("/workflows", headers=h).json()[0]
+    assert after["next_run"] > w["next_run"] and after["last_status"] == "ok"

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app import comps as comps_mod
 from app import jobs as jobs_mod
 from app import legal as legal_mod
+from app import targets as tg_mod
 from app import workflows as wf_mod
 from app.acl import Principal, doc_visible, fact_visible, visible_doc_ids
 from app.answer import answer_question
@@ -61,6 +62,7 @@ from app.models import (
     Holding,
     IngestJob,
     PageRow,
+    Target,
     WorkflowSchedule,
 )
 from app.models import Tenant as TenantRow
@@ -1167,6 +1169,142 @@ def workflow_run_due(db: Db, who: Writer):
     runs = wf_mod.run_due(db, who.tenant, visible_doc_ids(db, who), wf_mod.smtp_mailer())
     log_event(db, who.tenant, actor(who), "workflow.run_due", {"ran": len(runs)})
     return runs
+
+
+class TargetBody(BaseModel):
+    name: str
+    source: str = "manual"
+    source_ref: str
+    source_url: str | None = None
+    sector: str | None = None
+    sic: str | None = None
+    country: str | None = None
+    region: str | None = None
+    lat: Decimal | None = None
+    lng: Decimal | None = None
+    revenue: Decimal | None = None
+    currency: str | None = None
+    revenue_period: str | None = None
+    revenue_url: str | None = None
+
+
+class SecImport(BaseModel):
+    submissions: dict
+    companyfacts: dict | None = None
+
+
+class ChImport(BaseModel):
+    csv_text: str
+
+
+class Screen(BaseModel):
+    sectors: list[str] = []
+    countries: list[str] = []
+    min_revenue: Decimal | None = None
+    max_revenue: Decimal | None = None
+    limit: int = 200
+
+
+@app.post("/targets", status_code=201)
+def targets_add(body: list[TargetBody], db: Db, who: Writer):
+    if not 0 < len(body) <= 500:
+        raise HTTPException(422, "send 1 to 500 targets")
+    if any(t.revenue is not None and not (t.revenue_url or t.source_url) for t in body):
+        raise HTTPException(422, "revenue needs a revenue_url or source_url")
+    new, upd = tg_mod.upsert(db, who.tenant, [tg_mod.TargetIn(**t.model_dump()) for t in body])
+    log_event(db, who.tenant, actor(who), "target.upsert", {"new": new, "updated": upd})
+    return {"new": new, "updated": upd}
+
+
+@app.post("/targets/import/sec", status_code=201)
+def targets_import_sec(body: SecImport, db: Db, who: Writer):
+    try:
+        t = tg_mod.sec_target(body.submissions, body.companyfacts)
+    except (KeyError, ValueError) as e:
+        raise HTTPException(422, f"not a SEC submissions document: {e}") from e
+    new, upd = tg_mod.upsert(db, who.tenant, [t])
+    return {"new": new, "updated": upd, "revenue_found": t.revenue is not None}
+
+
+@app.post("/targets/import/companies-house", status_code=201)
+def targets_import_ch(body: ChImport, db: Db, who: Writer):
+    items = tg_mod.ch_targets(body.csv_text)[:5000]
+    new, upd = tg_mod.upsert(db, who.tenant, items)
+    return {"new": new, "updated": upd}
+
+
+def _target_query(db, tenant, sector, country, min_revenue, max_revenue, q, status):
+    qs = db.query(Target).filter(Target.tenant_id == tenant)
+    if sector:
+        qs = qs.filter(Target.sector.ilike(f"%{sector}%"))
+    if country:
+        qs = qs.filter(Target.country == country)
+    if min_revenue is not None:
+        qs = qs.filter(Target.revenue >= min_revenue)
+    if max_revenue is not None:
+        qs = qs.filter(Target.revenue <= max_revenue)
+    if q:
+        qs = qs.filter(Target.name.ilike(f"%{q}%"))
+    if status:
+        qs = qs.filter(Target.status == status)
+    return qs
+
+
+@app.get("/targets")
+def targets_list(db: Db, who: Who, sector: str | None = None, country: str | None = None,
+                 min_revenue: Decimal | None = None, max_revenue: Decimal | None = None,
+                 q: str | None = None, status: str | None = None, limit: int = 100, offset: int = 0):
+    """Filterable target list for the map and table. Revenue filters exclude targets with unknown revenue."""
+    qs = _target_query(db, who.tenant, sector, country, min_revenue, max_revenue, q, status)
+    total = qs.count()
+    rows = qs.order_by(Target.id).offset(max(offset, 0)).limit(min(max(limit, 1), 1000)).all()
+    return {"total": total, "items": [tg_mod.to_dict(t) for t in rows]}
+
+
+@app.get("/targets/facets")
+def targets_facets(db: Db, who: Who):
+    """Counts for the filter panel and map: by sector, country, status, plus how many have no revenue."""
+    from sqlalchemy import func
+    out = {}
+    for name, col in (("sector", Target.sector), ("country", Target.country), ("status", Target.status)):
+        rows = (db.query(col, func.count()).filter(Target.tenant_id == who.tenant).group_by(col)
+                .order_by(func.count().desc()).all())
+        out[name] = [{"value": v, "count": n} for v, n in rows]
+    out["total"] = db.query(Target).filter_by(tenant_id=who.tenant).count()
+    out["revenue_unknown"] = db.query(Target).filter(Target.tenant_id == who.tenant, Target.revenue.is_(None)).count()
+    return out
+
+
+@app.post("/targets/screen")
+def targets_screen(body: Screen, db: Db, who: Who):
+    """Apply strategy criteria. verdict: match | review (some criterion unknown) | fail. Failures are omitted."""
+    c = tg_mod.Criteria(body.sectors, body.countries, body.min_revenue, body.max_revenue)
+    out = []
+    for t in db.query(Target).filter_by(tenant_id=who.tenant).order_by(Target.id).all():
+        e = tg_mod.evaluate(t, c)
+        if e["verdict"] != "fail":
+            out.append({**tg_mod.to_dict(t), **e})
+    out.sort(key=lambda r: r["verdict"] != "match")
+    return {"matches": sum(r["verdict"] == "match" for r in out), "review": sum(r["verdict"] == "review" for r in out),
+            "items": out[:min(max(body.limit, 1), 1000)]}
+
+
+class TargetStatus(BaseModel):
+    status: str
+    notes: str | None = None
+
+
+@app.patch("/targets/{tid}")
+def targets_update(tid: int, body: TargetStatus, db: Db, who: Writer):
+    if body.status not in ("new", "screened", "contacted", "passed"):
+        raise HTTPException(422, "status must be new, screened, contacted or passed")
+    t = db.get(Target, tid)
+    if t is None or t.tenant_id != who.tenant:
+        raise HTTPException(404, "target not found")
+    t.status, t.notes = body.status, body.notes if body.notes is not None else t.notes
+    db.commit()
+    log_event(db, who.tenant, actor(who), "target.status", {"id": tid, "status": body.status})
+    return tg_mod.to_dict(t)
 
 
 @app.get("/portfolio/report")
