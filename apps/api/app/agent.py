@@ -24,7 +24,7 @@ from app import firm_knowledge as fk
 from app.acl import Principal, visible_doc_ids
 from app.answer import Claim, answer_question, verify_claim
 from app.llm import LLM
-from app.models import AgentRun, Deal, Document, Fact, PageRow
+from app.models import AgentRun, Alert, Deal, Document, Fact, PageRow
 from app.search import PageIndex
 
 
@@ -123,6 +123,15 @@ def _facts(ctx: Ctx, entity: str | None = None):
 def _deals(ctx: Ctx):
     return [{"name": d.name, "stage": d.stage} for d in
             ctx.db.query(Deal).filter_by(tenant_id=ctx.tenant).order_by(Deal.id)]
+
+
+@register_tool("list_alerts", "Open alerts from the proactive inbox (covenant breaches and similar), with fact ids.", {})
+def _alerts(ctx: Ctx):
+    if ctx.who.restricted:
+        raise ToolError("alerts need an unrestricted key")
+    from app.alerts import alert_dict
+    return [alert_dict(a) for a in ctx.db.query(Alert).filter_by(tenant_id=ctx.tenant, status="new")
+            .order_by(Alert.id.desc()).limit(50)]
 
 
 def _claim(c: Claim) -> dict:
