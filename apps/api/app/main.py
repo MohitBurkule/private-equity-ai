@@ -17,6 +17,7 @@ from fastapi import (
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app import agent as ag
 from app import firm_knowledge as fk
 from app import jobs as jobs_mod
 from app.acl import Principal, doc_visible, fact_visible, visible_doc_ids
@@ -47,6 +48,7 @@ from app.memo import build_memo, build_memo_docx, build_memo_pptx
 from app.migrate import migrate
 from app.models import (
     STAGES,
+    AgentRun,
     DDRequest,
     Deal,
     Document,
@@ -1247,3 +1249,57 @@ def fk_review(fk_id: int, body: FKReviewIn, db: Db, who: Writer):
         raise HTTPException(404, "not found")
     log_event(db, who.tenant, actor(who), "firm_knowledge.review", {"id": fk_id, "status": r.status})
     return fk.row_dict(r)
+
+
+class AgentIn(BaseModel):
+    goal: str
+    max_steps: int = 6
+
+
+class WorkflowIn(BaseModel):
+    inputs: dict = {}
+
+
+@app.get("/agent/tools")
+def agent_tools(who: Who):
+    return [{"name": t.name, "description": t.description, "params": t.params, "writes": t.writes}
+            for t in ag.TOOLS.values()]
+
+
+@app.get("/agent/workflows")
+def agent_workflows(who: Who):
+    return [{"name": w.name, "description": w.description, "inputs": w.inputs,
+             "steps": [{"id": s.id, "tool": s.tool} for s in w.steps]} for w in ag.WORKFLOWS.values()]
+
+
+@app.post("/agent/run")
+def agent_run(body: AgentIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_dependency)]):
+    if not body.goal.strip():
+        raise HTTPException(422, "goal is required")
+    r = ag.run_agent(ag.Ctx(db, who, llm), body.goal.strip(), body.max_steps)
+    log_event(db, who.tenant, actor(who), "agent.run", {"run_id": r.id, "status": r.status})
+    return ag.run_dict(r)
+
+
+@app.post("/agent/workflows/{name}/run")
+def agent_workflow_run(name: str, body: WorkflowIn, db: Db, who: Who):
+    try:
+        r = ag.run_workflow(ag.Ctx(db, who, _optional_llm(), allow_writes=who.can_write), name, body.inputs)
+    except ag.ToolError as e:
+        raise HTTPException(422 if "unknown workflow" not in str(e) else 404, str(e)) from e
+    log_event(db, who.tenant, actor(who), "agent.workflow", {"run_id": r.id, "name": name, "status": r.status})
+    return ag.run_dict(r)
+
+
+@app.get("/agent/runs")
+def agent_runs(db: Db, who: Who, limit: int = 20):
+    rows = (db.query(AgentRun).filter_by(tenant_id=who.tenant).order_by(AgentRun.id.desc())
+            .limit(max(1, min(limit, 100))).all())
+    return [ag.run_dict(r) for r in rows]
+
+
+def _optional_llm():
+    try:
+        return get_llm()
+    except NoLLMConfigured:
+        return None

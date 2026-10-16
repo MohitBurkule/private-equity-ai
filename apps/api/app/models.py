@@ -164,3 +164,18 @@ class FirmKnowledge(Base):
     page: Mapped[int] = mapped_column(Integer)
     quote: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")
+
+
+class AgentRun(Base):
+    """One workflow or agent run: its steps and result, kept for audit and replay."""
+    __tablename__ = "agent_run"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # workflow | agent
+    name: Mapped[str] = mapped_column(String(64))
+    goal: Mapped[str | None] = mapped_column(Text, default=None)
+    status: Mapped[str] = mapped_column(String(16))  # done | failed
+    steps: Mapped[str] = mapped_column(Text)  # JSON
+    result: Mapped[str | None] = mapped_column(Text, default=None)  # JSON
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[str] = mapped_column(String(40), default="")
