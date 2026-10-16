@@ -82,7 +82,7 @@ def evaluate_covenant(db: Session, cov: Covenant, scope: set[str] | None = None)
         obs_fact = db.get(Fact, o.fact_id)
         if obs_fact is None or not fact_visible(obs_fact, scope):
             continue
-        row = {"period": o.period, "value": str(o.value), "threshold": str(thr.value),
+        row = {"period": o.period, "value": str(o.value), "threshold": str(thr.value), "unit": o.unit,
                "observation_fact_id": o.fact_id, "threshold_fact_id": thr.id}
         if o.unit != thr.unit:
             row["status"] = "unit_mismatch"
