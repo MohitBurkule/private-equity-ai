@@ -25,7 +25,10 @@ from app import comps as comps_mod
 from app import firm_knowledge as fk
 from app import jobs as jobs_mod
 from app import legal as legal_mod
-from app import notify
+from app import (
+    notify,
+    opendata_tools,  # noqa: F401  (registers open-data agent tools)
+)
 from app import outreach as outreach_mod
 from app import targets as tg_mod
 from app import workflows as wf_mod
