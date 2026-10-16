@@ -144,3 +144,25 @@ def to_dict(t: Target) -> dict:
             "lat": None if t.lat is None else str(t.lat), "lng": None if t.lng is None else str(t.lng),
             "revenue": None if t.revenue is None else str(t.revenue), "currency": t.currency,
             "revenue_period": t.revenue_period, "revenue_url": t.revenue_url, "status": t.status}
+
+
+def benchmark(db: Session, tenant: str, sector: str | None, target: Target | None = None) -> dict:
+    """Revenue benchmark for a sector across this tenant's targets. Only targets with a stated revenue count;
+    the rest are reported as excluded, never assumed. Percentile places one target inside the peer group."""
+    from app.comps import stats
+
+    q = db.query(Target).filter(Target.tenant_id == tenant)
+    if sector:
+        q = q.filter(Target.sector.ilike(f"%{sector}%"))
+    rows = q.all()
+    known = [r.revenue for r in rows if r.revenue is not None]
+    st = stats(known)
+    out = {"sector": sector, "peers": st.n, "excluded_no_revenue": len(rows) - st.n,
+           "median": None if st.median is None else str(st.median),
+           "q1": None if st.q1 is None else str(st.q1), "q3": None if st.q3 is None else str(st.q3),
+           "min": None if st.low is None else str(st.low), "max": None if st.high is None else str(st.high)}
+    if target is not None and target.revenue is not None and known:
+        below = sum(1 for v in known if v < target.revenue)
+        out["target"] = {"id": target.id, "name": target.name, "revenue": str(target.revenue),
+                         "percentile": round(100 * below / len(known))}
+    return out
