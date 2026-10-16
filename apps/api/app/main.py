@@ -73,7 +73,7 @@ from app.search import PageIndex
 from app.shareledger import Event as LedgerEvent
 from app.shareledger import reconcile as reconcile_shares
 from app.sumcheck import sum_check
-from app.tracing import tracing_middleware
+from app.tracing import render_metrics, tracing_middleware
 from app.xbrl import candidates, crosscheck, load_companyfacts
 
 engine = make_engine()
@@ -136,6 +136,14 @@ def actor(p: Principal) -> str:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/metrics")
+def metrics(x_admin_token: Annotated[str | None, Header()] = None):
+    """Prometheus text: request counts by method, route template and status class, plus summed latency."""
+    if not admin_token_ok(x_admin_token):
+        raise HTTPException(403, "admin token required")
+    return Response(render_metrics(), media_type="text/plain; version=0.0.4")
 
 
 class TenantIn(BaseModel):

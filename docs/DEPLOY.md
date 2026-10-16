@@ -32,6 +32,7 @@ This covers what to change from the sample `docker-compose.yml` before real data
 
 - **Health.** `GET /health` for load balancer checks.
 - **Request tracing.** Every response carries `X-Request-ID` (the inbound value if it is 1 to 64 characters of letters, digits, `.`, `_`, `-`; otherwise generated). Each request writes one JSON line to stdout on the `pe.access` logger: request id, method, path, status, milliseconds. Query strings, headers and bodies are never logged. Quote the id when reporting a problem.
+- **Metrics.** `GET /metrics` (header `X-Admin-Token`) returns Prometheus text: request counts by method, route template and status class, and summed latency in ms. Counts are per process and reset on restart, so scrape every replica. No tenant, key or URL parameter appears in the labels.
 - **Audit log.** `GET /audit/verify` checks the per-tenant hash chain; run it on a schedule and alert on `ok: false`.
 - **Backups.** `scripts/backup.sh` and `scripts/restore.sh`, then `scripts/restore_check.py`. The dump role needs superuser or BYPASSRLS. Test a restore before you need one.
 - **Stuck jobs.** `POST /admin/jobs/requeue` after a crash or deploy.
