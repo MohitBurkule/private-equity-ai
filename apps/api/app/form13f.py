@@ -12,7 +12,7 @@ import io
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
 
@@ -42,7 +42,7 @@ class Holding:
 
 def _d(v: str) -> str:
     try:
-        return datetime.strptime(v.strip().title(), "%d-%b-%Y").date().isoformat()
+        return datetime.strptime(v.strip().title(), "%d-%b-%Y").replace(tzinfo=UTC).date().isoformat()
     except ValueError:
         return v.strip()
 
