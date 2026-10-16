@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.audit import log_event, verify_chain
 from app.auth import admin_token_ok, create_tenant, tenant_for_key
 from app.db import Base, make_engine, make_session_factory
+from app.edgar import fetch_companyfacts
 from app.facts import CitationError, add_verified_fact
 from app.ingest import ingest_upload
 from app.memo import build_memo
@@ -21,6 +22,7 @@ from app.portfolio import (
 )
 from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
 from app.search import PageIndex
+from app.xbrl import candidates, crosscheck, load_companyfacts
 
 engine = make_engine()
 SessionLocal = make_session_factory(engine)
@@ -192,3 +194,21 @@ def change(company_id: int, metric: str, new: str, old: str, db: Db, tenant: Ten
 def audit_verify(db: Db, tenant: Tenant):
     ok, bad = verify_chain(db, tenant)
     return {"ok": ok, "first_bad_id": bad}
+
+
+def get_companyfacts(cik: int) -> dict:
+    """Dependency so tests and offline deployments can supply cached JSON."""
+    return fetch_companyfacts(cik)
+
+
+@app.get("/xbrl/check")
+def xbrl_check(cik: int, concept: str, end: str, value: Decimal, tenant: Tenant,
+               start: str | None = None, accn: str | None = None, unit: str | None = "USD"):
+    """Confirm a figure against the filer's own XBRL. Reports restatements instead of picking one."""
+    try:
+        facts = load_companyfacts(get_companyfacts(cik))
+    except Exception as e:  # network / missing key / unknown CIK: say so, never guess
+        raise HTTPException(502, f"companyfacts unavailable: {e}") from e
+    res = crosscheck(value, candidates(facts, concept, end, start, accn, unit))
+    return {"status": res.status, "distinct_values": [str(v) for v in res.distinct_values],
+            "filings": sorted({f"{f.accn} ({f.form}, filed {f.filed})" for f in res.matched})}
