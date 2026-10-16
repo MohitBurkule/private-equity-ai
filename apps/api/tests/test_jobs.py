@@ -68,13 +68,14 @@ def test_transient_error_then_success(monkeypatch):
     h = new_tenant(c, "jb4")
     real, n = jobs.ingest_any, []
 
-    def flaky(*a, **k):
-        n.append(1)
-        if len(n) == 1:
-            raise RuntimeError("once")
-        return real(*a, **k)
+    def flaky(db, tenant, data, filename, *a, **k):
+        if filename == "transient.docx":  # only this test's job; never another job's call
+            n.append(1)
+            if len(n) == 1:
+                raise RuntimeError("once")
+        return real(db, tenant, data, filename, *a, **k)
     monkeypatch.setattr(jobs, "ingest_any", flaky)
-    j = wait(h, submit(h))
+    j = wait(h, submit(h, name="transient.docx"))
     assert j["status"] == "done" and j["attempts"] == 2
 
 

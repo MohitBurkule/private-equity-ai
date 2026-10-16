@@ -15,10 +15,12 @@ import secrets
 import shlex
 import subprocess
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.acl import Principal, parse_deals
@@ -28,6 +30,8 @@ from app.models import IngestJob, Tenant
 from app.rls import bind_tenant
 
 MAX_ATTEMPTS = 3
+_active: set[str] = set()  # jobs running in this process (guards double execution)
+_active_lock = threading.Lock()
 SPOOL_DIR = Path(os.environ.get("SPOOL_DIR", str(Path(tempfile.gettempdir()) / "pe-spool")))
 _pool = ThreadPoolExecutor(max_workers=int(os.environ.get("INGEST_WORKERS", "2")), thread_name_prefix="ingest")
 
@@ -63,10 +67,26 @@ def _scan(path: Path) -> str | None:
 
 
 def run_job(session_factory: sessionmaker, job_id: str, tenant: str) -> None:
+    with _active_lock:
+        if job_id in _active:
+            return  # already being worked on in this process
+        _active.add(job_id)
+    try:
+        _run_job(session_factory, job_id, tenant)
+    finally:
+        with _active_lock:
+            _active.discard(job_id)
+
+
+def _run_job(session_factory: sessionmaker, job_id: str, tenant: str) -> None:
     with session_factory() as db:
         bind_tenant(db, tenant)
+        # compare-and-set claim: only one runner can move queued -> running
+        claimed = db.execute(update(IngestJob).where(IngestJob.id == job_id, IngestJob.status == "queued")
+                             .values(status="running")).rowcount
+        db.commit()
         job = db.get(IngestJob, job_id)
-        if job is None or job.status not in ("queued", "running"):
+        if job is None or not claimed:
             return
         who = Principal(job.tenant_id, job.role, parse_deals(job.scope), job.key_id)
         for attempt in range(job.attempts + 1, MAX_ATTEMPTS + 1):
@@ -118,7 +138,13 @@ def requeue_pending(session_factory: sessionmaker) -> int:
         with session_factory() as db:
             bind_tenant(db, tid)
             for j in db.query(IngestJob).filter(IngestJob.status.in_(("queued", "running"))).all():
-                if Path(j.spool_path).exists():
-                    _pool.submit(run_job, session_factory, j.id, tid)
-                    n += 1
+                with _active_lock:
+                    busy = j.id in _active
+                if busy or not Path(j.spool_path).exists():
+                    continue
+                if j.status == "running":  # left over from a dead process
+                    j.status = "queued"
+                    db.commit()
+                _pool.submit(run_job, session_factory, j.id, tid)
+                n += 1
     return n
