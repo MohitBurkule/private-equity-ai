@@ -19,6 +19,8 @@ An analyst loads deal documents, searches them, and every number in the output l
 | Comps with a cited implied range | Integrations catalog and import |
 | ![Firm profile](docs/screenshots/13-firm-profile.png) | ![Workflows](docs/screenshots/14-workflows.png) |
 | Firm profile: rules found in your documents | Workflows built from the agent tools |
+| ![Targets](docs/screenshots/15-targets.png) | |
+| Acquisition target map, filter by sector, country, revenue | |
 
 Known rough edges: `/ask` and auto-extraction need an LLM key and have not run against a real model.
 
