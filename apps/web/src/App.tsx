@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, DocumentInfo, getApiKey, Hit, PageData, setApiKey } from "./api";
+import { api, AskResult, DocumentInfo, getApiKey, Hit, PageData, setApiKey } from "./api";
 import { splitAtQuote } from "./highlight";
 
 export function App() {
@@ -11,6 +11,8 @@ export function App() {
   const [quote, setQuote] = useState("");
   const [entity, setEntity] = useState("");
   const [memo, setMemo] = useState("");
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState<AskResult | null>(null);
   const [error, setError] = useState("");
   const [key, setKey] = useState(getApiKey());
 
@@ -67,9 +69,42 @@ export function App() {
         </ol>
       </section>
 
+      <section>
+        <h2>Ask</h2>
+        <form onSubmit={(e) => { e.preventDefault(); void run(async () => setAnswer(await api.ask(question, docId || undefined))); }}>
+          <input value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Ask about the documents" style={{ width: "60%" }} />
+          <button type="submit">Ask</button>
+        </form>
+        {answer && answer.status === "not_found" && (
+          <p>Not found in the documents. Nothing was verified against a source. {answer.detail}</p>
+        )}
+        {answer && answer.status === "error" && <p role="alert">{answer.detail}</p>}
+        <ul>
+          {answer?.claims.map((c, i) => (
+            <li key={i}>
+              {c.text}{" "}
+              <button onClick={() => { setDocId(c.document_id); setQuote(c.quote); void open(c.document_id, c.page); }}>
+                source p.{c.page}
+              </button>
+            </li>
+          ))}
+        </ul>
+        {answer && answer.rejected.length > 0 && (
+          <details>
+            <summary>{answer.rejected.length} claim(s) rejected by verification</summary>
+            <ul>{answer.rejected.map((c, i) => <li key={i}>{c.text}: {c.reason}</li>)}</ul>
+          </details>
+        )}
+      </section>
+
       {page && (
         <section>
           <h2>Source: page {page.page}</h2>
+          {page.text.startsWith("[UNRELIABLE") && (
+            <p role="alert" style={{ color: "crimson", fontWeight: 600 }}>
+              This filing failed its own arithmetic checks. Do not rely on its figures.
+            </p>
+          )}
           <label>Highlight quote <input value={quote} onChange={(e) => setQuote(e.target.value)} /></label>
           {quote && !parts && <p>Quote not found on this page.</p>}
           <pre style={{ whiteSpace: "pre-wrap", background: "#f6f6f6", padding: 12 }}>
