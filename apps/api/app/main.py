@@ -1,5 +1,6 @@
 import os
 from collections.abc import Callable
+from datetime import date as DateT
 from decimal import Decimal
 from typing import Annotated
 
@@ -37,6 +38,7 @@ from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
 from app.facts import CitationError, add_verified_fact, review_fact
+from app.fundmetrics import fund_metrics
 from app.holdings import parse_holdings
 from app.ingest import finalize_upload, ingest_any
 from app.llm import LLM, NoLLMConfigured, get_llm
@@ -807,6 +809,32 @@ def calc_share_ledger(body: LedgerIn, who: Who):
     return {"running": str(led.running), "problems": led.problems,
             "entries": [{"source": x.source, "date": x.date, "kind": x.kind, "status": x.status,
                          "running_after": str(x.running_after), "detail": x.detail} for x in led.entries]}
+
+
+class FlowIn(BaseModel):
+    date: DateT
+    amount: Decimal
+
+
+class FundIn(BaseModel):
+    flows: list[FlowIn]
+    nav: Decimal
+    as_of: DateT
+
+
+@app.post("/calc/fund-metrics")
+def calc_fund_metrics(body: FundIn, who: Who):
+    """DPI, RVPI, TVPI and XIRR from dated flows (paid in negative, distributions positive) and a NAV."""
+    if len(body.flows) > 5000:
+        raise HTTPException(422, "at most 5000 flows")
+    try:
+        m = fund_metrics([(f.date, f.amount) for f in body.flows], body.nav, body.as_of)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    q = lambda v: None if v is None else str(v.quantize(Decimal("0.0001")))
+    return {"paid_in": str(m.paid_in), "distributed": str(m.distributed), "nav": str(m.nav),
+            "dpi": q(m.dpi), "rvpi": q(m.rvpi), "tvpi": q(m.tvpi),
+            "irr": None if m.irr is None else round(m.irr, 6), "irr_note": m.irr_note}
 
 
 @app.get("/portfolio/report")
