@@ -13,23 +13,23 @@ Run: `python evals/pdf_benchmark.py --data /mnt/project-files/data` (harness `ev
 | engine | fin. rows | SH01 (scans) | row hit | page recall | with bbox | s/page |
 |---|---|---|---|---|---|---|
 | pdftotext | 2/13 | 3/18 | 5/31 | 17/31 | 5 | 0.022 |
-| pdftotext_layout | 13/13 | 3/18 | 16/31 | 17/31 | 0 | 0.022 |
-| pymupdf | 13/13 | 3/18 | 16/31 | 17/31 | 16 | 0.015 |
-| pymupdf_text | 13/13 | 3/18 | 16/31 | 17/31 | 0 | 0.013 |
-| pdfplumber | 13/13 | 3/18 | 16/31 | 17/31 | 16 | 0.152 |
+| pdftotext_layout | 13/13 | 3/18 | 16/31 | 17/31 | 0 | 0.020 |
+| pymupdf | 13/13 | 3/18 | 16/31 | 17/31 | 16 | 0.011 |
+| pymupdf_text | 13/13 | 3/18 | 16/31 | 17/31 | 0 | 0.012 |
+| pdfplumber | 13/13 | 3/18 | 16/31 | 17/31 | 16 | 0.165 |
 | pypdf | 13/13 | 3/18 | 16/31 | 17/31 | 0 | 0.069 |
-| pdfium | 13/13 | 3/18 | 16/31 | 17/31 | 0 | 0.009 |
-| docling | 13/13 | 11/18 | 24/31 | 28/31 | 24 | 13.011 |
-| rapidocr | 11/13 | 11/18 | 22/31 | 28/31 | 22 | 1.696 |
-| router | 13/13 | 11/18 | 24/31 | 29/31 | 24 | 1.06 |
+| pdfium | 13/13 | 3/18 | 16/31 | 17/31 | 0 | 0.007 |
+| docling | 13/13 | 13/18 | 26/31 | 28/31 | 26 | 8.42 |
+| rapidocr | 11/13 | 14/18 | 25/31 | 28/31 | 25 | 1.69 |
+| router | 13/13 | 14/18 | 27/31 | 29/31 | 27 | 0.77 |
 
 `pdftotext` is poppler raw reading order (rows split). `pdftotext_layout`, `pymupdf`, `pdfplumber`, `pypdf`, `pdfium` all tie on clean text-layer statements (13/13); the router adds OCR for scans.
 
 ## Findings
 1. **Text-layer statements are solved by cheap engines.** All layout-aware text engines get 13/13 rows. PyMuPDF is 0.015 s/page and gives line bboxes; pdfplumber gives bboxes too but is 10x slower. Poppler raw mode loses 11/13 rows (columns read in separate runs), so never use it as the primary.
-2. **Scans are the hard part.** Best is 11/18 for RapidOCR and Docling. Both fail mostly the same SH01 pages (s02, s03, s05, s07, s08): handwritten or boxed digits, currency sign read as `E`, table cells out of column order. Page recall (16/18) is much higher than row hit (11/18), so the numbers are mostly read but land on the wrong line. Fix next: rebuild rows from bboxes, not line order.
+2. **Scans are the hard part.** Best is 13/18 for Docling and 14/18 for RapidOCR (the rise from 11 to 14 comes from scoring fix: SH01 quotes are now split per number, not matched as one string; engine output unchanged). Remaining misses: s02 (two forms, same date), s03 (consolidation table with a 0.0000001 nominal), s08 (hurdle waterfall): handwritten or boxed digits, currency sign read as `E`, table cells out of column order. Page recall (16/18) is higher than row hit (14/18), so the numbers are mostly read but land on the wrong line. Fix next: rebuild rows from bboxes, not line order.
 3. **Docling is accurate but 13 s/page on CPU.** It matched the best on tables and OCR, and keeps real table structure (TableFormer), but is 9x slower than RapidOCR. Use it only for pages the router marks `table` with a failed cross-check, or for CIM tables where cell structure matters.
-4. **Router ties Docling's best score (24/31) at 1.06 s/page versus 13 s**, and beats RapidOCR alone (22) and every text engine alone (16): text pages go to PyMuPDF, scans to OCR.
+4. **Router is the best trade-off: 27/31 rows at 0.77 s/page**, ahead of Docling (26/31, 8.4 s/page), RapidOCR alone (25) and every text engine (16). Text pages go to PyMuPDF, scans to OCR.
 5. **Cross-check.** Every number from the primary engine is compared to a second independent engine; unmatched numbers are returned as `disputed` and the page is not `verified`. Test `test_disputed_numbers_flagged` shows a 1,577 vs 1,517 mismatch is caught.
 
 ## Gold-data issues found
@@ -45,4 +45,4 @@ Run: `python evals/pdf_benchmark.py --data /mnt/project-files/data` (harness `ev
 | prose (legal) | otherwise | PyMuPDF | pdfplumber / pdfium |
 
 ## Not yet benchmarked
-Marker, MinerU, Unstructured, Camelot (installed, not wired), VLM page parsing. Next runs add them with the same harness, plus CIM-deck and covenant-agreement pages.
+Marker, MinerU, Unstructured, Camelot (adapter added, not yet scored), VLM page parsing. Next runs add them with the same harness, plus CIM-deck and covenant-agreement pages.
