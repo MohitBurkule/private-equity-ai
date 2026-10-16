@@ -41,7 +41,7 @@ export interface FactRow {
 export interface DealRow { name: string; stage: string; note: string | null; documents: number; dd_total: number; dd_open: number }
 export interface DDRow { id: number; deal: string; category: string; title: string; status: string; document_id: string | null }
 export interface EvalRunRow { id: number; suite: string; ran_at: string; note: string | null; metrics: Record<string, unknown> }
-export interface Breach { company: string; kpi_metric: string; period: string; status: string; value: string; threshold: string }
+export interface Breach { company: string; kpi_metric: string; period: string; status: string; value: string; threshold: string; unit?: string }
 export interface Report {
   breaches: Breach[];
   companies: { id: number; name: string; kpis: { metric: string; period: string; value: string; unit: string; sources: { document_id: string; page: number }[] }[] }[];
