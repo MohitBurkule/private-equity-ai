@@ -174,3 +174,26 @@ def test_slack_channel_csv_and_errors():
     bad = fake({"https://slack.com/api/conversations.list": {"ok": False, "error": "invalid_auth"}})
     with pytest.raises(ConnectorError):
         list(Slack("tok", bad).items())
+
+
+def test_saved_connection_encrypts_token_and_runs_due(monkeypatch):
+    from cryptography.fernet import Fernet
+    h = new_tenant(c, "conn")
+    monkeypatch.delenv("CONNECTOR_KEY", raising=False)
+    body = {"connector": "gmail", "token": "tok", "deal": "atlas", "interval_minutes": 10}
+    assert c.post("/connections", json=body, headers=h).status_code == 503  # no key = refuse
+    monkeypatch.setenv("CONNECTOR_KEY", Fernet.generate_key().decode())
+    monkeypatch.setattr(m, "CONNECTOR_HTTP", fake(gmail_routes()))
+    r = c.post("/connections", json=body, headers=h)
+    assert r.status_code == 201
+    cid = r.json()["id"]
+    from app.models import Connection
+    db = m.SessionLocal()
+    assert "tok" != db.get(Connection, cid).token_sealed and "tok" not in db.get(Connection, cid).token_sealed
+    db.close()
+    assert c.post("/connections/run-due", headers=h).json()["ran"][0]["status"].startswith("ok: 1 new")
+    assert c.post("/connections/run-due", headers=h).json()["ran"] == []  # interval not elapsed
+    assert c.post(f"/connections/{cid}/sync", headers=h).json()["unchanged"] == 1
+    assert c.get("/connections", headers=h).json()[0]["last_status"].startswith("ok")
+    assert "token" not in c.get("/connections", headers=h).text
+    assert c.post("/connections", json={**body, "interval_minutes": 1}, headers=h).status_code == 422
