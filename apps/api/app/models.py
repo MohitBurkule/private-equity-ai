@@ -14,6 +14,7 @@ class Document(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # sha256
     filename: Mapped[str] = mapped_column(String(512))
     n_pages: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(16), default="pdf")
     pages: Mapped[list[PageRow]] = relationship(back_populates="document", cascade="all")
 
 
@@ -24,6 +25,7 @@ class PageRow(Base):
     document_id: Mapped[str] = mapped_column(ForeignKey("document.id"))
     number: Mapped[int] = mapped_column(Integer)  # 1-based
     text: Mapped[str] = mapped_column(Text)
+    label: Mapped[str | None] = mapped_column(String(256), default=None)  # sheet name
     document: Mapped[Document] = relationship(back_populates="pages")
 
 

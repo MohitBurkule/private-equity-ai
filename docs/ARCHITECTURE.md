@@ -74,7 +74,7 @@ Status: v0.2. Revised with research round 1 (research/00-INDEX.md) and sample-da
 ## 6. Alternatives considered
 - **Vector DB**: pgvector (chosen v1, one DB, RLS-compatible) vs Qdrant/Weaviate (scale, filtering) vs Elasticsearch dense. Interface-wrapped to swap.
 - **Lexical search**: Elasticsearch vs OpenSearch (licence) vs Postgres FTS. Start Postgres FTS + OpenSearch optional; hybrid needed for exact numbers/names.
-- **Parsing**: Docling / Unstructured / LlamaParse / Azure Document Intelligence / Textract. Default Docling (permissive). **No AGPL/GPL parsers in core** (PyMuPDF, Marker, Surya, MinerU; OpenBB core): only as separately-deployed optional services, licence reviewed. pdf.js for viewer. Pluggable cloud OCR for hard scans; benchmark on sample data.
+- **Parsing**: Docling / Unstructured / LlamaParse / Azure Document Intelligence / Textract. Default Docling (permissive). **No AGPL or restricted-licence parsers in core**: PyMuPDF is AGPL; Marker/Surya code is Apache-2.0 but their model weights carry commercial-use limits (Open RAIL-M, revenue cap); MinerU has extra terms; OpenBB licence is ambiguous. These are optional adapters behind a licence tag, separately deployed, pending legal review. pdf.js for viewer. Pluggable cloud OCR for hard scans; benchmark on sample data.
 - **Orchestration**: LangGraph (chosen for stateful agents) vs LlamaIndex Workflows vs custom. LlamaIndex used for ingestion/retrieval only; avoid framework lock-in via thin adapters.
 - **LLMs**: Claude/GPT for reasoning; open models (Llama, Qwen, Mistral) via vLLM for on-prem tenants. Eval-driven selection.
 - **Embeddings**: OpenAI, Voyage, BGE/E5 (open). Finance-tuned evaluated.
@@ -117,3 +117,6 @@ Repo name; deployment target (cloud/on-prem); which vendor licences user holds (
 
 ## 13. Measured baselines
 - Retrieval (BM25 + finance synonym expansion, scoped to the gold document), 14 FinanceBench open-source questions on 10 sample filings: recall@1 0.14, @3 0.36, @5 0.50, @10 0.57 (`evals/run_retrieval_eval.py`). Without synonym expansion: @10 0.29. Small n and synonyms were tuned on these questions, so treat as an upper-biased baseline. Next steps: dense embeddings + cross-encoder rerank, statement-page classifier, and a held-out question set.
+
+## 14. Excel ingest (implemented)
+Workbooks ingest as one page per sheet; each cell is a line `Sheet!B7: value [=formula]` so quotes and citations address cells and formulas stay visible next to cached values. Hidden sheets are flagged in the text. Upload dispatch is by content (PDF or zip magic), not extension. Not yet done: external links, number formats, date system, very-hidden detection beyond sheet_state, header-path grids (research/06 s18).
