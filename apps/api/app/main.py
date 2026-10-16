@@ -56,6 +56,7 @@ from app.ratelimit import limiter
 from app.report import build_report, build_report_docx
 from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
 from app.search import PageIndex
+from app.sumcheck import sum_check
 from app.tracing import tracing_middleware
 from app.xbrl import candidates, crosscheck, load_companyfacts
 
@@ -672,6 +673,19 @@ def calc_tieout(body: TieOutIn, who: Who):
     r = tie_out(body.rows, body.base, body.total)
     return {"status": r.status, "solutions": r.solutions, "detail": r.detail,
             "rows": None if r.rows is None else {k: [str(x) for x in v] for k, v in r.rows.items()}}
+
+
+class SumCheckIn(BaseModel):
+    parts: list[Decimal]
+    stated: Decimal
+    rounding_unit: Decimal = Decimal(0)
+
+
+@app.post("/calc/sumcheck")
+def calc_sumcheck(body: SumCheckIn, who: Who):
+    r = sum_check(body.parts, body.stated, body.rounding_unit)
+    return {"status": r.status, "computed": str(r.computed), "stated": str(r.stated),
+            "difference": str(r.difference), "detail": r.detail}
 
 
 @app.get("/portfolio/report")
