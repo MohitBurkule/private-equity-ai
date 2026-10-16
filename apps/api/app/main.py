@@ -37,11 +37,21 @@ from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
 from app.facts import CitationError, add_verified_fact, review_fact
+from app.holdings import parse_holdings
 from app.ingest import finalize_upload, ingest_any
 from app.llm import LLM, NoLLMConfigured, get_llm
 from app.memo import build_memo, build_memo_docx, build_memo_pptx
 from app.migrate import migrate
-from app.models import STAGES, DDRequest, Deal, Document, Fact, IngestJob, PageRow
+from app.models import (
+    STAGES,
+    DDRequest,
+    Deal,
+    Document,
+    Fact,
+    Holding,
+    IngestJob,
+    PageRow,
+)
 from app.models import Tenant as TenantRow
 from app.portfolio import (
     Covenant,
@@ -706,6 +716,66 @@ def calc_sumcheck(body: SumCheckIn, who: Who):
     r = sum_check(body.parts, body.stated, body.rounding_unit)
     return {"status": r.status, "computed": str(r.computed), "stated": str(r.stated),
             "difference": str(r.difference), "detail": r.detail}
+
+
+@app.post("/holdings/import", status_code=201)
+async def holdings_import(file: Annotated[UploadFile, File()], db: Db, who: Writer,
+                          platform: Annotated[str, Form()],
+                          currency: Annotated[str | None, Form()] = None,
+                          mapping: Annotated[str | None, Form()] = None):
+    """Import a holdings export the user downloaded. `mapping` is JSON like {"company": "Business"}."""
+    import json as _json
+
+    if who.deals is not None:
+        raise HTTPException(403, "walled keys cannot import holdings")
+    platform = platform.strip()
+    if not platform:
+        raise HTTPException(422, "platform label required")
+    try:
+        mp = _json.loads(mapping) if mapping else None
+        if mp is not None and not (isinstance(mp, dict) and all(isinstance(v, str) for v in mp.values())):
+            raise ValueError
+    except ValueError as e:
+        raise HTTPException(422, "mapping must be a JSON object of field to column name") from e
+    data = await file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError as e:
+        raise HTTPException(422, "file must be UTF-8 text") from e
+    rows, errors, missing = parse_holdings(text, mp, currency)
+    if missing:
+        raise HTTPException(422, f"no column found for: {missing}; send a mapping")
+    if not rows:
+        raise HTTPException(422, {"detail": "no valid rows", "errors": errors[:50]})
+    res = ingest_any(db, who.tenant, data, file.filename or "holdings.csv")
+    if not res.documents:
+        reason = res.skipped[0]["reason"] if res.skipped else "cannot store file"
+        raise HTTPException(409 if "already stored" in reason else 422, reason)
+    doc = res.documents[0]
+    if db.query(Holding).filter_by(tenant_id=who.tenant, document_id=doc.id).first():
+        raise HTTPException(409, "this file was already imported")
+    for r in rows:
+        db.add(Holding(tenant_id=who.tenant, platform=platform, company=r.company, shares=r.shares,
+                       price=r.price, currency=r.currency, acquired=r.acquired, document_id=doc.id, line=r.line))
+    db.commit()
+    log_event(db, who.tenant, actor(who), "holdings.import",
+              {"document_id": doc.id, "platform": platform, "imported": len(rows), "rejected": len(errors)})
+    return {"document_id": doc.id, "imported": len(rows), "rejected": len(errors), "errors": errors[:50]}
+
+
+@app.get("/holdings")
+def holdings_list(db: Db, who: Who, platform: str | None = None):
+    if who.deals is not None:
+        return []
+    q = db.query(Holding).filter_by(tenant_id=who.tenant)
+    if platform:
+        q = q.filter_by(platform=platform)
+    return [{"id": h.id, "platform": h.platform, "company": h.company, "shares": str(h.shares),
+             "price": str(h.price), "currency": h.currency, "cost": str(h.shares * h.price),
+             "acquired": h.acquired, "document_id": h.document_id, "line": h.line}
+            for h in q.order_by(Holding.id)]
 
 
 @app.get("/portfolio/report")

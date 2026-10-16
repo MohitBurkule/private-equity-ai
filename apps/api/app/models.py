@@ -124,3 +124,18 @@ class Deal(Base):
     stage: Mapped[str] = mapped_column(String(16), default="sourcing")
     note: Mapped[str | None] = mapped_column(Text, default=None)
     updated_at: Mapped[str] = mapped_column(String(40), default="")
+
+
+class Holding(Base):
+    """One row of a user-supplied secondary-market holdings export, tied to the file it came from."""
+    __tablename__ = "holding"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    platform: Mapped[str] = mapped_column(String(64))
+    company: Mapped[str] = mapped_column(String(256))
+    shares: Mapped[Decimal] = mapped_column(Numeric(24, 6))
+    price: Mapped[Decimal] = mapped_column(Numeric(24, 6))
+    currency: Mapped[str] = mapped_column(String(3))
+    acquired: Mapped[str | None] = mapped_column(String(10), default=None)
+    document_id: Mapped[str] = mapped_column(ForeignKey("document.id"))
+    line: Mapped[int] = mapped_column(Integer)
