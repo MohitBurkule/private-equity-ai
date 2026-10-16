@@ -74,6 +74,7 @@ from app.shareledger import Event as LedgerEvent
 from app.shareledger import reconcile as reconcile_shares
 from app.sumcheck import sum_check
 from app.tracing import render_metrics, tracing_middleware
+from app.waterfall import PrefClass, waterfall
 from app.xbrl import candidates, crosscheck, load_companyfacts
 
 engine = make_engine()
@@ -903,6 +904,35 @@ def eval_list(db: Db, who: Who, suite: str | None = None, limit: int = 100):
     rows = q.order_by(EvalRun.id.desc()).limit(max(1, min(limit, 500))).all()
     return [{"id": r.id, "suite": r.suite, "ran_at": r.ran_at, "note": r.note, "recorded_by": r.recorded_by,
              "metrics": _json.loads(r.metrics)} for r in rows]
+
+
+class PrefClassIn(BaseModel):
+    name: str
+    shares: Decimal
+    invested: Decimal
+    pref_multiple: Decimal = Decimal(1)
+    rank: int = 1
+    participating: bool = False
+    cap_multiple: Decimal | None = None
+
+
+class WaterfallIn(BaseModel):
+    exit_value: Decimal
+    common_shares: Decimal
+    classes: list[PrefClassIn]
+
+
+@app.post("/calc/waterfall")
+def calc_waterfall(body: WaterfallIn, who: Who):
+    """Exit proceeds by class for the stated terms. Terms the model does not cover are not applied."""
+    if len(body.classes) > 50:
+        raise HTTPException(422, "at most 50 classes")
+    try:
+        r = waterfall(body.exit_value, [PrefClass(**c.model_dump()) for c in body.classes], body.common_shares)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"status": r.status, "detail": r.detail, "converted": r.converted,
+            "payouts": {k: str(v) for k, v in r.payouts.items()}}
 
 
 @app.get("/portfolio/report")
