@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 import pytest
+
 from app import marketdata as md
 
 
