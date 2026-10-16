@@ -63,3 +63,9 @@ The response contains the API key once; only its hash is stored. Paste it into t
 
 ## Known operational gaps
 No point-in-time recovery, no per-person identity (OIDC), uploads are parsed in-process (a hostile PDF can consume memory), sessions of the web app keep the API key in sessionStorage. Treat as pre-production.
+
+## Deals, DDQ answering, market data
+
+- `POST /deals`, `GET /deals`, `PATCH /deals/{name}`: stage (sourcing, screening, dd, ic, signed, closed, passed), note, document and open-DD counts. Walled keys cannot create deals.
+- `POST /ddq` with `{"questions": [...]}` (1 to 200): each question is answered alone with verified, cited claims only. `needs_human` is true for anything abstained, failed or empty. No answer is ever filled in without a source.
+- `app/marketdata.py`: `Provider` protocol and `CsvProvider` (columns symbol, price, currency, as_of). Paid feeds implement the protocol. Missing symbols raise `NoData`.
