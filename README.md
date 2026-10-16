@@ -9,12 +9,16 @@ An analyst loads deal documents, searches them, and every number in the output l
 
 | | |
 |---|---|
-| ![Workspace](docs/screenshots/02-workspace-documents.png) | ![Source page](docs/screenshots/05-source-page-highlight.png) |
-| Load documents, search | Open the cited source page |
-| ![Memo](docs/screenshots/07-memo.png) | ![Deals](docs/screenshots/09-deals.png) |
-| IC memo with footnoted figures | Deals and 26-item DD tracker |
-| ![Portfolio](docs/screenshots/10-portfolio.png) | ![Evals](docs/screenshots/11-evals.png) |
-| Covenant breach from cited facts | Eval dashboard |
+| ![Home](docs/screenshots/03-chat-answer.png) | ![Source drawer](docs/screenshots/04-chat-source-drawer.png) |
+| Chat home with a proactive inbox | Click any citation to read the source page |
+| ![Dashboards](docs/screenshots/08-dashboards.png) | ![Deals](docs/screenshots/06-deals.png) |
+| Interactive dashboards | Deals and diligence tracker |
+| ![Portfolio](docs/screenshots/07-portfolio.png) | ![Documents](docs/screenshots/05-documents.png) |
+| Covenant breach from cited facts | Documents, search, memo |
+| ![Comps](docs/screenshots/11-comps.png) | ![Integrations](docs/screenshots/12-integrations.png) |
+| Comps with a cited implied range | Integrations catalog and import |
+| ![Firm profile](docs/screenshots/13-firm-profile.png) | ![Workflows](docs/screenshots/14-workflows.png) |
+| Firm profile: rules found in your documents | Workflows built from the agent tools |
 
 Known rough edges: `/ask` and auto-extraction need an LLM key and have not run against a real model.
 

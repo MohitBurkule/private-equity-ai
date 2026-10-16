@@ -18,7 +18,9 @@ Http = Callable[[str, dict[str, str]], bytes]
 def default_http(url: str, headers: dict[str, str]) -> bytes:
     if not url.startswith("https://"):
         raise ValueError("connectors only call https URLs")
-    req = urllib.request.Request(url, headers=headers)
+    headers = dict(headers)
+    body = headers.pop("X-Post-Body", None)  # POST-only APIs (Dropbox): see connectors/files.py
+    req = urllib.request.Request(url, headers=headers, data=body.encode() if body is not None else None)
     with urllib.request.urlopen(req, timeout=30) as r:
         return r.read()
 
