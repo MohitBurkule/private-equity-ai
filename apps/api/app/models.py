@@ -61,6 +61,9 @@ class Fact(Base):
     unit: Mapped[str] = mapped_column(String(32))
     basis: Mapped[str] = mapped_column(String(16), default="GAAP")
     status: Mapped[str] = mapped_column(String(16), default="auto")
+    reviewed_by: Mapped[str | None] = mapped_column(String(64), default=None)
+    reviewed_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    review_note: Mapped[str | None] = mapped_column(Text, default=None)
     sources: Mapped[list[FactSource]] = relationship(back_populates="fact", cascade="all")
 
 

@@ -30,7 +30,7 @@ from app.auth import (
 )
 from app.db import make_engine, make_session_factory
 from app.edgar import fetch_companyfacts
-from app.facts import CitationError, add_verified_fact
+from app.facts import CitationError, add_verified_fact, review_fact
 from app.ingest import ingest_any
 from app.llm import LLM, NoLLMConfigured, get_llm
 from app.memo import build_memo, build_memo_docx
@@ -234,6 +234,50 @@ def create_fact(body: FactIn, db: Db, who: Writer):
     log_event(db, tenant, actor(who), "fact.create", {"fact_id": f.id, "entity": body.entity,
                                                  "metric": body.metric, "period": body.period})
     return {"id": f.id, "status": f.status}
+
+
+def _fact_out(f: Fact) -> dict:
+    return {"id": f.id, "entity": f.entity, "metric": f.metric, "period": f.period, "value": str(f.value),
+            "unit": f.unit, "basis": f.basis, "status": f.status, "reviewed_by": f.reviewed_by,
+            "reviewed_at": f.reviewed_at, "review_note": f.review_note,
+            "sources": [{"document_id": s.document_id, "page": s.page, "quote": s.quote} for s in f.sources]}
+
+
+@app.get("/facts")
+def list_facts(db: Db, who: Who, status: str | None = None, entity: str | None = None):
+    """Review queue: filter by status (e.g. ocr_unverified) to see what still needs a human."""
+    q = db.query(Fact).filter_by(tenant_id=who.tenant)
+    if status:
+        q = q.filter_by(status=status)
+    if entity:
+        q = q.filter_by(entity=entity)
+    scope = visible_doc_ids(db, who)
+    return [_fact_out(f) for f in q.order_by(Fact.id).all() if fact_visible(f, scope)]
+
+
+class ReviewIn(BaseModel):
+    action: str  # accept | reject | edit
+    note: str | None = None
+    value: Decimal | None = None
+    page: int | None = None
+    quote: str | None = None
+    scale: Decimal = Decimal(1)
+
+
+@app.post("/facts/{fact_id}/review")
+def review(fact_id: int, body: ReviewIn, db: Db, who: Writer):
+    f = db.get(Fact, fact_id)
+    if f is None or f.tenant_id != who.tenant or not fact_visible(f, visible_doc_ids(db, who)):
+        raise HTTPException(404, "fact not found")
+    before = {"status": f.status, "value": str(f.value), "page": f.sources[0].page, "quote": f.sources[0].quote}
+    try:
+        review_fact(db, f, action=body.action, reviewer=actor(who), note=body.note, value=body.value,
+                    page=body.page, quote=body.quote, scale=body.scale)
+    except CitationError as e:
+        raise HTTPException(422, str(e)) from e
+    log_event(db, who.tenant, actor(who), "fact.review",
+              {"fact_id": f.id, "action": body.action, "before": before, "after": _fact_out(f), "note": body.note})
+    return _fact_out(f)
 
 
 @app.get("/memo")

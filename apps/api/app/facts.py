@@ -1,6 +1,7 @@
 """Fact creation gate: a fact is stored only if its citation verifies in code."""
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -32,5 +33,31 @@ def add_verified_fact(
                 status="ocr_unverified" if row.method == "ocr" else "verified")
     fact.sources = [FactSource(document_id=document_id, page=page, quote=quote)]
     db.add(fact)
+    db.commit()
+    return fact
+
+
+def review_fact(db: Session, fact: Fact, *, action: str, reviewer: str, note: str | None = None,
+                value: Decimal | None = None, page: int | None = None, quote: str | None = None,
+                scale: Decimal = Decimal(1)) -> Fact:
+    """Human review. accept: confirm (also lifts ocr_unverified). reject: keep the row, exclude from
+    memos. edit: replace value and/or citation, but the new pair must pass the same gate as creation."""
+    if action not in ("accept", "reject", "edit"):
+        raise CitationError("action must be accept, reject or edit")
+    src = fact.sources[0]
+    if action == "edit":
+        new_page = page if page is not None else src.page
+        new_quote = quote if quote is not None else src.quote
+        new_value = value if value is not None else fact.value
+        row = db.query(PageRow).filter_by(document_id=src.document_id, number=new_page).one_or_none()
+        if row is None:
+            raise CitationError(f"page {new_page} not found in the cited document")
+        if not quote_in_page(new_quote, row.text):
+            raise CitationError("quote not found on cited page")
+        if not verify_number(new_value, new_quote, scale):
+            raise CitationError("value does not match any number in the quote")
+        fact.value, src.page, src.quote = new_value, new_page, new_quote
+    fact.status = "rejected" if action == "reject" else "verified"
+    fact.reviewed_by, fact.reviewed_at, fact.review_note = reviewer, datetime.now(UTC).isoformat(), note
     db.commit()
     return fact
