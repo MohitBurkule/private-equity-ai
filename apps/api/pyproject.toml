@@ -7,6 +7,7 @@ dependencies = ["fastapi>=0.110", "uvicorn[standard]>=0.29", "pydantic>=2.6", "s
 llm = ["anthropic>=0.40"]
 dense = ["fastembed>=0.4"]
 llamacpp = ["llama-cpp-python>=0.3"]
+pdf = ["pymupdf>=1.24", "pdfplumber>=0.11"]
 ocr = ["rapidocr-onnxruntime>=1.3", "pypdfium2>=4"]
 dev = ["pytest>=8", "httpx>=0.27", "ruff>=0.4"]
 [tool.setuptools]
