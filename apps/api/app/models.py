@@ -41,6 +41,8 @@ class PageRow(Base):
     number: Mapped[int] = mapped_column(Integer)  # 1-based
     text: Mapped[str] = mapped_column(Text)
     label: Mapped[str | None] = mapped_column(String(256), default=None)  # sheet name
+    method: Mapped[str] = mapped_column(String(16), default="text")  # text | ocr
+    ocr_confidence: Mapped[float | None] = mapped_column(default=None)
     document: Mapped[Document] = relationship(back_populates="pages")
 
 

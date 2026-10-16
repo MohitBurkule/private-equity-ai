@@ -28,7 +28,8 @@ def add_verified_fact(
     if not verify_number(value, quote, scale):
         raise CitationError("value does not match any number in the quote")
     fact = Fact(tenant_id=tenant_id, entity=entity, metric=metric, period=period, value=value, unit=unit,
-                basis=basis, status="verified")
+                basis=basis,
+                status="ocr_unverified" if row.method == "ocr" else "verified")
     fact.sources = [FactSource(document_id=document_id, page=page, quote=quote)]
     db.add(fact)
     db.commit()
