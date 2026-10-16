@@ -79,18 +79,26 @@ def test_memo_and_portfolio_are_tenant_scoped(two_tenants):
 
 
 def test_audit_chains_are_independent_per_tenant():
-    with Session(engine) as s:
+    from app.main import SessionLocal
+    from app.rls import bind_tenant
+    with SessionLocal() as s:
+        bind_tenant(s, "chain-a")
         log_event(s, "chain-a", "u", "x", {"i": 1})
+        bind_tenant(s, "chain-b")
         log_event(s, "chain-b", "u", "x", {"i": 1})
+        bind_tenant(s, "chain-a")
         log_event(s, "chain-a", "u", "x", {"i": 2})
         assert verify_chain(s, "chain-a") == (True, None)
+        bind_tenant(s, "chain-b")
         assert verify_chain(s, "chain-b") == (True, None)
 
 
 def test_add_verified_fact_rejects_other_tenants_doc():
     c = TestClient(app)
     doc = upload_xlsx(c, new_tenant(c, "owner"), "Revenue")
+    from app.rls import bind_tenant
     with Session(engine) as s, pytest.raises(CitationError):
+        bind_tenant(s, "intruder")
         add_verified_fact(s, tenant_id="intruder", entity="E", metric="m", period="p",
                           value=Decimal(1234), unit="USD", document_id=doc, page=1,
                           quote="Sheet!B1: 1,234")

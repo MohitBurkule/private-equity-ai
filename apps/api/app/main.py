@@ -1,3 +1,4 @@
+import os
 from decimal import Decimal
 from typing import Annotated
 
@@ -18,11 +19,17 @@ from app.portfolio import (
     qoq_change,
     record_observation,
 )
+from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
 from app.search import PageIndex
 
 engine = make_engine()
 SessionLocal = make_session_factory(engine)
-Base.metadata.create_all(engine)
+install_tenant_hook(SessionLocal)
+# Schema + RLS run as the owner role (MIGRATE_DATABASE_URL); requests run as the app role.
+_owner = make_engine(os.environ.get("MIGRATE_DATABASE_URL")) if os.environ.get("MIGRATE_DATABASE_URL") else engine
+Base.metadata.create_all(_owner)
+apply_rls(_owner, os.environ.get("APP_DB_ROLE"))
+verify_app_role(engine)
 
 app = FastAPI(title="PE Platform API", version="0.0.1")
 
@@ -41,6 +48,7 @@ def get_tenant(db: Db, authorization: Annotated[str | None, Header()] = None) ->
     tenant = tenant_for_key(db, authorization[7:].strip())
     if tenant is None:
         raise HTTPException(401, "invalid token")
+    bind_tenant(db, tenant)
     return tenant
 
 
