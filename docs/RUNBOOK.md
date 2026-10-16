@@ -33,6 +33,9 @@ The response contains the API key once; only its hash is stored. Paste it into t
 - Limits: 2000 files, `MAX_ARCHIVE_UNCOMPRESSED_BYTES` (1 GB), nesting depth 3. Encrypted members, path-escaping names and size-mismatched members are skipped with a reason. A `deal` tag applies to every member.
 - DOCX has no real pages: text is cut into ~3000-char chunks labelled by the nearest heading, so a citation page is a chunk, not a printed page. Legacy .doc/.ppt/.msg are not supported. No malware scan yet.
 
+## Covenant alerts
+- `POST /portfolio/companies/{id}/covenants {kpi_metric, operator "<="|">=", threshold_fact_id}`: the threshold must be a verified, cited fact (for example one accepted from the `debt` extraction), never a typed number. `GET .../covenants` tests every current KPI observation of that metric: `ok`, `breach` (with `headroom_pct`, negative = over) or `unit_mismatch`; `breaches` is the alert list. Pull-based for now: no email or push notification yet.
+
 ## Contradictions and DD requests
 - `GET /facts/conflicts[?entity=]`: same entity, metric, period, basis and unit with different values across facts (rejected ignored). Reports spread and `likely_rounding` (under 0.5%); never picks a winner. It only sees facts that were created, so it is as complete as the extraction and review work.
 - DD list: `POST /dd/requests/seed {deal, categories?}` (standard template: financial, commercial, legal, tax, hr, it_esg), `POST /dd/requests`, `GET /dd/requests?deal=&status=`, `PATCH /dd/requests/{id}` (status open/received/waived, or `document_id` which must belong to the same deal and marks it received), `GET /dd/summary?deal=` (percent complete, missing items). Walled keys only see and change their own deals.

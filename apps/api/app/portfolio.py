@@ -40,6 +40,62 @@ class KpiObservation(Base):
     superseded_by: Mapped[int | None] = mapped_column(Integer, default=None)
 
 
+class Covenant(Base):
+    """A covenant test on a KPI. The threshold is a verified, cited fact, never a typed-in number."""
+    __tablename__ = "covenant"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("portfolio_company.id"), nullable=False)
+    kpi_metric: Mapped[str] = mapped_column(String(128))
+    operator: Mapped[str] = mapped_column(String(2))  # "<=" (must not exceed) or ">=" (must not fall below)
+    threshold_fact_id: Mapped[int] = mapped_column(ForeignKey("fact.id"), nullable=False)
+
+
+def add_covenant(db: Session, tenant_id: str, company_id: int, kpi_metric: str, operator: str,
+                 threshold_fact_id: int) -> Covenant:
+    if operator not in ("<=", ">="):
+        raise ValueError("operator must be <= or >=")
+    company = db.get(PortfolioCompany, company_id)
+    if company is None or company.tenant_id != tenant_id:
+        raise ValueError("company not found")
+    fact = db.get(Fact, threshold_fact_id)
+    if fact is None or fact.tenant_id != tenant_id or fact.status != "verified" or not fact.sources:
+        raise ValueError("covenant threshold must be a verified, cited fact")
+    cov = Covenant(tenant_id=tenant_id, company_id=company_id, kpi_metric=kpi_metric, operator=operator,
+                   threshold_fact_id=threshold_fact_id)
+    db.add(cov)
+    db.commit()
+    return cov
+
+
+def evaluate_covenant(db: Session, cov: Covenant, scope: set[str] | None = None) -> list[dict]:
+    """One result per current observation of the KPI: ok / breach, with headroom in percent of the
+    threshold (positive = room left). Units must match or the row says so instead of comparing."""
+    from app.acl import fact_visible
+    thr = db.get(Fact, cov.threshold_fact_id)
+    if thr is None or not fact_visible(thr, scope):
+        return []
+    out = []
+    for o in current_kpis(db, cov.tenant_id, cov.company_id):
+        if o.metric != cov.kpi_metric:
+            continue
+        obs_fact = db.get(Fact, o.fact_id)
+        if obs_fact is None or not fact_visible(obs_fact, scope):
+            continue
+        row = {"period": o.period, "value": str(o.value), "threshold": str(thr.value),
+               "observation_fact_id": o.fact_id, "threshold_fact_id": thr.id}
+        if o.unit != thr.unit:
+            row["status"] = "unit_mismatch"
+        else:
+            ok = o.value <= thr.value if cov.operator == "<=" else o.value >= thr.value
+            row["status"] = "ok" if ok else "breach"
+            if thr.value:
+                gap = (thr.value - o.value) if cov.operator == "<=" else (o.value - thr.value)
+                row["headroom_pct"] = str((gap / abs(thr.value) * 100).quantize(Decimal("0.1")))
+        out.append(row)
+    return out
+
+
 def record_observation(db: Session, tenant_id: str, company_id: int, fact_id: int) -> KpiObservation:
     company = db.get(PortfolioCompany, company_id)
     if company is None or company.tenant_id != tenant_id:
