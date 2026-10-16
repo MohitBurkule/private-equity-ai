@@ -114,3 +114,10 @@ def test_pptx_endpoint_auth_and_type():
     assert c.get("/memo.pptx", params={"entity": "X"}).status_code == 401
     r = c.get("/memo.pptx", params={"entity": "X"}, headers=new_tenant(c, "pptx-t"))
     assert r.status_code == 200 and r.content[:2] == b"PK" and "presentationml" in r.headers["content-type"]
+
+
+def test_gloss_adds_reading_aid_for_large_values():
+    from decimal import Decimal
+    from app.memo import _gloss
+    assert _gloss(Decimal("74039000000")) == "74,039,000,000.00 (about 74.04B)"
+    assert _gloss(Decimal("1000")) == "1,000.00"
