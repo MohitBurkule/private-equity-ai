@@ -1,39 +1,52 @@
-import { useEffect, useState } from "react";
+import { api2, DDRow, DealRow, EvalRunRow, FactRow, Report, STAGES } from "./api";
 import { fmtAmount } from "./format";
-import { api2, DDRow, EvalRunRow, DealRow, FactRow, Report, STAGES } from "./api";
+import { useLoad } from "./hooks";
+import { SourceChip } from "./source";
+import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input } from "./ui";
+import { useState } from "react";
 
-function useLoad<T>(load: () => Promise<T>, deps: unknown[] = []) {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState("");
-  const reload = () => { setError(""); load().then(setData).catch((e) => setError(String(e))); };
-  useEffect(reload, deps); // eslint-disable-line react-hooks/exhaustive-deps
-  return { data, error, reload, setError };
-}
-
-const Err = ({ e }: { e: string }) => (e ? <p role="alert" className="alert">{e}</p> : null);
+const Page = ({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) => (
+  <div className="mx-auto max-w-4xl space-y-5 p-6">
+    <div><h1 className="text-xl font-semibold tracking-tight">{title}</h1>{hint && <p className="text-sm text-mut">{hint}</p>}</div>
+    {children}
+  </div>
+);
 
 export function ReviewQueue() {
   const { data, error, reload, setError } = useLoad<FactRow[]>(async () => [
     ...(await api2.facts("auto")), ...(await api2.facts("ocr_unverified")),
   ]);
-  const act = (id: number, action: "accept" | "reject") =>
-    api2.review(id, action).then(reload).catch((e) => setError(String(e)));
+  const conflicts = useLoad(api2.conflicts);
+  const act = (id: number, action: "accept" | "reject") => api2.review(id, action).then(reload).catch((e) => setError(String(e)));
   return (
-    <section className="panel">
-      <h2>Review queue</h2>
-      <Err e={error} />
-      {data && data.length === 0 && <p>Nothing waiting for review.</p>}
-      <ul className="list">
-        {data?.map((f) => (
-          <li key={f.id}>
-            <b>{f.entity} {f.metric} {f.period}</b>: {fmtAmount(f.value, f.unit)} <span className="pill warn">{f.status}</span>
-            {f.sources[0] && <blockquote>“{f.sources[0].quote}” (doc {f.sources[0].document_id.slice(0, 8)}, p.{f.sources[0].page})</blockquote>}
-            <button onClick={() => void act(f.id, "accept")}>Accept</button>{" "}
-            <button onClick={() => void act(f.id, "reject")}>Reject</button>
-          </li>
-        ))}
-      </ul>
-    </section>
+    <Page title="Review" hint="Extracted facts need an analyst before they can appear in a memo.">
+      <Card>
+        <CardHead title="Waiting for review" />
+        <ErrorLine e={error} />
+        {data?.length === 0 && <Empty>Nothing waiting for review.</Empty>}
+        <ul className="divide-y divide-line">
+          {data?.map((f) => (
+            <li key={f.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">{f.entity} · {f.metric} · {f.period}: <span className="tnum">{fmtAmount(f.value, f.unit)}</span> <Badge tone="warn">{f.status}</Badge></p>
+                {f.sources[0] && <p className="mt-1 flex items-center gap-2 text-xs text-mut"><SourceChip docId={f.sources[0].document_id} page={f.sources[0].page} quote={f.sources[0].quote} />“{f.sources[0].quote}”</p>}
+              </div>
+              <Button variant="primary" onClick={() => void act(f.id, "accept")}>Accept</Button>
+              <Button onClick={() => void act(f.id, "reject")}>Reject</Button>
+            </li>
+          ))}
+        </ul>
+      </Card>
+      <Card>
+        <CardHead title="Conflicts between documents" hint="Same metric and period, different values. Nothing is picked for you." />
+        {conflicts.data?.length === 0 && <Empty>No conflicts found.</Empty>}
+        <ul className="divide-y divide-line">
+          {conflicts.data?.map((c, i) => (
+            <li key={i} className="px-5 py-3 text-sm">{c.entity} · {c.metric} · {c.period}: differ by {c.spread_pct}% {c.likely_rounding && <Badge tone="acc">likely rounding</Badge>}</li>
+          ))}
+        </ul>
+      </Card>
+    </Page>
   );
 }
 
@@ -43,77 +56,83 @@ export function Deals() {
   const deals = useLoad<DealRow[]>(api2.deals);
   const dd = useLoad<DDRow[]>(async () => (sel ? api2.dd(sel) : []), [sel]);
   const fail = (e: unknown) => deals.setError(String(e));
+  const byCat = new Map<string, DDRow[]>();
+  dd.data?.forEach((r) => byCat.set(r.category, [...(byCat.get(r.category) ?? []), r]));
   return (
-    <section className="panel">
-      <h2>Deals</h2>
-      <Err e={deals.error || dd.error} />
-      <form className="row" onSubmit={(e) => { e.preventDefault(); api2.createDeal(name).then(() => { setName(""); deals.reload(); }).catch(fail); }}>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New deal name" />
-        <button type="submit">Create</button>
-      </form>
-      <table>
-        <thead><tr><th>Deal</th><th>Stage</th><th>Docs</th><th>DD open</th></tr></thead>
-        <tbody>
-          {deals.data?.map((d) => (
-            <tr key={d.name}>
-              <td><button onClick={() => setSel(d.name)}>{d.name}</button></td>
-              <td>
-                <select value={d.stage} onChange={(e) => api2.setStage(d.name, e.target.value).then(deals.reload).catch(fail)}>
-                  {STAGES.map((s) => <option key={s}>{s}</option>)}
-                </select>
-              </td>
-              <td>{d.documents}</td><td>{d.dd_open}/{d.dd_total}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {sel && (
-        <>
-          <h3>DD tracker: {sel}</h3>
-          <button onClick={() => api2.ddSeed(sel).then(dd.reload).catch(fail)}>Add standard request list</button>
-          <ul className="list">
-            {dd.data?.map((r) => (
-              <li key={r.id}>
-                [{r.category}] {r.title}{" "}
-                <select value={r.status} onChange={(e) => api2.ddStatus(r.id, e.target.value).then(dd.reload).catch(fail)}>
-                  {["open", "received", "waived"].map((s) => <option key={s}>{s}</option>)}
-                </select>
-              </li>
+    <Page title="Deals" hint="Pipeline and the due-diligence request list for each deal.">
+      <Card>
+        <CardHead title="Pipeline" right={
+          <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (!name.trim()) return; api2.createDeal(name).then(() => { setName(""); deals.reload(); }).catch(fail); }}>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="New deal name" aria-label="New deal name" /><Button variant="primary" type="submit">Create</Button>
+          </form>} />
+        <ErrorLine e={deals.error || dd.error} />
+        {deals.data?.length === 0 && <Empty>No deals yet. Create one to start a diligence list.</Empty>}
+        <table className="w-full text-sm">
+          <tbody>
+            {deals.data?.map((d) => (
+              <tr key={d.name} className={"cursor-pointer border-t border-line first:border-0 hover:bg-sunk " + (sel === d.name ? "bg-acc-soft" : "")} onClick={() => setSel(d.name)}>
+                <td className="px-5 py-3 font-medium">{d.name}</td>
+                <td><select aria-label={`Stage of ${d.name}`} value={d.stage} onClick={(e) => e.stopPropagation()} onChange={(e) => api2.setStage(d.name, e.target.value).then(deals.reload).catch(fail)} className="rounded-md border border-line bg-bg px-2 py-1">
+                  {STAGES.map((s) => <option key={s}>{s}</option>)}</select></td>
+                <td className="tnum text-mut">{d.documents} docs</td>
+                <td className="tnum px-5 text-right">{d.dd_total ? `${d.dd_total - d.dd_open}/${d.dd_total} received` : "no list"}</td>
+              </tr>
             ))}
-          </ul>
-        </>
+          </tbody>
+        </table>
+      </Card>
+      {sel && (
+        <Card>
+          <CardHead title={`Due diligence: ${sel}`} right={<Button onClick={() => api2.ddSeed(sel).then(dd.reload).catch(fail)}>Add standard request list</Button>} />
+          {[...byCat.entries()].map(([cat, rows]) => (
+            <div key={cat} className="border-t border-line first:border-0">
+              <p className="bg-sunk px-5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-mut">{cat.replace("_", " / ")}</p>
+              <ul>{rows.map((r) => (
+                <li key={r.id} className="flex items-center gap-3 px-5 py-2 text-sm">
+                  <span className="min-w-0 flex-1">{r.title}</span>
+                  <select aria-label={`Status of ${r.title}`} value={r.status} onChange={(e) => api2.ddStatus(r.id, e.target.value).then(dd.reload).catch(fail)} className="rounded-md border border-line bg-bg px-2 py-1">
+                    {["open", "received", "waived"].map((s) => <option key={s}>{s}</option>)}</select>
+                </li>))}</ul>
+            </div>
+          ))}
+        </Card>
       )}
-    </section>
+    </Page>
   );
 }
 
 export function PortfolioPanel() {
   const { data, error } = useLoad<Report>(api2.report);
   return (
-    <section className="panel">
-      <h2>Portfolio</h2>
-      <Err e={error} />
-      <h3>Covenant alerts</h3>
-      {data && data.breaches.length === 0 && <p>No breaches in the visible data.</p>}
-      <ul className="list">
-        {data?.breaches.map((b, i) => (
-          <li key={i} className="alert">
-            {b.company}: {b.kpi_metric} {b.period} <span className="pill bad">{b.status}</span> value {fmtAmount(b.value, b.unit ?? "")}, threshold {fmtAmount(b.threshold, b.unit ?? "")}
-          </li>
-        ))}
-      </ul>
+    <Page title="Portfolio" hint="Every KPI is tied to a cited fact. Covenants test those KPIs against cited thresholds.">
+      <ErrorLine e={error} />
+      <Card>
+        <CardHead title="Covenant alerts" right={data && <Badge tone={data.breaches.length ? "bad" : "ok"}>{data.breaches.length ? `${data.breaches.length} breach` : "all clear"}</Badge>} />
+        {data?.breaches.length === 0 && <Empty>No breaches in the visible data.</Empty>}
+        <ul className="divide-y divide-line">
+          {data?.breaches.map((b, i) => (
+            <li key={i} className="flex flex-wrap items-center gap-3 px-5 py-3 text-sm">
+              <Badge tone="bad">{b.status}</Badge><span className="font-medium">{b.company}</span>
+              <span className="text-mut">{b.kpi_metric} · {b.period}</span>
+              <span className="tnum ml-auto">{fmtAmount(b.value, b.unit ?? "")} vs limit {fmtAmount(b.threshold, b.unit ?? "")}</span>
+            </li>
+          ))}
+        </ul>
+      </Card>
       {data?.companies.map((c) => (
-        <div key={c.id}>
-          <h3>{c.name}</h3>
-          {c.kpis.length === 0 && <p>No visible KPI observations.</p>}
-          <ul className="list">
+        <Card key={c.id}>
+          <CardHead title={c.name} />
+          {c.kpis.length === 0 && <Empty>No visible KPI observations.</Empty>}
+          <table className="w-full text-sm"><tbody>
             {c.kpis.map((k, i) => (
-              <li key={i}>{k.metric} {k.period}: <b>{fmtAmount(k.value, k.unit)}</b>{k.sources[0] && ` (doc ${k.sources[0].document_id.slice(0, 8)}, p.${k.sources[0].page})`}</li>
+              <tr key={i} className="border-t border-line first:border-0"><td className="px-5 py-2">{k.metric}</td><td className="text-mut">{k.period}</td>
+                <td className="tnum text-right font-medium">{fmtAmount(k.value, k.unit)}</td>
+                <td className="px-5 text-right">{k.sources[0] && <SourceChip docId={k.sources[0].document_id} page={k.sources[0].page} quote="" />}</td></tr>
             ))}
-          </ul>
-        </div>
+          </tbody></table>
+        </Card>
       ))}
-    </section>
+    </Page>
   );
 }
 
@@ -124,34 +143,29 @@ export function EvalDashboard() {
   const bySuite = new Map<string, EvalRunRow[]>();
   data?.forEach((r) => bySuite.set(r.suite, [...(bySuite.get(r.suite) ?? []), r]));
   return (
-    <section className="panel">
-      <h2>Evals</h2>
-      <Err e={error} />
-      {data && data.length === 0 && <p>No eval runs recorded. Run evals/record.py to add some.</p>}
+    <Page title="Evals" hint="How well the system itself performs, tracked run over run.">
+      <ErrorLine e={error} />
+      {data?.length === 0 && <Card><Empty>No eval runs recorded. Run evals/record.py to add some.</Empty></Card>}
       {[...bySuite.entries()].map(([suite, runs]) => {
         const latest = runs[0];
         const numeric = Object.entries(latest.metrics).filter(([, v]) => isNum(v));
         const misses = latest.metrics["misses"];
         return (
-          <div key={suite}>
-            <h3>{suite}</h3>
-            <p>Latest run {latest.ran_at.slice(0, 19)}{latest.note ? ` (${latest.note})` : ""}; {runs.length} run(s) recorded.</p>
-            <table>
-              <thead><tr><th>Metric</th><th>Latest</th><th>Previous</th></tr></thead>
-              <tbody>
-                {numeric.map(([k, v]) => {
-                  const prev = runs[1]?.metrics[k];
-                  return <tr key={k}><td>{k}</td><td className="num">{String(v)}</td><td className="num">{isNum(prev) ? String(prev) : "-"}</td></tr>;
-                })}
-              </tbody>
+          <Card key={suite}>
+            <CardHead title={suite} hint={`Latest run ${latest.ran_at.slice(0, 19).replace("T", " ")}${latest.note ? ` · ${latest.note}` : ""} · ${runs.length} run(s)`} />
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-[11px] uppercase tracking-wider text-mut"><th className="px-5 py-2">Metric</th><th className="text-right">Latest</th><th className="px-5 text-right">Previous</th></tr></thead>
+              <tbody>{numeric.map(([k, v]) => {
+                const prev = runs[1]?.metrics[k];
+                return <tr key={k} className="border-t border-line"><td className="px-5 py-2">{k}</td><td className="tnum text-right font-medium">{String(v)}</td><td className="tnum px-5 text-right text-mut">{isNum(prev) ? String(prev) : "-"}</td></tr>;
+              })}</tbody>
             </table>
             {Array.isArray(misses) && misses.length > 0 && (
-              <details><summary>{misses.length} miss(es) in the latest run</summary>
-                <pre>{JSON.stringify(misses, null, 1)}</pre></details>
+              <details className="border-t border-line px-5 py-3 text-xs"><summary>{misses.length} miss(es) in the latest run</summary><pre className="mt-2 overflow-x-auto">{JSON.stringify(misses, null, 1)}</pre></details>
             )}
-          </div>
+          </Card>
         );
       })}
-    </section>
+    </Page>
   );
 }
