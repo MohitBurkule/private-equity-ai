@@ -11,13 +11,13 @@ Status: early but running. Private repo, planned to be open-sourced. Architectur
 - Cited question answering with a verification gate and abstention (`/ask`, batch `/ddq`; needs an LLM provider, not yet run against a real model).
 - Calculators that never default a missing input: LTM, net debt, NWC, table tie-out and sum checks, share-ledger reconciliation, fund metrics (DPI, TVPI, XIRR, vintage cohorts), exit waterfall.
 - Deals pipeline with a DD request tracker; portfolio KPIs that must link to a cited fact, covenant tests, portfolio report (JSON and Word).
-- Data sources: SEC XBRL cross-check and filings list; Companies House filing list (keyed API), SH01 capital-form reader; holdings CSV import (Seedrs, Crowdcube and similar exports, header-mapped); market quotes from Yahoo, Stooq and FactSet (`/market/quote`).
+- Data sources: SEC XBRL cross-check and filings list; Companies House filing list (keyed API), SH01 capital-form reader; holdings CSV import (Seedrs, Crowdcube and similar exports, header-mapped); market quotes from Yahoo, Stooq and FactSet (`/market/quote`); PitchBook, Crowdcube and Seedrs/Republic CSV exports turned into cited facts (`/documents/{id}/vendor-facts`).
 - Eval dashboard in the UI; React UI for all of the above.
 
 ## What does not work yet
 - Dense retrieval (BM25 recall@10 is 0.57 on the sample set; no model downloads in the build sandbox).
-- PitchBook, and real keyed responses for FactSet and Companies House: adapters exist but their test fixtures are synthetic until someone with a licence or key saves real responses.
-- Seedrs/Crowdcube import is tested on a made-up layout, not a real export.
+- A PitchBook API client (only its CSV export is read), and real keyed responses for FactSet and Companies House: test fixtures are synthetic until someone with a licence or key saves real responses.
+- Seedrs/Crowdcube/PitchBook header presets are tested on made-up layouts, not real exports. No scraping, by design: terms of service, so only files the user downloads.
 - Docker compose has never been run end to end in the build sandbox (CI runs the API on Postgres).
 - Real-LLM evaluation of `/ask`, `/ddq` and extraction (no API key during the build).
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full list.
