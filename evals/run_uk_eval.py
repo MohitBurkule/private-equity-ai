@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps" / "api"))
-from app.ixbrl import read_ixbrl
+from app.ixbrl import read_ixbrl  # noqa: E402
 
 
 def main(data: Path) -> dict:
