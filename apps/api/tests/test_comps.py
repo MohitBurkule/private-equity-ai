@@ -51,3 +51,27 @@ def test_comps_endpoint_cited_and_abstains():
     assert out["peers"][0]["facts"]["enterprise_value"]
     body["peers"] = ["P1", "P2", "T"]  # 2 peers: no range
     assert c.post("/calc/comps", json=body, headers=h).json()["implied"][0]["mid"] is None
+
+
+def test_comps_docx_has_sources():
+    import io
+
+    from docx import Document as Docx
+    h = new_tenant(c, "comps2")
+    wb = Workbook()
+    for i, (ent, ev, e) in enumerate([("P1", 1000, 100), ("P2", 1200, 100), ("P3", 900, 100), ("T", 0, 50)], 1):
+        wb.active[f"A{i}"], wb.active[f"B{i}"], wb.active[f"C{i}"] = ent, ev, e
+    b = io.BytesIO()
+    wb.save(b)
+    doc = c.post("/documents", files={"file": ("m.xlsx", b.getvalue(), "x")}, headers=h).json()["id"]
+    for i, (ent, ev, e) in enumerate([("P1", 1000, 100), ("P2", 1200, 100), ("P3", 900, 100), ("T", 0, 50)], 1):
+        for metric, val, col in (("enterprise_value", ev, "B"), ("ebitda", e, "C")):
+            if val:
+                assert c.post("/facts", headers=h, json={"entity": ent, "metric": metric, "period": "FY24",
+                              "value": str(val), "unit": "USD", "document_id": doc, "page": 1,
+                              "quote": f"Sheet!{col}{i}: {val:,}"}).status_code == 201
+    r = c.post("/calc/comps.docx", headers=h, json={"target": "T", "peers": ["P1", "P2", "P3", "T"],
+                                                   "period": "FY24", "metrics": ["ebitda"]})
+    assert r.status_code == 200
+    text = "\n".join(p.text for p in Docx(io.BytesIO(r.content)).paragraphs)
+    assert "EV/ebitda: 475" in text and f"doc {doc[:8]} p.1" in text
