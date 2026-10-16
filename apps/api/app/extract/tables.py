@@ -40,7 +40,20 @@ def detect_scale(text: str) -> Decimal:
     return Decimal(1)
 
 
+def _mixed_scales(text: str) -> bool:
+    """True when the page names more than one unit scale; no single scale can then be bound to a row."""
+    return sum(1 for pat, _ in _SCALE if pat.search(text)) > 1
+
+
+def _leading_zero(raw: str) -> bool:
+    """'000' or '050' is not a printed amount; it is the tail of a space-grouped number ('1 000')."""
+    digits = raw.strip("()$-%").split(".")[0].replace(",", "")
+    return len(digits) > 1 and digits.startswith("0")
+
+
 def extract_rows(page_text: str, page: int) -> list[Row]:
+    if _mixed_scales(page_text):
+        return []
     scale = detect_scale(page_text)
     rows: list[Row] = []
     for line in page_text.splitlines():
@@ -50,7 +63,7 @@ def extract_rows(page_text: str, page: int) -> list[Row]:
             continue
         raws = tuple(re.sub(r"[\s$]", "", x) for x in _NUM.findall(m.group("nums")))
         vals = tuple(p.value for r in raws if (p := parse_number(r)) is not None)
-        if not vals or len(vals) != len(raws):
+        if not vals or len(vals) != len(raws) or any(_leading_zero(r) for r in raws):
             continue
         rows.append(Row(m.group("label").strip(), raws, vals, scale, page, line))
     return rows
