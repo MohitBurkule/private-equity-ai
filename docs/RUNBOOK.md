@@ -107,3 +107,7 @@ Some filing text drops blank cells, so a row has fewer values than columns. `POS
 ## Retrieval choice
 
 Search uses BM25. A hybrid index (BM25 plus char-trigram ranker, fused with RRF) exists in `app/hybrid.py` but is not wired in: on the 14 FinanceBench questions whose filings are available it gave recall@1 0.143 / @3 0.429 / @5 0.429 / @10 0.5 against BM25 0.143 / 0.286 / 0.5 / 0.571, so it is not clearly better and n is small. Dense rankers plug in through the `Ranker` protocol once model access exists; wire hybrid only if the eval shows a gain on a larger set.
+
+## Reading SH01 forms
+
+`GET /documents/{id}/capital-form` reads an electronic SH01 from the stored pages: company number, allotment dates, class rows (number, nominal, paid, unpaid), statement-of-capital rows and totals, each with page and verbatim line. Scanned forms need OCR at upload (`OCR_ENABLED`, the project's `ocr` extra); their values are flagged `ocr: true` and need a person to confirm them. Digits OCR turns into letters are reported unreadable, never repaired. Checked on the Monzo forms from the golden set: the text form (15,000,000 allotted, total 41,807,801) and the OCR-read form (15,519,568 allotted, total 26,753,982), which together with the earlier form give the combined 26,807,801 through `/calc/share-ledger`.

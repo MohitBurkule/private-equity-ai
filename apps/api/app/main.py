@@ -56,6 +56,7 @@ from app.models import (
     PageRow,
 )
 from app.models import Tenant as TenantRow
+from app.parse.sh01 import parse_capital_form
 from app.portfolio import (
     Covenant,
     PortfolioCompany,
@@ -254,6 +255,28 @@ def _own_doc(db: Session, who: Principal, doc_id: str) -> Document:
     if not doc_visible(doc, who):  # same 404 for "missing", "other tenant" and "behind a wall"
         raise HTTPException(404, "document not found")
     return doc
+
+
+def _value_out(v) -> dict | None:
+    if v is None:
+        return None
+    return {"value": str(v.value), "page": v.page, "quote": v.quote, "ocr": v.ocr, "readable": v.readable}
+
+
+@app.get("/documents/{doc_id}/capital-form")
+def capital_form(doc_id: str, db: Db, who: Who):
+    """Read a Companies House SH01 from the stored pages. Every value has its page and quote; values from
+    OCR pages are flagged and must be confirmed by a person before they are used as facts."""
+    doc = _own_doc(db, who, doc_id)
+    rows = db.query(PageRow).filter_by(document_id=doc.id).order_by(PageRow.number).all()
+    f = parse_capital_form([(r.number, r.text, r.method == "ocr") for r in rows])
+    row = lambda a: {"class": _value_out(a.cls), "number": _value_out(a.number), "nominal": _value_out(a.nominal),
+                     "paid": _value_out(a.paid), "unpaid": _value_out(a.unpaid)}
+    return {"form": f.form, "company_number": _value_out(f.company_number),
+            "date_from": _value_out(f.date_from), "date_to": _value_out(f.date_to),
+            "allotments": [row(a) for a in f.allotments], "statement_rows": [row(a) for a in f.statement_rows],
+            "total_shares": _value_out(f.total_shares), "total_nominal": _value_out(f.total_nominal),
+            "problems": f.problems}
 
 
 @app.get("/documents/{doc_id}/pages/{number}")
