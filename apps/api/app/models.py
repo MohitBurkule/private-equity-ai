@@ -248,3 +248,18 @@ class Alert(Base):
     status: Mapped[str] = mapped_column(String(16), default="new", server_default="new")
     created_at: Mapped[str] = mapped_column(String(40), default="")
     emailed_at: Mapped[str | None] = mapped_column(String(40), default=None)
+
+
+class Connection(Base):
+    """A saved connector setup: options, deal wall, encrypted token and an optional sync interval."""
+    __tablename__ = "connection"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    connector: Mapped[str] = mapped_column(String(32))
+    deal: Mapped[str | None] = mapped_column(String(128), default=None)
+    options: Mapped[str] = mapped_column(Text, default="{}")  # JSON of non-secret options
+    token_sealed: Mapped[str] = mapped_column(Text)
+    interval_minutes: Mapped[int | None] = mapped_column(Integer, default=None)
+    last_run: Mapped[str | None] = mapped_column(String(40), default=None)
+    last_status: Mapped[str | None] = mapped_column(Text, default=None)
+    created_by: Mapped[str] = mapped_column(String(64))

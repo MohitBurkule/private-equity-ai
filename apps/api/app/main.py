@@ -1,5 +1,7 @@
+import json
 import os
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from datetime import date as DateT
 from decimal import Decimal
 from typing import Annotated
@@ -40,6 +42,7 @@ from app.auth import (
     revoke_key,
 )
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
+from app.connectors import vault
 from app.connectors.base import ConnectorError, default_http
 from app.connectors.registry import IMPLEMENTED, catalog
 from app.connectors.sync import sync as connector_sync
@@ -60,6 +63,7 @@ from app.models import (
     STAGES,
     AgentRun,
     Alert,
+    Connection,
     DDRequest,
     Deal,
     Document,
@@ -1662,3 +1666,84 @@ def alerts_digest(body: DigestIn, db: Db, who: Writer):
         raise HTTPException(502, f"mail server error: {e}") from e
     log_event(db, who.tenant, actor(who), "alerts.digest", {"sent": n, "recipients": len(body.to)})
     return {"sent": n}
+
+
+class ConnectionBody(BaseModel):
+    connector: str
+    token: str
+    deal: str | None = None
+    options: dict[str, str] = {}
+    interval_minutes: int | None = None  # None = manual only
+
+
+def _run_connection(db: Session, who: Principal, row: Connection) -> dict:
+    cls = IMPLEMENTED[row.connector]
+    try:
+        conn = cls(vault.unseal(row.token_sealed), CONNECTOR_HTTP, **json.loads(row.options))
+        out = connector_sync(db, who, conn, row.deal)
+        row.last_status = f"ok: {len(out['ingested'])} new, {out['unchanged']} unchanged"
+    except (ConnectorError, vault.VaultError, ValueError, OSError, PermissionError) as e:
+        out = {"error": str(e)}
+        row.last_status = f"error: {e}"
+    row.last_run = _now_iso()
+    db.commit()
+    return out
+
+
+@app.post("/connections", status_code=201)
+def create_connection(body: ConnectionBody, db: Db, who: Writer):
+    if body.connector not in IMPLEMENTED:
+        raise HTTPException(404, "connector not implemented")
+    deal = (body.deal or "").strip() or None
+    if who.restricted and deal not in who.deals:
+        raise HTTPException(403, "deal is required and must be within this key's scope")
+    if body.interval_minutes is not None and body.interval_minutes < 5:
+        raise HTTPException(422, "interval_minutes must be at least 5")
+    try:
+        sealed = vault.seal(body.token)
+    except vault.VaultError as e:
+        raise HTTPException(503, str(e)) from e
+    row = Connection(tenant_id=who.tenant, connector=body.connector, deal=deal, options=json.dumps(body.options),
+                     token_sealed=sealed, interval_minutes=body.interval_minutes, created_by=actor(who))
+    db.add(row)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "connection.create", {"id": row.id, "connector": body.connector, "deal": deal})
+    return {"id": row.id, "connector": row.connector, "deal": row.deal, "interval_minutes": row.interval_minutes}
+
+
+def _visible_connections(db: Session, who: Principal):
+    q = db.query(Connection).filter_by(tenant_id=who.tenant)
+    rows = q.order_by(Connection.id).all()
+    return [r for r in rows if not who.restricted or r.deal in who.deals]  # walled keys see only their deals
+
+
+@app.get("/connections")
+def list_connections(db: Db, who: Who):
+    return [{"id": r.id, "connector": r.connector, "deal": r.deal, "interval_minutes": r.interval_minutes,
+             "last_run": r.last_run, "last_status": r.last_status} for r in _visible_connections(db, who)]
+
+
+@app.post("/connections/{cid}/sync")
+def sync_saved_connection(cid: int, db: Db, who: Writer):
+    row = next((r for r in _visible_connections(db, who) if r.id == cid), None)
+    if row is None:
+        raise HTTPException(404, "connection not found")
+    out = _run_connection(db, who, row)
+    if "error" in out:
+        raise HTTPException(502, f"connector failed: {out['error']}")
+    return out
+
+
+@app.post("/connections/run-due")
+def run_due_connections(db: Db, who: Writer):
+    """Cron entry point: run every visible connection whose interval has elapsed. Call it every few minutes."""
+    now = datetime.now(UTC)
+    ran = []
+    for r in _visible_connections(db, who):
+        if r.interval_minutes is None:
+            continue
+        if r.last_run and now - datetime.fromisoformat(r.last_run) < timedelta(minutes=r.interval_minutes):
+            continue
+        _run_connection(db, who, r)
+        ran.append({"id": r.id, "status": r.last_status})
+    return {"ran": ran}
