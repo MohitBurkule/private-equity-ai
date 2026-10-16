@@ -91,3 +91,39 @@ def nwc(db: Session, tenant: str, entity: str, period: str, scope: set[str] | No
     return _combine(c, [("current assets", "current_assets", period, 1), ("cash", "cash", period, -1),
                         ("current liabilities", "current_liabilities", period, -1),
                         ("short-term debt", "short_term_debt", period, 1)], db, tenant, scope)
+
+
+@dataclass
+class Conflict:
+    entity: str
+    metric: str
+    period: str
+    basis: str
+    values: list[tuple[Decimal, int]]  # (value, fact_id), ascending by value
+    spread_pct: Decimal  # (max - min) / |max| * 100
+    likely_rounding: bool
+
+
+ROUNDING_PCT = Decimal("0.5")
+
+
+def find_conflicts(db: Session, tenant: str, scope: set[str] | None = None,
+                   entity: str | None = None) -> list[Conflict]:
+    """Same entity, metric, period and basis but different values across facts (rejected ones ignored).
+    Reports; never picks a winner. Small spreads are flagged as probable rounding or scale noise."""
+    q = db.query(Fact).filter(Fact.tenant_id == tenant, Fact.status != "rejected")
+    if entity:
+        q = q.filter(Fact.entity == entity)
+    groups: dict[tuple[str, str, str, str, str], list[Fact]] = {}
+    for f in q.all():
+        if fact_visible(f, scope):
+            groups.setdefault((f.entity, f.metric, f.period, f.basis, f.unit), []).append(f)
+    out = []
+    for (ent, metric, period, basis, _unit), fs in sorted(groups.items()):
+        vals = sorted({(f.value, f.id) for f in fs})
+        if len({v for v, _ in vals}) < 2:
+            continue
+        lo, hi = vals[0][0], vals[-1][0]
+        spread = (hi - lo) / abs(hi) * 100 if hi else Decimal(0)
+        out.append(Conflict(ent, metric, period, basis, vals, spread, spread <= ROUNDING_PCT))
+    return out

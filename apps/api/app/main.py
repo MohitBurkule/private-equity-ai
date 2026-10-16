@@ -29,8 +29,9 @@ from app.auth import (
     principal_for_key,
     revoke_key,
 )
-from app.calc import Calc, ltm, net_debt, nwc
+from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
 from app.db import make_engine, make_session_factory
+from app.dd import STATUSES, TEMPLATE
 from app.edgar import fetch_companyfacts
 from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
@@ -39,7 +40,7 @@ from app.ingest import finalize_upload, ingest_any
 from app.llm import LLM, NoLLMConfigured, get_llm
 from app.memo import build_memo, build_memo_docx
 from app.migrate import migrate
-from app.models import Document, Fact, IngestJob, PageRow
+from app.models import DDRequest, Document, Fact, IngestJob, PageRow
 from app.models import Tenant as TenantRow
 from app.portfolio import (
     PortfolioCompany,
@@ -327,6 +328,15 @@ def _calc_out(c: Calc) -> dict:
                                     for s in i.fact.sources]} for i in c.inputs]}
 
 
+@app.get("/facts/conflicts")
+def fact_conflicts(db: Db, who: Who, entity: str | None = None):
+    """Same entity, metric, period and basis with different values across facts. Reports only."""
+    return [{"entity": c.entity, "metric": c.metric, "period": c.period, "basis": c.basis,
+             "spread_pct": str(c.spread_pct.quantize(Decimal("0.01"))), "likely_rounding": c.likely_rounding,
+             "values": [{"value": str(v), "fact_id": fid} for v, fid in c.values]}
+            for c in find_conflicts(db, who.tenant, visible_doc_ids(db, who), entity)]
+
+
 @app.get("/calc/ltm")
 def calc_ltm(entity: str, metric: str, fy: str, ytd: str, ytd_prior: str, db: Db, who: Who):
     return _calc_out(ltm(db, who.tenant, entity, metric, fy, ytd, ytd_prior, visible_doc_ids(db, who)))
@@ -340,6 +350,122 @@ def calc_net_debt(entity: str, period: str, db: Db, who: Who, include_leases: bo
 @app.get("/calc/nwc")
 def calc_nwc(entity: str, period: str, db: Db, who: Who):
     return _calc_out(nwc(db, who.tenant, entity, period, visible_doc_ids(db, who)))
+
+
+def _dd_scope_ok(who: Principal, deal: str) -> bool:
+    return who.deals is None or deal in who.deals
+
+
+def _dd_out(r: DDRequest) -> dict:
+    return {"id": r.id, "deal": r.deal, "category": r.category, "title": r.title, "status": r.status,
+            "document_id": r.document_id, "note": r.note, "updated_at": r.updated_at}
+
+
+class DDSeed(BaseModel):
+    deal: str
+    categories: list[str] | None = None  # None = all template categories
+
+
+class DDItem(BaseModel):
+    deal: str
+    category: str
+    title: str
+
+
+class DDUpdate(BaseModel):
+    status: str | None = None
+    document_id: str | None = None
+    note: str | None = None
+
+
+@app.post("/dd/requests/seed", status_code=201)
+def dd_seed(body: DDSeed, db: Db, who: Writer):
+    """Create the standard request list for a deal. Existing titles are not duplicated."""
+    if not _dd_scope_ok(who, body.deal):
+        raise HTTPException(403, "deal is outside this key's scope")
+    cats = body.categories or list(TEMPLATE)
+    bad = [c for c in cats if c not in TEMPLATE]
+    if bad:
+        raise HTTPException(422, f"unknown categories: {bad}; available: {sorted(TEMPLATE)}")
+    have = {r.title for r in db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=body.deal)}
+    n = 0
+    for cat in cats:
+        for title in TEMPLATE[cat]:
+            if title not in have:
+                db.add(DDRequest(tenant_id=who.tenant, deal=body.deal, category=cat, title=title,
+                                 updated_at=_now_iso()))
+                n += 1
+    db.commit()
+    log_event(db, who.tenant, actor(who), "dd.seed", {"deal": body.deal, "created": n})
+    return {"created": n}
+
+
+def _now_iso() -> str:
+    from datetime import UTC, datetime
+    return datetime.now(UTC).isoformat()
+
+
+@app.post("/dd/requests", status_code=201)
+def dd_add(body: DDItem, db: Db, who: Writer):
+    if not _dd_scope_ok(who, body.deal):
+        raise HTTPException(403, "deal is outside this key's scope")
+    r = DDRequest(tenant_id=who.tenant, deal=body.deal, category=body.category, title=body.title,
+                  updated_at=_now_iso())
+    db.add(r)
+    db.commit()
+    return _dd_out(r)
+
+
+@app.get("/dd/requests")
+def dd_list(db: Db, who: Who, deal: str | None = None, status: str | None = None):
+    q = db.query(DDRequest).filter_by(tenant_id=who.tenant)
+    if deal:
+        q = q.filter_by(deal=deal)
+    if status:
+        q = q.filter_by(status=status)
+    return [_dd_out(r) for r in q.order_by(DDRequest.id).all() if _dd_scope_ok(who, r.deal)]
+
+
+@app.patch("/dd/requests/{rid}")
+def dd_update(rid: int, body: DDUpdate, db: Db, who: Writer):
+    r = db.get(DDRequest, rid)
+    if r is None or r.tenant_id != who.tenant or not _dd_scope_ok(who, r.deal):
+        raise HTTPException(404, "request not found")
+    if body.status is not None and body.status not in STATUSES:
+        raise HTTPException(422, f"status must be one of {STATUSES}")
+    if body.document_id is not None:
+        doc = db.get(Document, body.document_id)
+        if not doc_visible(doc, who):
+            raise HTTPException(404, "document not found")
+        if doc.deal != r.deal:
+            raise HTTPException(422, "document belongs to a different deal")
+        r.document_id = doc.id
+        r.status = body.status or "received"  # attaching a document means it arrived
+    elif body.status is not None:
+        r.status = body.status
+    if body.note is not None:
+        r.note = body.note
+    r.updated_at = _now_iso()
+    db.commit()
+    log_event(db, who.tenant, actor(who), "dd.update", {"request_id": r.id, "status": r.status,
+                                                         "document_id": r.document_id})
+    return _dd_out(r)
+
+
+@app.get("/dd/summary")
+def dd_summary(deal: str, db: Db, who: Who):
+    """Counts per category and the list of items still open: the missing-document tracker."""
+    if not _dd_scope_ok(who, deal):
+        raise HTTPException(404, "deal not found")
+    rows = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=deal).all()
+    cats: dict[str, dict[str, int]] = {}
+    for r in rows:
+        c = cats.setdefault(r.category, {"open": 0, "received": 0, "waived": 0})
+        c[r.status] += 1
+    done = sum(r.status != "open" for r in rows)
+    return {"deal": deal, "total": len(rows), "closed": done,
+            "pct_complete": round(100 * done / len(rows), 1) if rows else None,
+            "by_category": cats, "missing": [_dd_out(r) for r in rows if r.status == "open"]}
 
 
 @app.get("/memo")
