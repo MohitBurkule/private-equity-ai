@@ -2,7 +2,7 @@
 
 AI platform for private equity teams: ingest data-room documents, answer questions with citations that code verifies, build cited IC memo drafts, and track portfolio KPIs. Principle: a wrong number kills a deal, so every figure links to a source span and unverifiable output is refused, not softened.
 
-Status: early but running. Private repo, planned to be open-sourced. Architecture, measured results and known gaps: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Setup and operations: [docs/RUNBOOK.md](docs/RUNBOOK.md).
+Status: early but running. Private repo, planned to be open-sourced. Architecture, measured results and known gaps: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); diagrams (database, components, deployment): [docs/DIAGRAMS.md](docs/DIAGRAMS.md). Setup and operations: [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ## What works today
 - Upload PDF (text layer, or OCR for scans with values flagged for human confirmation), XLSX (cell-addressed, formulas kept, hidden sheets flagged) and UK Companies House iXBRL (balance-sheet arithmetic checked, failing filings marked UNRELIABLE).
