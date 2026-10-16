@@ -151,3 +151,15 @@ class EvalRun(Base):
     note: Mapped[str | None] = mapped_column(Text, default=None)
     ran_at: Mapped[str] = mapped_column(String(40))
     recorded_by: Mapped[str] = mapped_column(String(64))
+
+
+class DocumentSource(Base):
+    """Where a connector-synced document came from: the link every citation can open."""
+    __tablename__ = "document_source"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    document_id: Mapped[str] = mapped_column(ForeignKey("document.id"), index=True)
+    connector: Mapped[str] = mapped_column(String(32))
+    external_id: Mapped[str] = mapped_column(String(512))
+    version: Mapped[str] = mapped_column(String(128))
+    url: Mapped[str] = mapped_column(Text)
