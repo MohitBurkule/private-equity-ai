@@ -1,8 +1,8 @@
-import pymupdf
 import pytest
 
 from app.parse import engines, router
 
+pymupdf = pytest.importorskip("pymupdf", reason="pymupdf not installed")
 pytestmark = pytest.mark.skipif("pymupdf" not in engines.available(), reason="pymupdf not installed")
 
 
