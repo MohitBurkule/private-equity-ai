@@ -66,6 +66,8 @@ from app.ratelimit import limiter
 from app.report import build_report, build_report_docx
 from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
 from app.search import PageIndex
+from app.shareledger import Event as LedgerEvent
+from app.shareledger import reconcile as reconcile_shares
 from app.sumcheck import sum_check
 from app.tracing import tracing_middleware
 from app.xbrl import candidates, crosscheck, load_companyfacts
@@ -776,6 +778,35 @@ def holdings_list(db: Db, who: Who, platform: str | None = None):
              "price": str(h.price), "currency": h.currency, "cost": str(h.shares * h.price),
              "acquired": h.acquired, "document_id": h.document_id, "line": h.line}
             for h in q.order_by(Holding.id)]
+
+
+class LedgerEventIn(BaseModel):
+    kind: str
+    date: str
+    source: str
+    allotted: Decimal | None = None
+    total_after: Decimal | None = None
+    old_total: Decimal | None = None
+
+
+class LedgerIn(BaseModel):
+    opening: Decimal
+    opening_source: str
+    events: list[LedgerEventIn]
+
+
+@app.post("/calc/share-ledger")
+def calc_share_ledger(body: LedgerIn, who: Who):
+    """Reconcile issued share totals across SH01/SH02/SH19 events. Unreconciled forms are listed, never forced."""
+    if any(e.kind not in ("allot", "statement", "consolidate") for e in body.events) or len(body.events) > 500:
+        raise HTTPException(422, "kind must be allot, statement or consolidate; at most 500 events")
+    try:
+        led = reconcile_shares(body.opening, body.opening_source, [LedgerEvent(**e.model_dump()) for e in body.events])
+    except ValueError as e:
+        raise HTTPException(422, f"bad date: {e}") from e
+    return {"running": str(led.running), "problems": led.problems,
+            "entries": [{"source": x.source, "date": x.date, "kind": x.kind, "status": x.status,
+                         "running_after": str(x.running_after), "detail": x.detail} for x in led.entries]}
 
 
 @app.get("/portfolio/report")
