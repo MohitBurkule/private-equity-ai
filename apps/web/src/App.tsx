@@ -100,6 +100,11 @@ export function App() {
       {page && (
         <section>
           <h2>Source: page {page.page}</h2>
+          {page.method === "ocr" && (
+            <p role="alert" style={{ color: "darkorange", fontWeight: 600 }}>
+              Text recognised from a scan (confidence {Math.round((page.ocr_confidence ?? 0) * 100)}%). Check figures against the image; facts from this page are not marked verified.
+            </p>
+          )}
           {page.text.startsWith("[UNRELIABLE") && (
             <p role="alert" style={{ color: "crimson", fontWeight: 600 }}>
               This filing failed its own arithmetic checks. Do not rely on its figures.

@@ -100,7 +100,8 @@ def get_page(doc_id: str, number: int, db: Db, tenant: Tenant):
     row = db.query(PageRow).filter_by(document_id=doc_id, number=number).one_or_none()
     if row is None:
         raise HTTPException(404, "page not found")
-    return {"document_id": doc_id, "page": number, "text": row.text}
+    return {"document_id": doc_id, "page": number, "text": row.text, "method": row.method,
+            "ocr_confidence": row.ocr_confidence}
 
 
 @app.get("/documents")

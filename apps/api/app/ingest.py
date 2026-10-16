@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import tempfile
 from pathlib import Path
 
@@ -18,7 +19,7 @@ def tenant_doc_id(tenant_id: str, content_sha: str) -> str:
 
 def ingest_pdf(db: Session, tenant_id: str, path: Path, filename: str | None = None) -> Document:
     """Idempotent: same bytes (sha256) return the existing document."""
-    pages = extract_pages(path)
+    pages = extract_pages(path, ocr=os.environ.get("OCR_ENABLED", "") == "1")
     if not pages:
         raise ValueError("PDF has no pages")
     sha = pages[0].doc_id
@@ -28,7 +29,8 @@ def ingest_pdf(db: Session, tenant_id: str, path: Path, filename: str | None = N
         return existing
     doc = Document(id=doc_id, tenant_id=tenant_id, sha256=sha, filename=filename or path.name,
                    n_pages=len(pages))
-    doc.pages = [PageRow(number=p.number, text=p.text) for p in pages]
+    doc.pages = [PageRow(number=p.number, text=p.text, method=p.method, ocr_confidence=p.confidence)
+                 for p in pages]
     db.add(doc)
     db.commit()
     return doc

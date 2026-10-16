@@ -20,6 +20,8 @@ class Page:
     doc_id: str
     number: int  # 1-based
     text: str
+    method: str = "text"  # text | ocr
+    confidence: float | None = None  # OCR mean confidence
 
 
 def doc_id_for(path: Path) -> str:
@@ -41,7 +43,23 @@ def _page_text(page) -> str:
     return ""
 
 
-def extract_pages(path: Path) -> list[Page]:
+MIN_TEXT_CHARS = 20
+
+
+def extract_pages(path: Path, ocr: bool = False) -> list[Page]:
+    """ocr=True runs OCR on pages with (almost) no text layer. Never silent: such pages are
+    marked method="ocr" with a confidence; if OCR is unavailable they stay empty and method="text"."""
     doc_id = doc_id_for(path)
     reader = PdfReader(str(path))
-    return [Page(doc_id, i, _page_text(p)) for i, p in enumerate(reader.pages, 1)]
+    pages = []
+    for i, p in enumerate(reader.pages, 1):
+        text = _page_text(p)
+        if ocr and len(text.strip()) < MIN_TEXT_CHARS:
+            from app.parse import ocr as ocr_mod
+            if ocr_mod.available():
+                t, conf = ocr_mod.ocr_page(path, i - 1)
+                pages.append(Page(doc_id, i, t, "ocr", conf))
+                continue
+            log.warning("page %d has no text layer and OCR is not installed", i)
+        pages.append(Page(doc_id, i, text))
+    return pages

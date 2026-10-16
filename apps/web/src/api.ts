@@ -2,7 +2,7 @@ export interface DocumentInfo { id: string; filename: string; n_pages: number }
 export interface Hit { document_id: string; page: number; score: number; snippet: string }
 export interface Claim { text: string; document_id: string; page: number; quote: string; reason?: string }
 export interface AskResult { status: string; detail: string; claims: Claim[]; rejected: Claim[] }
-export interface PageData { document_id: string; page: number; text: string }
+export interface PageData { document_id: string; page: number; text: string; method?: string; ocr_confidence?: number | null }
 
 let apiKey = sessionStorage.getItem("pe_api_key") ?? "";
 export const setApiKey = (k: string) => { apiKey = k; sessionStorage.setItem("pe_api_key", k); };
