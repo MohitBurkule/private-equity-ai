@@ -11,6 +11,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.orm import Session
 
+from app.acl import fact_visible
 from app.models import Document, Fact
 
 
@@ -30,11 +31,12 @@ class Memo:
         return not self.lines
 
 
-def build_memo_data(db: Session, tenant_id: str, entity: str) -> Memo:
+def build_memo_data(db: Session, tenant_id: str, entity: str, scope: set[str] | None = None) -> Memo:
     memo = Memo(entity)
     facts = (db.query(Fact).filter_by(tenant_id=tenant_id, entity=entity, status="verified")
              .order_by(Fact.period, Fact.metric).all())
     by_key: dict[tuple[str, str], Fact] = {}
+    facts = [f for f in facts if fact_visible(f, scope)]
     for f in facts:
         by_key[(f.metric, f.period)] = f
         n = len(memo.notes) + 1
@@ -52,8 +54,8 @@ def build_memo_data(db: Session, tenant_id: str, entity: str) -> Memo:
     return memo
 
 
-def build_memo(db: Session, tenant_id: str, entity: str) -> str:
-    m = build_memo_data(db, tenant_id, entity)
+def build_memo(db: Session, tenant_id: str, entity: str, scope: set[str] | None = None) -> str:
+    m = build_memo_data(db, tenant_id, entity, scope)
     if m.empty:
         return f"# {entity}\n\nNo verified facts available. Nothing to report.\n"
     out = [f"# {entity}: financial summary (draft, analyst review required)", ""]
@@ -63,9 +65,9 @@ def build_memo(db: Session, tenant_id: str, entity: str) -> str:
     return "\n".join([*out, "", "Sources:", *m.notes]) + "\n"
 
 
-def build_memo_docx(db: Session, tenant_id: str, entity: str) -> bytes:
+def build_memo_docx(db: Session, tenant_id: str, entity: str, scope: set[str] | None = None) -> bytes:
     from docx import Document as Docx
-    m = build_memo_data(db, tenant_id, entity)
+    m = build_memo_data(db, tenant_id, entity, scope)
     d = Docx()
     d.add_heading(f"{entity}: financial summary", level=1)
     d.add_paragraph("DRAFT. Analyst review required before use. Figures below are only those whose "

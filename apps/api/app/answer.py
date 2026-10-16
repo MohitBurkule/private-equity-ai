@@ -58,10 +58,11 @@ def _numbers_supported(claim_text: str, quote: str) -> bool:
     return True
 
 
-def verify_claim(db: Session, tenant_id: str, c: Claim) -> Claim:
+def verify_claim(db: Session, tenant_id: str, c: Claim, scope: set[str] | None = None) -> Claim:
     doc = db.get(Document, c.doc_id)
+    in_scope = scope is None or c.doc_id in scope
     row = (db.query(PageRow).filter_by(document_id=c.doc_id, number=c.page).one_or_none()
-           if doc is not None and doc.tenant_id == tenant_id else None)
+           if doc is not None and doc.tenant_id == tenant_id and in_scope else None)
     if row is None:
         c.reason = "cited page not found"
     elif not quote_in_page(c.quote, row.text):
@@ -74,11 +75,13 @@ def verify_claim(db: Session, tenant_id: str, c: Claim) -> Claim:
 
 
 def answer_question(db: Session, tenant_id: str, llm: LLM, question: str,
-                    doc_id: str | None = None, k: int = 5) -> Answer:
+                    doc_id: str | None = None, k: int = 5, scope: set[str] | None = None) -> Answer:
     q = (db.query(PageRow).join(Document, Document.id == PageRow.document_id)
          .filter(Document.tenant_id == tenant_id))
     if doc_id:
         q = q.filter(PageRow.document_id == doc_id)
+    if scope is not None:
+        q = q.filter(PageRow.document_id.in_(scope))
     rows = q.all()
     index = PageIndex([(r.document_id, r.number, r.text) for r in rows])
     text = {(r.document_id, r.number): r.text for r in rows}
@@ -94,7 +97,7 @@ def answer_question(db: Session, tenant_id: str, llm: LLM, question: str,
                   for c in data.get("claims", [])]
     except (ValueError, KeyError, TypeError) as e:
         return Answer("error", detail=f"model returned unusable output: {e}")
-    checked = [verify_claim(db, tenant_id, c) for c in claims]
+    checked = [verify_claim(db, tenant_id, c, scope) for c in claims]
     good = [c for c in checked if c.verified]
     bad = [c for c in checked if not c.verified]
     if not good:

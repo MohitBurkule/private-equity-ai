@@ -28,5 +28,11 @@ The response contains the API key once; only its hash is stored. Paste it into t
 - `RATE_LIMIT_PER_MIN` (default 600 per tenant, 0 disables; in-memory, so per process: use a shared store before running several replicas). `MAX_UPLOAD_BYTES` (default 100 MB; nginx allows 200 MB, lower it to match).
 - CSV/TSV uploads (for example a platform account export you download yourself) are stored as `row N: Header=value | ...` lines, 50 rows per page, so facts can cite a row. No platform layout is assumed.
 
+## Roles and deal walls (ethical walls)
+- `POST /admin/tenants/{id}/keys` body `{"role": "admin|analyst|viewer", "deals": ["alpha"]}`. First key of a tenant is admin, unrestricted. `deals` omitted = sees every document; `deals: []` = sees nothing.
+- A walled key sees only documents tagged with its deals (upload with form field `deal`; walled keys must set an in-scope deal). Untagged documents are hidden from walled keys. Facts, memos, KPIs, search and /ask are filtered the same way, and a model citation of a walled document is rejected.
+- viewer is read-only. Audit events record `key:<key_id>` as actor.
+- Enforced in the app layer; Postgres RLS is tenant-level only. Uploading identical bytes already stored under another deal returns 409 (reveals that the content exists). Changing a document's deal after upload is not supported yet. Keys are still service keys: no per-person identity or OIDC yet.
+
 ## Known operational gaps
-No backups or restore procedure yet, no malware scan on uploads, no user identities or roles (one key = whole tenant), uploads are parsed in-process (a hostile PDF can consume memory), sessions of the web app keep the API key in sessionStorage. Treat as pre-production.
+No backups or restore procedure yet, no malware scan on uploads, no per-person identity (OIDC), uploads are parsed in-process (a hostile PDF can consume memory), sessions of the web app keep the API key in sessionStorage. Treat as pre-production.

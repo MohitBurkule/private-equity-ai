@@ -8,6 +8,7 @@ import secrets
 
 from sqlalchemy.orm import Session
 
+from app.acl import ROLES, Principal, format_deals, parse_deals
 from app.models import ApiKey, Tenant
 
 
@@ -21,7 +22,7 @@ def create_tenant(db: Session, name: str) -> tuple[Tenant, str]:
     key = "pe_" + secrets.token_urlsafe(32)
     db.add(t)
     db.flush()  # FK order is not inferred without a relationship(); Postgres enforces it
-    db.add(ApiKey(key_hash=hash_key(key), tenant_id=t.id))
+    db.add(ApiKey(key_hash=hash_key(key), tenant_id=t.id, role="admin"))
     db.commit()
     return t, key
 
@@ -35,11 +36,21 @@ def tenant_for_key(db: Session, key: str) -> str | None:
     return row.tenant_id if row and not row.revoked else None
 
 
-def add_key(db: Session, tenant_id: str) -> tuple[str, str]:
+def principal_for_key(db: Session, key: str) -> Principal | None:
+    row = db.get(ApiKey, hash_key(key))
+    if row is None or row.revoked:
+        return None
+    return Principal(row.tenant_id, row.role, parse_deals(row.deals), key_id(row.key_hash))
+
+
+def add_key(db: Session, tenant_id: str, role: str = "analyst",
+            deals: list[str] | None = None) -> tuple[str, str]:
     """Additional key for rotation: issue the new one, switch clients, then revoke the old one."""
     key = "pe_" + secrets.token_urlsafe(32)
     h = hash_key(key)
-    db.add(ApiKey(key_hash=h, tenant_id=tenant_id))
+    if role not in ROLES:
+        raise ValueError(f"role must be one of {ROLES}")
+    db.add(ApiKey(key_hash=h, tenant_id=tenant_id, role=role, deals=format_deals(deals)))
     db.commit()
     return key_id(h), key
 

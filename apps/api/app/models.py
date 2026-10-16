@@ -20,6 +20,8 @@ class ApiKey(Base):
     key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False)
     revoked: Mapped[bool] = mapped_column(default=False, server_default="false")
+    role: Mapped[str] = mapped_column(String(16), default="analyst", server_default="analyst")
+    deals: Mapped[str | None] = mapped_column(Text, default=None)  # comma list; None = unrestricted
 
 
 class Document(Base):
@@ -31,6 +33,7 @@ class Document(Base):
     filename: Mapped[str] = mapped_column(String(512))
     n_pages: Mapped[int] = mapped_column(Integer)
     kind: Mapped[str] = mapped_column(String(16), default="pdf")
+    deal: Mapped[str | None] = mapped_column(String(128), default=None, index=True)
     pages: Mapped[list[PageRow]] = relationship(back_populates="document", cascade="all")
 
 
