@@ -53,3 +53,10 @@ jobs:
           SQL
       - run: pip install -e '.[dev]'
       - run: python -m pytest -q
+      - name: End-to-end smoke (live server, Postgres, non-owner role)
+        env:
+          ADMIN_TOKEN: ci-admin
+        run: |
+          nohup python -m uvicorn app.main:app --port 8000 > /tmp/api.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:8000/health && break; sleep 1; done
+          python ../../scripts/smoke.py http://localhost:8000 ci-admin || { cat /tmp/api.log; exit 1; }
