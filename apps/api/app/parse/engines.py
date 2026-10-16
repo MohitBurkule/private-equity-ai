@@ -142,6 +142,25 @@ def _rapidocr(path, pages, scale: float = 2.0):
         yield PageResult("rapidocr", p, [Line(ln.text, ln.bbox, "rapidocr", conf) for ln in lines], method="ocr")
 
 
+def _camelot(path, pages):
+    """Camelot stream tables (text-layer only): one line per table row, cells joined by ' | '."""
+    import camelot
+    for p in pages:
+        lines: list[Line] = []
+        try:
+            tables = camelot.read_pdf(str(path), pages=str(p), flavor="stream")
+        except Exception:  # noqa: BLE001  camelot raises on pages without tables
+            tables = []
+        for t in tables:
+            x0, y0, x1, y1 = t._bbox
+            h = t.pdf_size[1] if hasattr(t, "pdf_size") else 0
+            for row in t.df.itertuples(index=False):
+                cells = [str(c).strip() for c in row if str(c).strip()]
+                if cells:
+                    lines.append(Line(" | ".join(cells), (x0, h - y1, x1, h - y0) if h else None, "camelot"))
+        yield PageResult("camelot", p, lines)
+
+
 _docling = None
 
 
@@ -179,6 +198,7 @@ ENGINES = {
     "pdfplumber": (_pdfplumber, lambda: _has("pdfplumber")),
     "pypdf": (_pypdf, lambda: _has("pypdf")),
     "pdfium": (_pdfium, lambda: _has("pypdfium2")),
+    "camelot": (_camelot, lambda: _has("camelot")),
     "docling": (_docling_engine, lambda: _has("docling")),
     "rapidocr": (_rapidocr, lambda: _has("rapidocr_onnxruntime") and _has("pypdfium2")),
 }

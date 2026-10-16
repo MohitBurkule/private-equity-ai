@@ -53,7 +53,7 @@ def items(data: Path):
             if s["type"] == "pdf-text" or s["type"] == "pdf-ocr" or s["type"].startswith("pdf"):
                 f = data / s["file"]
                 if f.exists():
-                    out.append({"id": r["id"], "file": f, "page": s["page"], "parts": [("", s["quote"])], "kind": "sh01"})
+                    out.append({"id": r["id"], "file": f, "page": s["page"], "parts": [("", " ".join(nums(q)) or q) for q in s["quote"].split(";")], "kind": "sh01"})
     return out
 
 
