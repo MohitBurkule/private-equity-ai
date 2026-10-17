@@ -12,7 +12,7 @@ from openpyxl import Workbook
 from app import webhooks
 from app.audit import AuditEvent
 from app.main import SessionLocal, app
-from app.models import Deal, WebhookEndpoint, WebhookOutbox
+from app.models import Deal, Tenant, WebhookOutbox
 from app.rls import bind_tenant
 from tests.helpers import new_tenant
 
@@ -44,8 +44,8 @@ def _tenant_with_endpoint(name: str):
     h = new_tenant(c, name)
     r = c.post("/webhooks", headers=h, json={"url": "https://hooks.example.com/pe"})
     assert r.status_code == 201
-    with SessionLocal() as db:
-        tid = db.get(WebhookEndpoint, r.json()["id"]).tenant_id
+    with SessionLocal() as db:  # the tenant table is not under RLS, so its id can be read before binding
+        tid = db.query(Tenant).filter_by(name=name).one().id
     return h, tid, r.json()["secret"]
 
 
