@@ -8,8 +8,8 @@ import app.main as m
 from app import comps as comps_mod
 from app.comps import EV_METRIC
 from app.main import app
-from app.models import Fact
-from tests.helpers import new_tenant
+from app.rls import bind_tenant
+from tests.helpers import new_tenant, new_tenant_id
 
 c = TestClient(app)
 URL = "https://capiq.synthetic.test/v2/tev"
@@ -30,7 +30,7 @@ def test_latest_tev_becomes_cited_enterprise_value():
     seen = []
     app.dependency_overrides[m.get_market_fetch] = lambda: _feed(seen)
     try:
-        h = new_tenant(c, "tev-cited")
+        h, tid = new_tenant_id(c, "tev-cited")
         body = {"entity": "ACME", "period": "LTM", "source": "capiq", "url": URL, "token": "tok"}
         r = c.post("/market/tev-sync", json=body, headers=h)
         assert r.status_code == 200, r.text
@@ -41,8 +41,8 @@ def test_latest_tev_becomes_cited_enterprise_value():
         again = c.post("/market/tev-sync", json=body, headers=h).json()
         assert again["fact_id"] == out["fact_id"]
         with m.SessionLocal() as db:
-            fact = db.get(Fact, out["fact_id"])
-            assert comps_mod._find(db, fact.tenant_id, "ACME", EV_METRIC, "LTM", None).id == out["fact_id"]
+            bind_tenant(db, tid)
+            assert comps_mod._find(db, tid, "ACME", EV_METRIC, "LTM", None).id == out["fact_id"]
     finally:
         app.dependency_overrides.clear()
 
@@ -64,16 +64,16 @@ def test_peer_ev_respects_document_scope():
     from app.main import _peer_ev
     app.dependency_overrides[m.get_market_fetch] = lambda: _feed([])
     try:
-        h = new_tenant(c, "tev-scope")
+        h, tid = new_tenant_id(c, "tev-scope")
         body = {"entity": "SCOPED", "period": "LTM", "source": "capiq", "url": URL, "token": "tok"}
         out = c.post("/market/tev-sync", json=body, headers=h).json()
         doc_id = out["document_id"]
         with m.SessionLocal() as db:
-            tenant = db.get(Fact, out["fact_id"]).tenant_id
-            assert _peer_ev(db, tenant, "SCOPED", None).id == out["fact_id"]
-            assert _peer_ev(db, tenant, "SCOPED", None).label == "feed-capiq-SCOPED.csv"
-            assert _peer_ev(db, tenant, "SCOPED", {doc_id}).id == out["fact_id"]
-            assert _peer_ev(db, tenant, "SCOPED", set()) is None
+            bind_tenant(db, tid)
+            assert _peer_ev(db, tid, "SCOPED", None).id == out["fact_id"]
+            assert _peer_ev(db, tid, "SCOPED", None).label == "feed-capiq-SCOPED.csv"
+            assert _peer_ev(db, tid, "SCOPED", {doc_id}).id == out["fact_id"]
+            assert _peer_ev(db, tid, "SCOPED", set()) is None
     finally:
         app.dependency_overrides.clear()
 

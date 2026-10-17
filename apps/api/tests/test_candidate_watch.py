@@ -1,3 +1,4 @@
+import hashlib
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -5,7 +6,7 @@ from fastapi.testclient import TestClient
 from app import alerts as al
 from app import workflows as wf
 from app.main import SessionLocal, app
-from app.models import Alert, FirmKnowledge, Target, WorkflowSchedule
+from app.models import Alert, Document, FirmKnowledge, Target, WorkflowSchedule
 from app.rls import bind_tenant
 
 c = TestClient(app)
@@ -25,9 +26,12 @@ def tenant(name):
     return {"Authorization": f"Bearer {r['api_key']}"}, r["tenant_id"]
 
 
-def _seed(tid, doc_id=1):
+def _seed(tid):
     with SessionLocal() as s:
         bind_tenant(s, tid)
+        doc_id = hashlib.sha256(f"criteria:{tid}".encode()).hexdigest()
+        s.add(Document(id=doc_id, tenant_id=tid, sha256=doc_id, filename="criteria.pdf", n_pages=1, kind="pdf"))
+        s.flush()
         s.add(FirmKnowledge(tenant_id=tid, key="deal_screening_criteria", value=RULE, document_id=doc_id,
                             page=1, quote=RULE, status="accepted"))
         s.add(Target(tenant_id=tid, name="Imported Software Ltd", source="manual", source_ref="imp"))
