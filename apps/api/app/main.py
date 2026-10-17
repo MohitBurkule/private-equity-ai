@@ -1284,6 +1284,34 @@ def ic_review(deal: str, db: Db, who: Who):
             "changed_since_ic": since, "ic_recorded": latest is not None}
 
 
+@app.get("/deals/{name}/snapshot")
+def deal_snapshot(name: str, db: Db, who: Who):
+    """One-page partner view of a deal: stage, the latest IC outcome and dissent count, what was filed since that
+    decision, documents, DD progress, open alerts and notes. Built from the same routes the workspace uses, so the
+    numbers agree with the screens; nothing here is estimated."""
+    d = _visible_deal_or_404(db, who, name)
+    review = ic_review(name, db, who)
+    latest = review["latest"]
+    hidden = hidden_deal_names(db, who)
+    docs = [x for x in db.query(Document).filter_by(tenant_id=who.tenant, deal=name).all()
+            if doc_visible(x, who, hidden)]
+    docs.sort(key=lambda x: x.created_at or "", reverse=True)
+    dd = dd_summary(name, db, who)
+    dd = {k: dd[k] for k in ("total", "closed", "pct_complete")}
+    open_alerts = db.query(Alert).filter_by(tenant_id=who.tenant, deal=name, status="new").count()
+    notes = db.query(DealNote).filter_by(tenant_id=who.tenant, deal=name).count()
+    return {
+        "deal": d.name, "stage": d.stage, "sic": d.sic, "legal_hold": bool(d.legal_hold),
+        "ic": {"recorded": review["ic_recorded"], "latest": latest,
+               "dissents": len(review["dissents"]), "changed_since_ic": len(review["changed_since_ic"]),
+               "changed_documents": review["changed_since_ic"][:5]},
+        "documents": {"count": len(docs), "latest": [{"id": x.id, "filename": x.filename} for x in docs[:5]]},
+        "dd": dd,
+        "open_alerts": open_alerts,
+        "notes": notes,
+    }
+
+
 @app.get("/ic/precedents")
 def ic_precedents(deal: str, db: Db, who: Who):
     """Past IC outcomes for deals at the same stage in this tenant, and the same SIC code when the target has one.
