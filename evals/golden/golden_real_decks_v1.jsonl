@@ -37,3 +37,14 @@
 {"id": "rd38", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Vantage Phase I", "raw": "438", "hand_read": true, "kind": "table"}
 {"id": "rd39", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Total Active", "raw": "1,033", "hand_read": true, "kind": "table"}
 {"id": "rd40", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Grand Total", "raw": "1,645", "hand_read": true, "kind": "table"}
+{"id": "rd46", "doc": "real_decks/pgt_2023Q1_earnings_release", "pdf_page_1based": 6, "row_label": "Net sales", "raw": "376,829; 358,662", "hand_read": true, "kind": "table"}
+{"id": "rd47", "doc": "real_decks/pgt_2023Q1_earnings_release", "pdf_page_1based": 6, "row_label": "Cost of sales", "raw": "227,598; 224,069", "hand_read": true, "kind": "table"}
+{"id": "rd48", "doc": "real_decks/pgt_2023Q1_earnings_release", "pdf_page_1based": 6, "row_label": "Gross profit", "raw": "149,231; 134,593", "hand_read": true, "kind": "table"}
+{"id": "rd49", "doc": "real_decks/pgt_2023Q1_earnings_release", "pdf_page_1based": 6, "row_label": "Selling, general and administrative expenses", "raw": "95,913; 95,882", "hand_read": true, "kind": "table"}
+{"id": "rd50", "doc": "real_decks/pgt_2023Q1_earnings_release", "pdf_page_1based": 6, "row_label": "Income from operations", "raw": "53,318; 38,711", "hand_read": true, "kind": "table"}
+{"id": "rd51", "doc": "real_decks/pgt_2023Q1_earnings_release", "pdf_page_1based": 6, "row_label": "Interest expense, net", "raw": "7,656; 7,080", "hand_read": true, "kind": "table"}
+{"id": "rd52", "doc": "real_decks/pgt_2023Q1_earnings_release", "pdf_page_1based": 6, "row_label": "Income before income taxes", "raw": "45,662; 31,631", "hand_read": true, "kind": "table"}
+{"id": "rd53", "doc": "real_decks/pgt_2023Q1_earnings_release", "pdf_page_1based": 6, "row_label": "Income tax expense", "raw": "11,235; 7,805", "hand_read": true, "kind": "table"}
+{"id": "rd54", "doc": "real_decks/pgt_2023Q1_earnings_release", "pdf_page_1based": 6, "row_label": "Net income", "raw": "34,427; 23,826", "hand_read": true, "kind": "table"}
+{"id": "rd55", "doc": "real_decks/pgt_2023Q1_earnings_release", "pdf_page_1based": 6, "row_label": "Net income attributable to the Company", "raw": "33,590; 23,169", "hand_read": true, "kind": "table"}
+{"id": "rd56", "doc": "real_decks/pgt_2023Q1_earnings_release", "pdf_page_1based": 6, "row_label": "Diluted", "raw": "60,153; 60,219", "hand_read": true, "kind": "table"}

@@ -122,3 +122,14 @@ def test_gloss_adds_reading_aid_for_large_values():
     from app.memo import _gloss
     assert _gloss(Decimal(74039000000)) == "74,039,000,000.00 (about 74.04B)"
     assert _gloss(Decimal(1000)) == "1,000.00"
+
+
+def test_quote_found_only_in_layout_text_is_ocr_unverified(monkeypatch):
+    # The text layer splits the row; the layout text keeps it whole. The fact is still queued for review.
+    from app import facts as facts_mod
+    s, doc = setup_db()
+    monkeypatch.setattr(facts_mod, "_layout_text", lambda db, document_id, page: "Total   revenues   1,000  2,000\n")
+    f = add_verified_fact(s, metric="revenue", value=Decimal(2000), quote="Total revenues 1,000 2,000",
+                          tenant_id="t", entity="Acme", period="FY24", unit="USD", document_id=doc, page=1)
+    assert f.status == "ocr_unverified"
+    assert f.sources[0].anchor is None

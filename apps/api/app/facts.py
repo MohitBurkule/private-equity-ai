@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import re
+import tempfile
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from app.citations import quote_in_page, verify_number, xlsx_location
-from app.models import Document, Fact, FactSource, HtmlUnit, PageRow
+from app.models import Document, DocumentFile, Fact, FactSource, HtmlUnit, PageRow
+from app.parse import engines
 
 # Labels for money paid out. Their tables print the amount in parentheses, so a positive claim
 # is the same figure, not a sign error.
@@ -39,6 +42,19 @@ def make_source(doc: Document, page: int, quote: str, row: PageRow) -> FactSourc
                       section=rowlabel)
 
 
+def _layout_text(db: Session, document_id: str, page: int) -> str | None:
+    """The page as poppler -layout prints it, from the kept PDF bytes. None when there is no PDF to read."""
+    f = db.get(DocumentFile, document_id)
+    if f is None or f.media_type != "application/pdf":
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "doc.pdf"
+        path.write_bytes(f.data)
+        if "pdftotext_layout" not in engines.available():
+            return None
+        return engines.run("pdftotext_layout", path, [page])[0].text
+
+
 def add_verified_fact(
     db: Session, *, tenant_id: str, entity: str, metric: str, period: str, value: Decimal, unit: str,
     document_id: str, page: int, quote: str, scale: Decimal = Decimal(1), basis: str = "GAAP",
@@ -49,13 +65,18 @@ def add_verified_fact(
            if doc is not None and doc.tenant_id == tenant_id else None)
     if row is None:
         raise CitationError(f"page {page} not found in document {document_id[:8]}")
+    layout_only = False
     if not quote_in_page(quote, row.text):
-        raise CitationError("quote not found on cited page")
+        # The text layer can split a table row across lines. The layout text keeps it on one line, so a
+        # quote found there is a text-only hit: no bbox, and it goes to the review queue, never auto-verified.
+        if not quote_in_page(quote, _layout_text(db, document_id, page) or ""):
+            raise CitationError("quote not found on cited page")
+        layout_only = True
     if not verify_number(value, quote, scale, outflow=is_outflow(metric)):
         raise CitationError("value does not match any number in the quote")
     fact = Fact(tenant_id=tenant_id, entity=entity, metric=metric, period=period, value=value, unit=unit,
                 basis=basis,
-                status="ocr_unverified" if row.method == "ocr" else "verified")
+                status="ocr_unverified" if row.method == "ocr" or layout_only else "verified")
     fact.sources = [make_source(doc, page, quote, row)]
     db.add(fact)
     db.commit()
