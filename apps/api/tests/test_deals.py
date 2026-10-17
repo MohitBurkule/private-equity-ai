@@ -78,7 +78,8 @@ def test_mnpi_deal_hidden_from_other_unscoped_keys_and_visible_to_scoped_and_cre
                     headers=admin_hdr).json()
     sh = {"Authorization": f"Bearer {scoped['api_key']}"}
     assert [d["name"] for d in c.get("/deals", headers=sh).json()] == ["Quiet"]
-    assert c.patch("/deals/Quiet", headers=sh, json={"mnpi": False}).json()["mnpi"] is False
+    # Changing the MNPI flag is a compliance action; an analyst scoped to the deal cannot unset it.
+    assert c.patch("/deals/Quiet", headers=sh, json={"mnpi": False}).status_code == 403
 
 
 def test_retention_dry_run_then_purge_skips_held_and_is_audited():
