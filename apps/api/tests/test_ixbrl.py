@@ -58,3 +58,26 @@ def test_upload_ixbrl_flags_unreliable_filing_in_page_text():
     b = c.get(f"/documents/{bad['id']}/pages/1", headers=h).json()["text"]
     assert "UNRELIABLE" not in g and "FixedAssets: 1,000" in g
     assert b.startswith("[UNRELIABLE") and "fixed+netcurrent=TALCL" in b
+
+
+PNL_DOC = """<html><body>
+<xbrli:context id="y25"><xbrli:period><xbrli:startDate>2024-11-01</xbrli:startDate><xbrli:endDate>2025-10-31</xbrli:endDate></xbrli:period></xbrli:context>
+<xbrli:context id="y24"><xbrli:period><xbrli:startDate>2023-11-01</xbrli:startDate><xbrli:endDate>2024-10-31</xbrli:endDate></xbrli:period></xbrli:context>
+<xbrli:context id="short"><xbrli:period><xbrli:startDate>2025-08-01</xbrli:startDate><xbrli:endDate>2025-10-31</xbrli:endDate></xbrli:period></xbrli:context>
+<ix:nonFraction name="core:Turnover" contextRef="y25" scale="3">1,200</ix:nonFraction>
+<ix:nonFraction name="core:GrossProfitLoss" contextRef="y25" scale="3">400</ix:nonFraction>
+<ix:nonFraction name="core:OperatingProfit" contextRef="y25" scale="3">-50</ix:nonFraction>
+<ix:nonFraction name="core:Turnover" contextRef="y24" scale="3">900</ix:nonFraction>
+<ix:nonFraction name="core:Turnover" contextRef="short" scale="3">250</ix:nonFraction>
+</body></html>"""
+
+
+def test_pnl_read_for_latest_twelve_month_period_only():
+    r = read_ixbrl(PNL_DOC)
+    assert r.pnl == {"Turnover": Decimal(1200000), "GrossProfit": Decimal(400000), "OperatingProfit": Decimal(-50000)}
+    assert r.pnl_period == "2024-11-01 to 2025-10-31"
+
+
+def test_no_tagged_pnl_leaves_pnl_empty_and_does_not_touch_reliability():
+    r = read_ixbrl(doc())
+    assert r.pnl == {} and r.pnl_period is None and r.reliable

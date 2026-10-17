@@ -77,6 +77,11 @@ def ingest_ixbrl(db: Session, tenant_id: str, data: bytes, filename: str) -> Doc
     if rep.instant:
         lines.append(f"Balance sheet at {rep.instant}")
     lines += [f"{k}: {v:,}" for k, v in sorted(rep.facts.items())]
+    if rep.pnl:
+        lines.append(f"P&L for {rep.pnl_period} (as tagged, not checked)")
+        lines += [f"{k}: {v:,}" for k, v in sorted(rep.pnl.items())]
+    else:
+        lines.append("[no P&L tagged in this filing: revenue, gross profit and operating profit unverified]")
     if not rep.facts:
         lines.append("[no balance-sheet figures found in this filing]")
     doc = Document(id=doc_id, tenant_id=tenant_id, sha256=sha, filename=filename, n_pages=1, kind="ixbrl")
