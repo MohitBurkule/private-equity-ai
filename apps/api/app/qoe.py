@@ -12,7 +12,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.acl import fact_visible
-from app.calc import Calc, Input, nwc
+from app.calc import Calc, Input, _find, nwc
 from app.models import Fact
 
 ONE_OFF_PCT = Decimal(10)
@@ -80,3 +80,29 @@ def nwc_peg(db: Session, tenant: str, entity: str, periods: list[str],
         return c
     c.value = (sum(values, Decimal(0)) / len(values)).quantize(Decimal("0.01"))
     return c
+
+
+def revenue_trend(db: Session, tenant: str, entity: str, periods: list[str],
+                  scope: set[str] | None = None) -> list[dict]:
+    """Revenue, year-on-year growth and normalized EBITDA margin per period, in the order given. Each figure is
+    computed only from verified inputs; a period with a gap reports the gap instead of a number. Growth needs the
+    prior period in the list, so the first period has none."""
+    rows = []
+    prev_revenue: Decimal | None = None
+    for p in periods:
+        row: dict = {"period": p, "revenue": None, "growth_pct": None, "ebitda_margin_pct": None, "missing": []}
+        rev = _find(db, tenant, entity, "revenue", p, scope)
+        if rev is None:
+            row["missing"].append(f"revenue for {p}")
+        else:
+            row["revenue"] = str(rev.value)
+            if prev_revenue is not None and prev_revenue != 0:
+                row["growth_pct"] = str(((rev.value / prev_revenue - 1) * 100).quantize(Decimal("0.1")))
+            prev_revenue = rev.value
+            ebitda = normalized_ebitda(db, tenant, entity, p, scope)
+            if ebitda.ok and rev.value:
+                row["ebitda_margin_pct"] = str((ebitda.value / rev.value * 100).quantize(Decimal("0.1")))
+            else:
+                row["missing"].extend(ebitda.missing or ["normalized EBITDA"])
+        rows.append(row)
+    return rows

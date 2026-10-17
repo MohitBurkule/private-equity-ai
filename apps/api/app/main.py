@@ -156,7 +156,7 @@ from app.portfolio import (
     qoq_change,
     record_observation,
 )
-from app.qoe import normalized_ebitda, nwc_peg, one_off_flags
+from app.qoe import normalized_ebitda, nwc_peg, one_off_flags, revenue_trend
 from app.ratelimit import make_limiter
 from app.report import build_report, build_report_docx
 from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
@@ -817,6 +817,13 @@ def calc_ltm(entity: str, metric: str, fy: str, ytd: str, ytd_prior: str, db: Db
 @app.get("/calc/net-debt")
 def calc_net_debt(entity: str, period: str, db: Db, who: Who, include_leases: bool = True):
     return _calc_out(net_debt(db, who.tenant, entity, period, visible_doc_ids(db, who), include_leases))
+
+
+@app.get("/calc/revenue-trend")
+def calc_revenue_trend(entity: str, periods: str, db: Db, who: Who):
+    """Revenue growth and normalized EBITDA margin across comma-separated periods, oldest first."""
+    wanted = [p.strip() for p in periods.split(",") if p.strip()]
+    return {"entity": entity, "rows": revenue_trend(db, who.tenant, entity, wanted, visible_doc_ids(db, who))}
 
 
 @app.get("/calc/nwc-peg")
