@@ -71,3 +71,34 @@ def test_fallback_is_not_used_when_the_tenant_is_over_its_allowance():
         raise AssertionError("expected the cap to stop the call")
     except llm.LLMCapExceeded:
         pass
+
+
+class Fabricating:
+    id = "llamacpp:test-model.gguf"
+
+    def complete(self, system, prompt):
+        claim = {"text": "Revenue was 999 million", "doc_id": "missing", "page": 1, "quote": "Revenue 999 million"}
+        return json.dumps({"claims": [claim]})
+
+
+def test_cache_key_changes_with_the_provider_and_model():
+    from app import answer_cache
+
+    base = answer_cache.key("q", None, [], "anthropic:a")
+    assert base == answer_cache.key("q", None, [], "anthropic:a")
+    assert base != answer_cache.key("q", None, [], "anthropic:b")
+    assert base != answer_cache.key("q", None, [], "llamacpp:a")
+
+
+def test_fallback_answer_goes_through_the_citation_gate_and_is_stamped_with_the_model_that_wrote_it():
+    h = new_tenant(c, "fallback-gate")
+    upload(h, "revenue fallback")
+    app.dependency_overrides[llm_dependency] = lambda: llm.FallbackLLM(
+        Broken(), lambda: Fabricating(), secondary_id="llamacpp:test-model.gguf")
+    try:
+        body = c.post("/ask", json={"question": "what is revenue"}, headers=h).json()
+    finally:
+        app.dependency_overrides.pop(llm_dependency)
+    assert body["status"] == "not_found" and body["claims"] == []  # the unverifiable claim was rejected
+    assert len(body["rejected"]) == 1 and body["rejected"][0]["reason"]
+    assert body["model"] == "llamacpp:test-model.gguf"

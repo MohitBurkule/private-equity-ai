@@ -314,6 +314,8 @@ class FirmKnowledge(Base):
     page: Mapped[int] = mapped_column(Integer)
     quote: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")
+    prompt_version: Mapped[str] = mapped_column(String(32), default="", server_default="")
+    model: Mapped[str] = mapped_column(String(128), default="", server_default="")  # provider:model that wrote it
 
 
 class AgentRun(Base):

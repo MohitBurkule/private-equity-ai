@@ -158,7 +158,7 @@ from app.ingest import finalize_upload, ingest_any
 from app.ixbrl_full import read_filing
 from app.kpi_workbook import ingest_kpi_pack as kpi_pack_ingest
 from app.lbo_workbook import named_inputs, tie
-from app.llm import LLM, LLMCapExceeded, NoLLMConfigured, get_llm
+from app.llm import LLM, LLMCapExceeded, NoLLMConfigured, get_llm, llm_id
 from app.marketdata import NoData
 from app.memo import build_memo, build_memo_docx, build_memo_pptx
 from app.memo_templates import TEMPLATES, build_memo_sections
@@ -4193,7 +4193,7 @@ def ask(body: AskIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_dependenc
     if body.doc_id:
         _own_doc(db, who, body.doc_id)
     scope = visible_doc_ids(db, who)
-    k = answer_cache.key(body.question, body.doc_id, answer_cache.visible_docs(db, tenant, scope))
+    k = answer_cache.key(body.question, body.doc_id, answer_cache.visible_docs(db, tenant, scope), llm_id(llm))
     a = answer_cache.get(db, tenant, k)
     cached = a is not None
     if a is None:
@@ -4205,7 +4205,7 @@ def ask(body: AskIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_dependenc
                       "paragraphs": c.paragraphs}
     return {"status": a.status, "detail": a.detail, "claims": [cite(c) for c in a.claims],
             "rejected": [{**cite(c), "reason": c.reason} for c in a.rejected],
-            "prompt_version": a.prompt_version, "cached": cached}
+            "prompt_version": a.prompt_version, "model": a.model, "cached": cached}
 
 
 @app.post("/chat/{kind}/inbound")

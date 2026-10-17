@@ -29,6 +29,7 @@ class AnthropicLLM:
         import anthropic  # lazy: only required when this provider is selected
         self.client = anthropic.Anthropic()
         self.model = model or os.environ["ANTHROPIC_MODEL"]
+        self.id = f"anthropic:{self.model}"
         self.max_tokens = max_tokens
 
     def complete(self, system: str, prompt: str) -> str:
@@ -44,8 +45,10 @@ class LlamaCppLLM:
         from llama_cpp import (
             Llama,  # lazy: only required when this provider is selected
         )
-        self.llm = Llama(model_path=path or os.environ["LLAMA_MODEL_PATH"], n_ctx=n_ctx, verbose=False,
+        model_path = path or os.environ["LLAMA_MODEL_PATH"]
+        self.llm = Llama(model_path=model_path, n_ctx=n_ctx, verbose=False,
                          n_threads=int(os.environ.get("LLAMA_THREADS", "0")) or None)
+        self.id = f"llamacpp:{os.path.basename(model_path)}"
         self.max_tokens = max_tokens
 
     def complete(self, system: str, prompt: str) -> str:
@@ -102,16 +105,40 @@ class FallbackLLM:
     """Uses the primary provider; if it raises (outage, timeout, bad credentials), asks the secondary instead.
     The secondary is built on first use, so a fallback that is never needed is never set up."""
 
-    def __init__(self, primary: LLM, secondary_factory):
-        self.primary, self.secondary_factory = primary, secondary_factory
+    def __init__(self, primary: LLM, secondary_factory, secondary_id: str = "secondary"):
+        self.primary, self.secondary_factory, self.secondary_id = primary, secondary_factory, secondary_id
+        self.last_served = ""  # the id of the provider that answered the last call
 
     def complete(self, system: str, prompt: str) -> str:
         try:
-            return self.primary.complete(system, prompt)
+            out = self.primary.complete(system, prompt)
+            self.last_served = llm_id(self.primary)
+            return out
         except LLMCapExceeded:
             raise  # the tenant is over its allowance; a second provider would only spend it again
         except Exception:  # noqa: BLE001 - any provider failure is a reason to try the secondary
-            return self.secondary_factory().complete(system, prompt)
+            secondary = self.secondary_factory()
+            out = secondary.complete(system, prompt)
+            self.last_served = llm_id(secondary)
+            return out
+
+
+def llm_id(llm: LLM) -> str:
+    """Provider and model behind an LLM. A fallback shows both, so its answers are not filed under the primary."""
+    if isinstance(llm, (CappedLLM, RedactingLLM)):
+        return llm_id(llm.inner)
+    if isinstance(llm, FallbackLLM):
+        return f"{llm_id(llm.primary)}>{llm.secondary_id}"
+    return getattr(llm, "id", type(llm).__name__)
+
+
+def served_by(llm: LLM) -> str:
+    """The provider and model that answered the last call. Differs from llm_id only when a fallback answered."""
+    while isinstance(llm, (CappedLLM, RedactingLLM)):
+        llm = llm.inner
+    if isinstance(llm, FallbackLLM):
+        return llm.last_served or llm_id(llm)
+    return llm_id(llm)
 
 
 def _provider(name: str) -> LLM:
@@ -127,6 +154,6 @@ def get_llm(db: Session | None = None, tenant_id: str | None = None) -> LLM:
     fallback = os.environ.get("LLM_FALLBACK_PROVIDER", "")
     llm: LLM = _provider(provider)
     if fallback and fallback != provider:
-        llm = FallbackLLM(llm, lambda: _provider(fallback))
+        llm = FallbackLLM(llm, lambda: _provider(fallback), secondary_id=fallback)
     # Local models are metered too, so the cap counts every call the tenant makes.
     return CappedLLM(llm, db, tenant_id) if db is not None and tenant_id is not None else llm
