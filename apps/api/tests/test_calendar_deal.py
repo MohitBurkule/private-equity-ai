@@ -45,3 +45,43 @@ def test_mnpi_deal_meetings_are_hidden_from_uncleared_keys():
                headers={"X-Admin-Token": "test-admin"}).json()
     scoped = {"Authorization": f"Bearer {k['api_key']}"}
     assert c.get("/deals/Secret/meetings", headers=scoped).status_code == 404
+
+
+def _notes(h: dict, deal: str) -> list[dict]:
+    return c.get(f"/deals/{deal}/notes", headers=h).json()
+
+
+def test_meeting_body_becomes_a_cited_deal_note_that_follows_the_event():
+    h, tid = new_tenant_id(c, "cal-notes")
+    assert c.post("/deals", headers=h, json={"name": "Atlas"}).status_code == 201
+    _record(tid, [{"external_id": "7", "title": "Atlas management call", "starts_at": "2026-10-19T14:00",
+                   "url": "https://cal/7", "body": "Churn fell to 4%. Capex guide unchanged."}])
+    (note,) = _notes(h, "Atlas")
+    assert note["author"] == "calendar:outlook" and note["source_url"] == "https://cal/7"
+    assert "Churn fell to 4%" in note["body"] and note["body"].startswith("Meeting 2026-10-19: Atlas management call")
+    _record(tid, [{"external_id": "7", "title": "Atlas management call", "starts_at": "2026-10-19T14:00",
+                   "url": "https://cal/7", "body": "Churn fell to 4%. Capex guide cut."}])
+    (again,) = _notes(h, "Atlas")  # re-sync updates the same note, never a second one
+    assert again["id"] == note["id"] and "Capex guide cut" in again["body"]
+
+
+def test_meeting_without_text_or_deal_makes_no_note():
+    h, tid = new_tenant_id(c, "cal-nonote")
+    assert c.post("/deals", headers=h, json={"name": "Atlas"}).status_code == 201
+    _record(tid, [{"external_id": "8", "title": "Atlas call", "starts_at": "2026-10-19", "url": "u8", "body": ""},
+                  {"external_id": "9", "title": "Team lunch", "starts_at": "2026-10-19", "url": "u9", "body": "food"}])
+    assert _notes(h, "Atlas") == []
+
+
+def test_new_alias_and_new_deal_retag_meetings_already_stored():
+    h, tid = new_tenant_id(c, "cal-retag")
+    assert c.post("/deals", headers=h, json={"name": "Atlas"}).status_code == 201
+    _record(tid, [{"external_id": "5", "title": "Project Blue steering", "starts_at": "2026-10-23",
+                   "url": "u5", "body": "Agenda items."}])
+    assert _notes(h, "Atlas") == []
+    assert c.patch("/deals/Atlas", headers=h, json={"aliases": ["Project Blue"]}).status_code == 200
+    assert [n["source_url"] for n in _notes(h, "Atlas")] == ["u5"]
+    assert c.post("/deals", headers=h, json={"name": "Project Blue"}).status_code == 201
+    # "Project Blue" now names two deals (Atlas by alias, and itself), so the meeting is untagged for both
+    assert c.get("/deals/Project Blue/meetings", headers=h).json()["meetings"] == []
+    assert _notes(h, "Atlas") == []

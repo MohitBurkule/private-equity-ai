@@ -12,7 +12,7 @@ from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-DIRECT = ["document", "fact", "portfolio_company", "kpi_observation", "audit_event", "ingest_job", "dd_request", "covenant", "deal", "holding", "eval_run", "firm_knowledge", "agent_run", "document_source", "alert", "workflow_schedule", "target", "connection", "sync_run", "rate_window", "dd_question", "deal_note", "ic_decision", "person", "peer_set"]
+DIRECT = ["document", "fact", "portfolio_company", "kpi_observation", "audit_event", "ingest_job", "dd_request", "covenant", "deal", "holding", "eval_run", "firm_knowledge", "agent_run", "document_source", "alert", "workflow_schedule", "target", "connection", "sync_run", "rate_window", "dd_question", "deal_note", "ic_decision", "person", "peer_set", "target_note"]
 # child tables without tenant_id: visible only if their parent row is visible
 CHILD = {
     "page": ("document_id", "document", "id"),

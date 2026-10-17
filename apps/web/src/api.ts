@@ -186,6 +186,20 @@ export type Facets = { sector: { value: string | null; count: number }[]; countr
 
 export interface AlertBrief { since: string; total: number; by_kind: Record<string, number>; by_severity: Record<string, number> }
 
+export interface RefreshOut { checked: number; refreshed: number; failed: number; dissolved: number }
+
+export interface Note { id: number; author: string; body: string; created_at: string; edited_at: string | null }
+
+// Deal and target notes share one shape; only the path differs. The server decides who may edit (author, or a whole-tenant key).
+export const notesFor = (base: string) => ({
+  list: () => call<Note[]>(`${base}/notes`),
+  add: (body: string) => call<Note>(`${base}/notes`, "POST", { body }),
+  edit: (id: number, body: string) => call<Note>(`${base}/notes/${id}`, "PATCH", { body }),
+});
+
+export const dealNotes = (deal: string) => notesFor(`/deals/${encodeURIComponent(deal)}`);
+export const targetNotes = (tid: number) => notesFor(`/targets/${tid}`);
+
 export const api2 = {
   targets: (f: TargetFilter) => {
     const p = new URLSearchParams({ limit: "1000" });
@@ -196,6 +210,7 @@ export const api2 = {
     call<TargetBenchmark>(`/targets/benchmark?target_id=${targetId}&sector=${encodeURIComponent(sector)}`),
   targetFacets: () => call<Facets>("/targets/facets"),
   screen: (body: ScreenBody) => call<ScreenOut>("/targets/screen", "POST", body),
+  refreshTargets: () => call<RefreshOut>("/targets/refresh", "POST"),
   facts: (status?: string) => call<FactRow[]>(`/facts${status ? `?status=${status}` : ""}`),
   review: (id: number, action: "accept" | "reject", note?: string) => call<FactRow>(`/facts/${id}/review`, "POST", { action, note }),
   deals: () => call<DealRow[]>("/deals"),
@@ -257,6 +272,38 @@ export const api2 = {
   lboRun: (id: number) => call<LboRunDetail>(`/lbo/runs/${id}`),
   lboSave: (name: string, request: LboRequest) => call<LboRunRow>("/lbo/runs", "POST", { name, request }),
   covenants: (companyId: number) => call<CovenantStatus>(`/portfolio/companies/${companyId}/covenants`),
+  emailReview: () => call<{ emails: UnattachedEmail[] }>("/email/review"),
+  dealMeetings: (deal: string) => call<{ meetings: DealMeeting[] }>(`/deals/${encodeURIComponent(deal)}/meetings`),
+  peerSets: (deal: string) => call<PeerSet[]>(`/deals/${encodeURIComponent(deal)}/peer-sets`),
+  savePeerSet: (deal: string, targetId: number, name: string) => call<PeerSet>(`/deals/${encodeURIComponent(deal)}/peer-sets`, "POST", { target_id: targetId, name }),
+  refreshPeerSet: (deal: string, id: number) => call<PeerSet>(`/deals/${encodeURIComponent(deal)}/peer-sets/${id}/refresh`, "POST"),
+  people: (q: string, deal?: string) => {
+    const p = new URLSearchParams({ q });
+    if (deal) p.set("deal", deal);
+    return call<{ query: string; people: PersonRow[] }>(`/people?${p}`);
+  },
+  addPerson: (body: PersonIn) => call<PersonRow>("/people", "POST", body),
+  // A plain link would not send the key, so the research deck is fetched with it and saved from a blob.
+  researchPptxBlob: (targetId: number) => fetch(`/api/targets/${targetId}/research.pptx`, { headers: auth() })
+    .then((r) => { if (!r.ok) throw new Error(`research deck: ${r.status}`); return r.blob(); }),
+  documentAccess: (tenantId: string, adminToken: string) => fetch(`/api/admin/tenants/${encodeURIComponent(tenantId)}/document-access`, {
+    headers: { "X-Admin-Token": adminToken },
+  }).then((r) => j<DocumentAccess>(r)),
+  emailAttach: (docId: string, deal: string) => call<{ document_id: string; deal: string }>(`/email/review/${encodeURIComponent(docId)}/attach`, "POST", { deal }),
 };
+
+export interface UnattachedEmail { document_id: string; filename: string; source_url: string | null }
+
+export interface DealMeeting { title: string; starts_at: string; url: string | null; board: string | null; source: string }
+
+export interface PeerItem { cik: string; name: string; revenue?: string; [key: string]: unknown }
+export interface PeerDropped { cik: string; name: string; reason: string }
+export interface PeerSet { id: number; deal: string; name: string; target_id: number; items: PeerItem[]; dropped: PeerDropped[]; refreshed_at: string | null }
+
+export interface PersonRow { id: number; name: string; organisation: string | null; title: string | null; expertise: string[]; deal: string | null; recorded_at: string }
+export interface PersonIn { name: string; organisation?: string; title?: string; expertise?: string[]; deal?: string }
+
+export interface DocumentAccessRow { document_id: string; filename: string; deal: string | null; connector: string; grants: string[] }
+export interface DocumentAccess { documents: DocumentAccessRow[]; restricted: number }
 
 export const STAGES = ["sourcing", "screening", "dd", "ic", "signed", "closed", "passed"];

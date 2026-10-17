@@ -126,5 +126,10 @@ def extract_vlm_values(path: Path, page: int) -> list[VlmValue]:
         buf = BytesIO()
         render_region(path, page, box).save(buf, format="PNG")
         ocr = read_region(path, page, box)
-        vals.extend(verify(ask_vlm(buf.getvalue()), ocr, text_numbers, page))
+        labels = ask_vlm(buf.getvalue())
+        if not labels:
+            # The model said nothing usable: fall back to the labels OCR read on the chart. They still cite
+            # their bbox and still land as ocr_unverified in the review queue.
+            labels = [o.text for o in ocr]
+        vals.extend(verify(labels, ocr, text_numbers, page))
     return vals

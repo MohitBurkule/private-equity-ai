@@ -1,0 +1,39 @@
+{"id": "rd01", "doc": "real_decks/mimedx_2025Q3_investor_deck", "pdf_page_1based": 12, "row_label": "Net Cash Balance", "raw": "124", "hand_read": true, "kind": "tile"}
+{"id": "rd02", "doc": "real_decks/mimedx_2025Q3_investor_deck", "pdf_page_1based": 12, "row_label": "LTM Net Sales", "raw": "393", "hand_read": true, "kind": "tile"}
+{"id": "rd03", "doc": "real_decks/mimedx_2025Q3_investor_deck", "pdf_page_1based": 12, "row_label": "LTM Adjusted EBITDA", "raw": "96", "hand_read": true, "kind": "tile"}
+{"id": "rd04", "doc": "real_decks/mimedx_2025Q3_investor_deck", "pdf_page_1based": 12, "row_label": "LTM GAAP Net Income", "raw": "41", "hand_read": true, "kind": "tile"}
+{"id": "rd05", "doc": "real_decks/mimedx_2025Q3_investor_deck", "pdf_page_1based": 12, "row_label": "LTM Free Cash Flow", "raw": "67", "hand_read": true, "kind": "tile"}
+{"id": "rd06", "doc": "real_decks/mimedx_2025Q3_investor_deck", "pdf_page_1based": 12, "row_label": "LTM GAAP Gross Margin", "raw": "82", "hand_read": true, "kind": "tile"}
+{"id": "rd07", "doc": "real_decks/daseke_2022Q4_earnings_presentation", "pdf_page_1based": 18, "row_label": "Total revenue", "raw": "175.3; 219.0; 394.3; 690.0; 866.8; 1,556.8", "hand_read": true, "kind": "table"}
+{"id": "rd08", "doc": "real_decks/daseke_2022Q4_earnings_presentation", "pdf_page_1based": 18, "row_label": "Adjusted EBITDA", "raw": "22.4; 27.2; 49.6; 96.5; 126.6; 223.1", "hand_read": true, "kind": "table"}
+{"id": "rd09", "doc": "real_decks/daseke_2022Q4_earnings_presentation", "pdf_page_1based": 18, "row_label": "Net income (loss) margin", "raw": "4.4; (0.3); 1.8; 4.3; 3.0; 3.6", "hand_read": true, "kind": "table"}
+{"id": "rd10", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Adjusted EBITDA", "raw": "155.6; 178.7; 223.1; 234.9; 232.0", "hand_read": true, "kind": "table"}
+{"id": "rd11", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Depreciation and amortization", "raw": "146.5; 98.3; 88.1; 92.8; 96.3", "hand_read": true, "kind": "table"}
+{"id": "rd12", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Interest expense", "raw": "50.4; 44.9; 32.1; 35.4; 40.9", "hand_read": true, "kind": "table"}
+{"id": "rd13", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Stock based compensation", "raw": "3.8; 6.0; 8.6; 11.5; 12.4", "hand_read": true, "kind": "table"}
+{"id": "rd14", "doc": "real_decks/ampco_2023_investor_presentation", "pdf_page_1based": 29, "row_label": "Net Sales, Air & Liquid Processing Segment, as reported (US GAAP)", "raw": "86,213; 84,214; 87,872; 89,902; 92,274; 90,655; 84,716; 90,705", "hand_read": true, "kind": "table"}
+{"id": "rd15", "doc": "real_decks/ampco_2023_investor_presentation", "pdf_page_1based": 29, "row_label": "Operating income, Air & Liquid Processing Segment, as adjusted", "raw": "8,833; 9,688; 10,682; 10,781; 10,002; 10,416; 9,262; 11,460", "hand_read": true, "kind": "table"}
+{"id": "rd16", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Net income (loss)", "raw": "(306.0); 4.1; 56.0; 50.2; 37.7", "hand_read": true, "kind": "table"}
+{"id": "rd17", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Impairment", "raw": "312.8; 15.4; 9.4; 9.4", "hand_read": true, "kind": "table"}
+{"id": "rd18", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Severance", "raw": "3.6; 2.0; 4.7; 4.8", "hand_read": true, "kind": "table"}
+{"id": "rd19", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Income tax expense (benefit)", "raw": "(54.6); (0.2); 26.0; 19.6; 16.6", "hand_read": true, "kind": "table"}
+{"id": "rd20", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Restructuring charges", "raw": "8.5; 9.5; 0.3; 2.4; 2.8", "hand_read": true, "kind": "table"}
+{"id": "rd21", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Business transformation", "raw": "9.6; 8.9; 2.9; 10.6; 11.1", "hand_read": true, "kind": "table"}
+{"id": "rd22", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Aveda (income) expenses, net", "raw": "(15.3); 2.9; 3.9; 2.0; 1.3", "hand_read": true, "kind": "table"}
+{"id": "rd23", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Acquisition-related transaction expenses", "raw": "0.2; 3.8; 2.8", "hand_read": true, "kind": "table"}
+{"id": "rd24", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Change in fair value of warrant liability", "raw": "(1.4); 2.1; (1.6); (4.7)", "hand_read": true, "kind": "table"}
+{"id": "rd25", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Interest income", "raw": "(1.0); (0.6); (0.3); (2.8); (4.1)", "hand_read": true, "kind": "table"}
+{"id": "rd27", "doc": "real_decks/daseke_2023Q3_earnings_presentation", "pdf_page_1based": 7, "row_label": "", "raw": "153.4; 91.8; (20.0); (7.9); (67.1); (73.0); 77.2; 112.2; 189.4", "hand_read": true, "kind": "chart_waterfall", "chart_box_pt": [33, 308, 700, 459]}
+{"id": "rd28", "doc": "real_decks/lands_end_2025_investor_presentation", "pdf_page_1based": 12, "row_label": "Total", "raw": "1.56; 1.47; 1.44", "hand_read": true, "kind": "table"}
+{"id": "rd29", "doc": "real_decks/lands_end_2025_investor_presentation", "pdf_page_1based": 12, "row_label": "Adjusted EBITDA", "raw": "71; 84; 81", "hand_read": true, "kind": "table"}
+{"id": "rd30", "doc": "real_decks/lands_end_2025_investor_presentation", "pdf_page_1based": 12, "row_label": "Net Loss", "raw": "13; 131; 21", "hand_read": true, "kind": "table"}
+{"id": "rd31", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "The Shore Phases II & III", "raw": "433", "hand_read": true, "kind": "table"}
+{"id": "rd32", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "The Boardwalk", "raw": "179", "hand_read": true, "kind": "table"}
+{"id": "rd33", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Total Non-Stabilized", "raw": "612", "hand_read": true, "kind": "table"}
+{"id": "rd34", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "101 CambridgePark Drive", "raw": "176", "hand_read": true, "kind": "table"}
+{"id": "rd35", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Nexus on Grand", "raw": "162", "hand_read": true, "kind": "table"}
+{"id": "rd36", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Sorrento Gateway", "raw": "117", "hand_read": true, "kind": "table"}
+{"id": "rd37", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Callan Ridge", "raw": "140", "hand_read": true, "kind": "table"}
+{"id": "rd38", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Vantage Phase I", "raw": "438", "hand_read": true, "kind": "table"}
+{"id": "rd39", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Total Active", "raw": "1,033", "hand_read": true, "kind": "table"}
+{"id": "rd40", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Grand Total", "raw": "1,645", "hand_read": true, "kind": "table"}
