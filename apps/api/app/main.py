@@ -118,6 +118,7 @@ from app.kpi_workbook import ingest_kpi_pack as kpi_pack_ingest
 from app.llm import LLM, NoLLMConfigured, get_llm
 from app.memo import build_memo, build_memo_docx, build_memo_pptx
 from app.migrate import migrate
+from app.model_audit import audit
 from app.models import (
     STAGES,
     AgentRun,
@@ -1011,6 +1012,12 @@ def expert_call_review(body: ExpertCallIn, who: Who):
     return {"turns": len(turns), "speakers": sorted({t.speaker for t in turns}),
             "flags": [{"line": f.line, "speaker": f.speaker, "phrase": f.phrase, "quote": f.quote}
                       for f in flags(turns)]}
+
+
+@app.post("/models/audit")
+async def model_audit(file: Annotated[UploadFile, File()], who: Who):
+    """Hardcodes in formula rows, #REF! references and external links in an Excel model. Stores nothing."""
+    return {"findings": audit(await file.read())}
 
 
 @app.get("/dd/summary")
