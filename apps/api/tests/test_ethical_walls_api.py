@@ -16,7 +16,7 @@ def setup(name):
     assert c.post("/deals", headers=admin, json={"name": "Atlas"}).status_code == 201
     assert c.post("/deals", headers=admin, json={"name": "Atlas Inc"}).status_code == 201  # same company, warning
     assert c.post("/deals", headers=admin, json={"name": "Beta"}).status_code == 201
-    upload(admin, "Atlas", f"{name} atlas")
+    upload(admin, "Atlas", f"{name} atlas revenue")
     upload(admin, "Beta", f"{name} beta")
     walled = key(tid, role="associate", identity="alice@fund.example")
     partner = key(tid, role="partner")
