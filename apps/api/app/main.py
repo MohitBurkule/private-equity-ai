@@ -107,7 +107,7 @@ from app.auth import (
     principal_for_key,
     revoke_key,
 )
-from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
+from app.calc import Calc, find_conflicts, ltm, net_debt, net_debt_adjusted, nwc
 from app.calendar_events import retag_deals
 from app.chat_alerts import chat_poster
 from app.chat_inbound import (
@@ -1139,6 +1139,15 @@ def calc_normalized_ebitda(entity: str, period: str, db: Db, who: Who):
 @app.get("/calc/ltm")
 def calc_ltm(entity: str, metric: str, fy: str, ytd: str, ytd_prior: str, db: Db, who: Who):
     return _calc_out(ltm(db, who.tenant, entity, metric, fy, ytd, ytd_prior, visible_doc_ids(db, who)))
+
+
+@app.get("/calc/net-debt-adjusted")
+def calc_net_debt_adjusted(entity: str, period: str, db: Db, who: Who, include_leases: bool = True):
+    """Net debt plus debt-like items (pension deficit, deferred consideration, earn-outs, unpaid tax). Items the
+    documents do not state are listed in not_found; the adjusted figure is None until net debt and an item are stated."""
+    r = net_debt_adjusted(db, who.tenant, entity, period, visible_doc_ids(db, who), include_leases)
+    return {"net_debt": _calc_out(r["net_debt"]), "debt_like": _calc_out(r["debt_like"]),
+            "not_found": r["not_found"], "adjusted": None if r["adjusted"] is None else str(r["adjusted"])}
 
 
 @app.get("/calc/net-debt")

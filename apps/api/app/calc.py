@@ -139,3 +139,42 @@ def find_conflicts(db: Session, tenant: str, scope: set[str] | None = None,
         out.append(Conflict(ent, metric, period, basis, vals, spread, rounding,
                             "rounding" if rounding else "minor" if spread < 5 else "material", srcs, cross))
     return out
+
+
+# Debt-like items sit outside net debt but reduce the equity price. Each is optional: a document set that does not
+# state one is reported as not found, which is not the same as zero.
+DEBT_LIKE = (("pension", "pension_deficit"), ("deferred", "deferred_consideration"),
+             ("earnout", "earn_out"), ("tax", "unpaid_tax"))
+
+
+def debt_like(db: Session, tenant: str, entity: str, period: str,
+              scope: set[str] | None = None) -> tuple[Calc, list[str]]:
+    """Sum of the debt-like items stated for the period. Returns the calc and the metrics not found."""
+    c = Calc("Debt-like items", entity, formula="sum of " + ", ".join(m for _, m in DEBT_LIKE) + " stated")
+    not_found = []
+    for role, metric in DEBT_LIKE:
+        f = _find(db, tenant, entity, metric, period, scope)
+        if f is None:
+            not_found.append(metric)
+        else:
+            c.inputs.append(Input(role, 1, f))
+    if not c.inputs:
+        c.missing.append("no debt-like item stated for this period")
+        return c, not_found
+    units = {i.fact.unit for i in c.inputs}
+    if len(units) != 1:
+        c.problems.append(f"inputs use different units: {sorted(units)}")
+        return c, not_found
+    c.unit = units.pop()
+    c.value = sum((i.sign * i.fact.value for i in c.inputs), Decimal(0))
+    return c, not_found
+
+
+def net_debt_adjusted(db: Session, tenant: str, entity: str, period: str, scope: set[str] | None = None,
+                      include_leases: bool = True) -> dict:
+    """Net debt plus debt-like items: the figure an equity bridge deducts. The adjusted value is given only when net
+    debt and at least one debt-like item are both stated, so a missing item is never silently counted as zero."""
+    nd = net_debt(db, tenant, entity, period, scope, include_leases)
+    dl, not_found = debt_like(db, tenant, entity, period, scope)
+    adjusted = nd.value + dl.value if nd.ok and dl.ok and nd.unit == dl.unit else None
+    return {"net_debt": nd, "debt_like": dl, "not_found": not_found, "adjusted": adjusted}
