@@ -221,3 +221,13 @@ def test_comps_peer_with_a_market_ev_fact_gets_its_cited_multiple():
     rxo, nov = st.result["peers"][:2]
     assert rxo["enterprise_value"] == "950" and rxo["ev_fact_id"] == 7 and rxo["ev_revenue_multiple"] == "9.50"
     assert "enterprise_value" not in nov
+
+
+def test_peer_ev_in_another_unit_gets_no_multiple():
+    from types import SimpleNamespace
+
+    from app.flagship import _peer_row
+    from app.peers import Peer
+    p = Peer("1", Decimal(100), "FY2025", "u", "r", "EURCO")
+    row = _peer_row(p, SimpleNamespace(id=3, value=Decimal(950), unit="EUR"))
+    assert row["enterprise_value"] == "950" and row["ev_revenue_multiple"] is None and "not USD" in row["ev_note"]
