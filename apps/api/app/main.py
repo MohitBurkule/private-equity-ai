@@ -1857,11 +1857,12 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
         steps.append(flagship_mod.precedents_step(body.precedents, pfetch_mod.build))
     except (OSError, ValueError, RuntimeError) as e:
         steps.append(flagship_mod.Step("precedents", "failed", f"{type(e).__name__}: {e}"))
+    legal_type = body.legal_doc_type or flagship_mod.detect_doc_type(pages)
     try:
-        reader = get_llm() if body.legal_doc_type else None
+        reader = get_llm() if legal_type else None
     except NoLLMConfigured:
         reader = None
-    steps.append(flagship_mod.legal_step(pages, doc.id, body.legal_doc_type, legal_mod, reader))
+    steps.append(flagship_mod.legal_step(pages, doc.id, legal_type, legal_mod, reader))
     ext_step = next((s for s in steps if s.name == "extraction"), None)
     steps.append(flagship_mod.crosscheck_step(ext_step, body.cik, None) if body.extract
                  else flagship_mod.Step("crosscheck", "skipped", "set extract=true to cross-check its figures"))
