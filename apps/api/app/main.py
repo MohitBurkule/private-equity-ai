@@ -19,17 +19,18 @@ from fastapi import (
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app import (
+    add_on,
+    enrich,
+    notify,
+    opendata_tools,  # noqa: F401  (registers open-data agent tools)
+)
 from app import agent as ag
 from app import alerts as al
 from app import ch_search as chs_mod
 from app import companies_house as ch_mod
 from app import comps as comps_mod
 from app import covenant_parse as covparse_mod
-from app import (
-    enrich,
-    notify,
-    opendata_tools,  # noqa: F401  (registers open-data agent tools)
-)
 from app import firm_knowledge as fk
 from app import jobs as jobs_mod
 from app import lbo as lbo_mod
@@ -1093,6 +1094,15 @@ class CompanyIn(BaseModel):
     name: str
     sector: str | None = None
     ownership_pct: Decimal | None = None
+
+
+@app.get("/portfolio/companies/{company_id}/add-ons")
+def company_add_ons(company_id: int, db: Db, who: Who):
+    """Targets in this company's sector, minus companies already owned, screened against the firm rule."""
+    try:
+        return add_on.add_on_candidates(db, who.tenant, company_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e)) from e
 
 
 @app.post("/portfolio/companies", status_code=201)
