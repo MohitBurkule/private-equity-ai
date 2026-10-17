@@ -102,8 +102,8 @@ jobs:
           [ -f "$LLAMA_MODEL_PATH" ] || curl -fsSL -o "$LLAMA_MODEL_PATH" \
             https://huggingface.co/bartowski/gemma-2-9b-it-GGUF/resolve/main/gemma-2-9b-it-Q4_K_M.gguf
       - run: pip install -e 'apps/api[dev]' llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-      - name: /ask and schema-extraction evals on a local open model (gated: must pass)
-        run: python evals/run_llm_eval.py | tee llm-eval.json
+      - name: Local-model evals, gated (must pass)
+        run: python evals/run_llm_eval.py > llm-eval.json
       - uses: actions/upload-artifact@v4
         if: always()
         with: {name: llm-eval, path: llm-eval.json}
