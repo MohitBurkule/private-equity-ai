@@ -164,6 +164,22 @@ class DDRequest(Base):
     updated_at: Mapped[str] = mapped_column(String(40), default="")
 
 
+class DDQuestion(Base):
+    """A question put to management or the seller. Answers stay open until someone records one; a document can
+    be linked as the answer's source, and only a document the asker can see may be linked."""
+    __tablename__ = "dd_question"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    deal: Mapped[str] = mapped_column(String(128), index=True)
+    request_id: Mapped[int | None] = mapped_column(ForeignKey("dd_request.id"), default=None)
+    question: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="open")  # open | answered
+    answer: Mapped[str | None] = mapped_column(Text, default=None)
+    document_id: Mapped[str | None] = mapped_column(ForeignKey("document.id"), default=None)
+    asked_at: Mapped[str] = mapped_column(String(40), default="")
+    answered_at: Mapped[str | None] = mapped_column(String(40), default=None)
+
+
 # Ordered deal pipeline. Order matters for reporting; "closed" and "passed" end a deal and gate retention.
 STAGES = ["sourcing", "screening", "nda", "cim", "ioi", "loi", "dd", "ic", "signed", "closed", "passed"]
 
