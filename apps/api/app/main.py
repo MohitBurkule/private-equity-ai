@@ -1133,7 +1133,8 @@ def get_market_fetch():
 @app.get("/market/quote")
 def market_quote(symbol: str, provider: str, who: Who, fetch: Annotated[Callable, Depends(get_market_fetch)],
                  currency: str | None = None):
-    """Latest price from a named provider: yahoo, stooq (needs `currency`) or factset (needs credentials).
+    """Latest price from a named provider: yahoo, stooq (needs `currency`), factset (needs credentials),
+    ecb (EUR per unit of symbol, e.g. USD) or fred (a series id such as DGS10; needs FRED_API_KEY).
     Returns the source's own as-of date; 404 when the source has nothing, never a made-up number."""
     from app import marketfeeds
     from app.marketdata import NoData
@@ -1147,8 +1148,14 @@ def market_quote(symbol: str, provider: str, who: Who, fetch: Annotated[Callable
             p = marketfeeds.YahooProvider(fetch)
         elif provider == "factset":
             p = marketfeeds.FactSetProvider(fetch=fetch)
+        elif provider == "ecb":
+            from app.macrodata import EcbFxProvider
+            p = EcbFxProvider(fetch)
+        elif provider == "fred":
+            from app.macrodata import FredProvider
+            p = FredProvider(os.environ.get("FRED_API_KEY", ""), fetch=fetch)
         else:
-            raise HTTPException(422, "provider must be yahoo, stooq or factset")
+            raise HTTPException(422, "provider must be yahoo, stooq, factset, ecb or fred")
         q = p.quote(symbol.strip())
     except RuntimeError as e:
         raise HTTPException(503, str(e)) from e
