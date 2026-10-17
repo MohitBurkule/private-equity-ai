@@ -84,3 +84,12 @@ class FredProvider:
 def registered(fetch: Fetch = default_fetch) -> list:
     """ECB and FRED are both listed. FRED uses the key when FRED_API_KEY is set, else the public CSV."""
     return [EcbFxProvider(fetch), FredProvider(os.environ.get("FRED_API_KEY", ""), fetch=fetch)]
+
+
+def rate_with_margin(provider: FredProvider, series: str, margin_pct: str) -> tuple[Decimal, dict]:
+    """A floating base rate plus a margin, both in percent. The citation names the series, its date and value."""
+    q = provider.quote(series)
+    margin = _dec(str(margin_pct), "margin")
+    src = {"macro": True, "series": q.symbol, "as_of": q.as_of, "base_value": str(q.price),
+           "source": q.source, "quote": f"{q.symbol} {q.as_of} = {q.price}%"}
+    return q.price + margin, src
