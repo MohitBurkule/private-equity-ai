@@ -14,6 +14,7 @@ import { Integrations } from "./Integrations";
 import { Inbox } from "./Inbox";
 import { Deals, EvalDashboard, PortfolioPanel, ReviewQueue } from "./Panels";
 import { Lbo } from "./Lbo";
+import { Flagship } from "./Flagship";
 import { Covenants } from "./Covenants";
 import { Sourcing } from "./Sourcing";
 import { CandidateWatch } from "./CandidateWatch";
@@ -27,6 +28,7 @@ const NAV: { id: string; icon: ReactNode }[] = [
   { id: "Deals", icon: <Briefcase size={16} /> },
   { id: "Portfolio", icon: <LayoutGrid size={16} /> },
   { id: "Covenants", icon: <ShieldCheck size={16} /> },
+  { id: "Memo", icon: <FileText size={16} /> },
   { id: "LBO", icon: <Calculator size={16} /> },
   { id: "Sourcing", icon: <Map size={16} /> },
   { id: "Candidates", icon: <Briefcase size={16} /> },
@@ -119,6 +121,7 @@ export function App() {
         {tab === "Deals" && <Deals />}
         {tab === "Portfolio" && <PortfolioPanel />}
         {tab === "Covenants" && <Covenants />}
+        {tab === "Memo" && <Flagship />}
         {tab === "LBO" && <Lbo />}
         {tab === "Sourcing" && <Sourcing />}
         {tab === "Candidates" && <CandidateWatch />}
