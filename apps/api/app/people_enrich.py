@@ -44,7 +44,7 @@ def parse_ch_officers_page(page: str, number: str) -> list[dict]:
     for block in _BLOCK.split(page)[1:]:
         name = re.search(r'id="officer-name-\d+">(.*?)</span>', block, re.DOTALL)
         role = re.search(r'id="officer-role-\d+"[^>]*>(.*?)</dd>', block, re.DOTALL)
-        if not name or "Resigned on" in block:
+        if not name or "Resigned on" in block or "officer-resigned-on-" in block:
             continue
         who = _text(name.group(1))
         if not who:
@@ -61,7 +61,7 @@ def parse_ch_psc_page(page: str, number: str) -> list[dict]:
     out = []
     for block in _BLOCK.split(page)[1:]:
         name = re.search(r'id="psc-name-\d+">(.*?)</span>', block, re.DOTALL)
-        if not name or "Legal form" in block or "Ceased on" in block:
+        if not name or "Legal form" in block or "psc-legal-form-" in block or "Ceased on" in block or "psc-ceased-on-" in block:
             continue
         who = _text(name.group(1))
         if not who:
