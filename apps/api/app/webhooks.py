@@ -11,19 +11,27 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import logging
+import os
 import secrets
 import urllib.error
 import urllib.request
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from urllib.parse import urlparse
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app import outbound
 from app.acl import Principal, acl_hidden_doc_ids
 from app.models import Deal, Document, WebhookEndpoint
+from app.rls import bind_tenant
 
 TIMEOUT_SECONDS = 5
+log = logging.getLogger("pe.webhooks")
+# Sends run off the request thread so a slow receiver never holds up a bulk move. The queue is in-process:
+# an event queued when the server stops is lost, which is the trade-off for not adding a broker.
+_pool = ThreadPoolExecutor(max_workers=int(os.environ.get("WEBHOOK_WORKERS", "2")), thread_name_prefix="webhook")
 SIGNATURE_HEADER = "X-PE-Signature"
 RETRY_STATUS = {429, 502, 503, 504}
 
@@ -129,3 +137,21 @@ def _send(post: Post, url: str, body: bytes, headers: dict[str, str]) -> str:
         if status not in RETRY_STATUS or attempt == 1:
             return f"http {status}"
     return "failed"
+
+
+def enqueue(session_factory: sessionmaker, tenant: str, event: str, doc_ids: list[str], before: str | None,
+            after: str | None, *, pii: bool, post: Post = default_post) -> Future:
+    """Send in the background. The walls are checked there, in a fresh session bound to the tenant, so they
+    see the same data a request would, not whatever the request session had loaded."""
+    return _pool.submit(_deliver, session_factory, tenant, event, doc_ids, before, after, pii, post)
+
+
+def _deliver(session_factory: sessionmaker, tenant: str, event: str, doc_ids: list[str], before: str | None,
+             after: str | None, pii: bool, post: Post) -> dict[str, str]:
+    with session_factory() as db:
+        bind_tenant(db, tenant)
+        try:
+            return emit(db, tenant, event, doc_ids, before, after, pii=pii, post=post)
+        except Exception:
+            log.exception("webhook delivery failed for tenant %s", tenant)
+            return {"error": "delivery failed"}
