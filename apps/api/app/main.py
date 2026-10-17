@@ -898,6 +898,15 @@ def calc_net_debt(entity: str, period: str, db: Db, who: Who, include_leases: bo
     return _calc_out(net_debt(db, who.tenant, entity, period, visible_doc_ids(db, who), include_leases))
 
 
+@app.get("/calc/periods")
+def calc_periods(entity: str, db: Db, who: Who):
+    """Periods that have verified facts for the entity, oldest first, so a screen can default to ones that exist."""
+    visible = visible_doc_ids(db, who)
+    rows = db.query(Fact).filter_by(tenant_id=who.tenant, entity=entity, status="verified").all()
+    periods = {f.period for f in rows if fact_visible(f, visible)}
+    return {"entity": entity, "periods": sorted(periods)}
+
+
 @app.get("/calc/revenue-trend")
 def calc_revenue_trend(entity: str, periods: str, db: Db, who: Who):
     """Revenue growth and normalized EBITDA margin across comma-separated periods, oldest first."""

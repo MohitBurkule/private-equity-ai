@@ -1,14 +1,14 @@
 """firm memo templates
 
-Revision ID: 0051
-Revises: 0050
+Revision ID: 0053
+Revises: 0052
 """
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = '0051'
-down_revision = '0050'
+revision = '0053'
+down_revision = '0052'
 branch_labels = None
 depends_on = None
 

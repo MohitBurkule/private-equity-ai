@@ -226,6 +226,7 @@ export const api2 = {
     fd.append("file", file);
     return fetch("/api/lbo/workbook/ties", { method: "POST", body: fd, headers: auth() }).then((r) => j<LboTiesOut>(r));
   },
+  calcPeriods: (entity: string) => call<{ entity: string; periods: string[] }>(`/calc/periods?entity=${encodeURIComponent(entity)}`),
   qoeEbitda: (entity: string, period: string) =>
     call<QoeCalc>(`/calc/normalized-ebitda?entity=${encodeURIComponent(entity)}&period=${encodeURIComponent(period)}`),
   nwcPeg: (entity: string, periods: string) =>
