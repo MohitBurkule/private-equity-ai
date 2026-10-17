@@ -13,6 +13,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy.orm import Session
 
 from app.acl import fact_visible
+from app.citations import locator_label
 from app.firm_knowledge import applied_rules
 from app.models import Document, Fact
 
@@ -114,7 +115,8 @@ def build_memo_data(db: Session, tenant_id: str, entity: str, scope: set[str] | 
         note_no[f.id] = n
         src = f.sources[0]
         doc = db.get(Document, src.document_id)
-        memo.notes.append(f'[{n}] {doc.filename if doc else src.document_id[:8]}, p.{src.page}: '
+        where = locator_label(src.page, src.section, src.heading)
+        memo.notes.append(f'[{n}] {doc.filename if doc else src.document_id[:8]}, {where}: '
                           f'"{src.quote.strip()}"')
         memo.lines.append(f"{f.metric} ({f.period}, {f.basis}): {_gloss(f.value)} {f.unit} [{n}]")
     memo.derived += derive_lines({k: (f.value, f.unit, note_no[f.id]) for k, f in by_key.items()})
@@ -126,7 +128,8 @@ def build_memo_data(db: Session, tenant_id: str, entity: str, scope: set[str] | 
 
 
 def _rule_line(r: dict) -> str:
-    return f'{r["label"]}: {r["value"]} [{r["source"]["document_id"][:8]} p.{r["source"]["page"]}: "{r["source"]["quote"].strip()}"]'
+    where = locator_label(r["source"]["page"])
+    return f'{r["label"]}: {r["value"]} [{r["source"]["document_id"][:8]} {where}: "{r["source"]["quote"].strip()}"]'
 
 
 def build_memo(db: Session, tenant_id: str, entity: str, scope: set[str] | None = None) -> str:

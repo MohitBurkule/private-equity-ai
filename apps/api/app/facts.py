@@ -71,7 +71,7 @@ def add_html_fact(
     fact = Fact(tenant_id=tenant_id, entity=entity, metric=metric, period=period, value=value, unit=unit,
                 basis=basis, status="verified")
     fact.sources = [FactSource(document_id=document_id, page=0, quote=quote, section=rows[idx].section,
-                               anchor=rows[idx].anchor, offset=rows[idx].offset)
+                               heading=rows[idx].heading, anchor=rows[idx].anchor, offset=rows[idx].offset)
                     for idx, quote in sources]
     db.add(fact)
     db.commit()

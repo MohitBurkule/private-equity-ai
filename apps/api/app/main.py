@@ -536,7 +536,8 @@ def _fact_out(f: Fact) -> dict:
     return {"id": f.id, "entity": f.entity, "metric": f.metric, "period": f.period, "value": str(f.value),
             "unit": f.unit, "basis": f.basis, "status": f.status, "reviewed_by": f.reviewed_by,
             "reviewed_at": f.reviewed_at, "review_note": f.review_note,
-            "sources": [{"document_id": s.document_id, "page": s.page, "quote": s.quote} for s in f.sources]}
+            "sources": [{"document_id": s.document_id, "page": s.page, "section": s.section, "heading": s.heading,
+                         "quote": s.quote} for s in f.sources]}
 
 
 @app.get("/facts")
@@ -581,8 +582,9 @@ def _calc_out(c: Calc) -> dict:
             "unit": c.unit, "formula": c.formula, "missing": c.missing, "problems": c.problems,
             "inputs": [{"role": i.role, "sign": i.sign, "fact_id": i.fact.id, "metric": i.fact.metric,
                         "period": i.fact.period, "value": str(i.fact.value), "unit": i.fact.unit,
-                        "sources": [{"document_id": s.document_id, "page": s.page, "quote": s.quote}
-                                    for s in i.fact.sources]} for i in c.inputs]}
+                        "sources": [{"document_id": s.document_id, "page": s.page, "section": s.section,
+                                     "heading": s.heading, "quote": s.quote} for s in i.fact.sources]}
+                       for i in c.inputs]}
 
 
 @app.get("/facts/conflicts")
