@@ -1325,7 +1325,7 @@ def deal_snapshot(name: str, db: Db, who: Who):
     open_alerts = db.query(Alert).filter_by(tenant_id=who.tenant, deal=name, status="new").count()
     notes = db.query(DealNote).filter_by(tenant_id=who.tenant, deal=name).count()
     return {
-        "deal": d.name, "stage": d.stage, "sic": d.sic, "legal_hold": bool(d.legal_hold),
+        "deal": d.name, "stage": d.stage, "sic": d.sic, "sponsor": d.sponsor, "legal_hold": bool(d.legal_hold),
         "ic": {"recorded": review["ic_recorded"], "latest": latest,
                "dissents": len(review["dissents"]), "changed_since_ic": len(review["changed_since_ic"]),
                "changed_documents": review["changed_since_ic"][:5]},
@@ -1440,6 +1440,7 @@ class DealIn(BaseModel):
     note: str | None = None
     mnpi: bool = False
     sic: str | None = None
+    sponsor: str | None = None
     aliases: list[str] | None = None
     cik: str | None = None
     lei: str | None = None
@@ -1479,6 +1480,7 @@ class DealUpdate(BaseModel):
     legal_hold: bool | None = None
     mnpi: bool | None = None
     sic: str | None = None
+    sponsor: str | None = None
     aliases: list[str] | None = None
     cik: str | None = None
     lei: str | None = None
@@ -1488,7 +1490,8 @@ def _deal_out(db: Session, who: Principal, d: Deal) -> dict:
     dd = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=d.name).all()
     docs = db.query(Document).filter_by(tenant_id=who.tenant, deal=d.name).count()
     closed = sum(r.status != "open" for r in dd)
-    return {"name": d.name, "stage": d.stage, "sic": d.sic, "aliases": _aliases_list(d.aliases), "cik": d.cik,
+    return {"name": d.name, "stage": d.stage, "sic": d.sic, "sponsor": d.sponsor,
+            "aliases": _aliases_list(d.aliases), "cik": d.cik,
             "lei": d.lei, "note": d.note, "legal_hold": d.legal_hold, "mnpi": d.mnpi, "updated_at": d.updated_at,
             "documents": docs, "dd_total": len(dd), "dd_open": len(dd) - closed}
 
@@ -1507,7 +1510,8 @@ def deal_create(body: DealIn, db: Db, who: Writer):
     if db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first():
         raise HTTPException(409, "deal already exists")
     d = Deal(tenant_id=who.tenant, name=name, stage=body.stage, note=body.note, mnpi=body.mnpi,
-             sic=(body.sic or "").strip() or None, aliases=_aliases_text(body.aliases), cik=_cik(body.cik),
+             sic=(body.sic or "").strip() or None, sponsor=(body.sponsor or "").strip() or None,
+             aliases=_aliases_text(body.aliases), cik=_cik(body.cik),
              lei=_lei(body.lei),
              created_by=who.key_id if body.mnpi else None, updated_at=_now_iso())
     db.add(d)
@@ -1752,6 +1756,9 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
     if body.sic is not None:
         _require(who, "write", "edit deal sector", deal=name)
         d.sic = body.sic.strip() or None
+    if body.sponsor is not None:
+        _require(who, "write", "edit deal sponsor", deal=name)
+        d.sponsor = body.sponsor.strip() or None
     if body.aliases is not None or body.cik is not None or body.lei is not None:
         _require(who, "write", "edit deal identifiers", deal=name)
         if body.aliases is not None:

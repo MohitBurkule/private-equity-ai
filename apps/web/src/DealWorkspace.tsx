@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, api2, dealNotes, LegalOut } from "./api";
+import { api, api2, dealNotes, DealSnapshot, LegalOut } from "./api";
 import { useLoad } from "./hooks";
 import { SourceChip } from "./source";
 import { Badge, Button, Card, CardHead, Empty, ErrorLine } from "./ui";
@@ -11,6 +11,7 @@ const TYPES = [["nda", "NDA"], ["spa", "SPA"], ["credit", "Credit agreement"]] a
 export function DealWorkspace({ deal }: { deal: string }) {
   const docs = useLoad(() => api.documents().then((d) => d.filter((x) => x.deal === deal)), [deal]);
   const sum = useLoad(() => api2.ddSummary(deal).catch(() => null), [deal]);
+  const snap = useLoad(() => api2.snapshot(deal).catch(() => null), [deal]);
   const [legal, setLegal] = useState<Record<string, LegalOut>>({});
   const [type, setType] = useState<Record<string, string>>({});
   const [err, setErr] = useState("");
@@ -24,6 +25,7 @@ export function DealWorkspace({ deal }: { deal: string }) {
   const docName = new Map((docs.data ?? []).map((d) => [d.id, d.filename] as const));
   return (
     <>
+    {snap.data && <SnapshotCard s={snap.data} />}
     <Card>
       <CardHead title={`Workspace: ${deal}`} hint="Progress, documents and key legal terms" right={sum.data?.pct_complete != null && <Badge tone="acc">{sum.data.pct_complete}% of requests closed</Badge>} />
       <ErrorLine e={err || docs.error} />
@@ -82,5 +84,34 @@ export function DealWorkspace({ deal }: { deal: string }) {
     </Card>
     <div className="mt-4"><NotesPanel title="Deal notes" hint="Shared with everyone who can see this deal" api={dealNotes(deal)} deps={[deal]} /></div>
     </>
+  );
+}
+
+/** The partner's one-page view: where the deal stands, what changed since IC, and what is still open. */
+function SnapshotCard({ s }: { s: DealSnapshot }) {
+  const cells: [string, string][] = [
+    ["Stage", s.stage],
+    ["Sponsor", s.sponsor ?? "not recorded"],
+    ["Last IC", s.ic.latest ? s.ic.latest.outcome : "none recorded"],
+    ["Dissents on file", String(s.ic.dissents)],
+    ["Filed since IC", String(s.ic.changed_since_ic)],
+    ["DD closed", s.dd.pct_complete == null ? "no requests" : `${s.dd.pct_complete}%`],
+    ["Documents", String(s.documents.count)],
+    ["Open alerts", String(s.open_alerts)],
+  ];
+  return (
+    <Card>
+      <CardHead title="Snapshot" hint="Where this deal stands, from the same records as the sections below" right={s.legal_hold && <Badge tone="warn">legal hold</Badge>} />
+      <dl className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4">
+        {cells.map(([k, v]) => (
+          <div key={k} className="min-w-0"><dt className="text-xs text-mut">{k}</dt><dd className="truncate text-sm font-medium capitalize">{v}</dd></div>
+        ))}
+      </dl>
+      {s.ic.changed_documents.length > 0 && (
+        <p className="border-t border-line px-5 py-3 text-xs text-mut">
+          Changed since last IC: {s.ic.changed_documents.map((d) => d.filename).join(", ")}
+        </p>
+      )}
+    </Card>
   );
 }

@@ -149,6 +149,13 @@ export interface WorkflowInfo { name: string; description: string; inputs: Recor
 export interface FirmRow { id: number; key: string; value: string; status: string; source: { document_id: string; page: number; quote: string } }
 export interface FirmOut { profile: Record<string, FirmRow[]>; coverage: { known: number; total: number; missing: string[] } }
 export interface DDSummary { total: number; closed: number; pct_complete: number | null; by_category: Record<string, { open: number; received: number; waived: number }> }
+export interface DealSnapshot {
+  deal: string; stage: string; sic: string | null; sponsor: string | null; legal_hold: boolean;
+  ic: { recorded: boolean; latest: { outcome: string; recorded_at: string } | null; dissents: number; changed_since_ic: number; changed_documents: { document_id: string; filename: string }[] };
+  documents: { count: number };
+  dd: { total: number; closed: number; pct_complete: number | null };
+  open_alerts: number; notes: number;
+}
 export interface LegalOut { doc_type: string; absent: string[]; findings: { term: string; value: string; page: number; quote: string; needs_review: boolean; document_id: string }[] }
 export interface Report {
   breaches: Breach[];
@@ -255,6 +262,7 @@ export const api2 = {
   firmTerms: () => call<{ key: string; group: string; label: string; hint: string }[]>("/firm-knowledge/terms"),
   firmReview: (id: number, status: string) => call<unknown>(`/firm-knowledge/${id}/review`, "POST", { status }),
   ddSummary: (deal: string) => call<DDSummary>(`/dd/summary?deal=${encodeURIComponent(deal)}`),
+  snapshot: (deal: string) => call<DealSnapshot>(`/deals/${encodeURIComponent(deal)}/snapshot`),
   legalTerms: (docId: string, docType: string) => call<LegalOut>(`/documents/${docId}/legal-terms?doc_type=${docType}`),
   conflicts: () => call<Conflict[]>("/facts/conflicts"),
   evals: () => call<EvalRunRow[]>("/evals?limit=200"),
