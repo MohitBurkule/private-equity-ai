@@ -35,9 +35,15 @@ jobs:
         ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+      mailpit:
+        image: axllent/mailpit:v1.21.8
+        ports: ["1025:1025", "8025:8025"]
     defaults: {run: {working-directory: apps/api}}
     env:
       PGPASSWORD: pg
+      MAILPIT_API_URL: http://localhost:8025
+      SMTP_HOST: localhost
+      SMTP_PORT: "1025"
       DATABASE_URL: postgresql+psycopg://pe_app:a@localhost:5432/pe_ci
       MIGRATE_DATABASE_URL: postgresql+psycopg://pe_owner:o@localhost:5432/pe_ci
       APP_DB_ROLE: pe_app

@@ -247,6 +247,12 @@ class Target(Base):
     revenue_url: Mapped[str | None] = mapped_column(Text, default=None)  # where the revenue figure is filed
     status: Mapped[str] = mapped_column(String(16), default="new")  # new | screened | contacted | passed
     notes: Mapped[str | None] = mapped_column(Text, default=None)
+    website: Mapped[str | None] = mapped_column(Text, default=None)  # https homepage the fields below came from
+    web_title: Mapped[str | None] = mapped_column(Text, default=None)
+    web_description: Mapped[str | None] = mapped_column(Text, default=None)
+    web_site_name: Mapped[str | None] = mapped_column(Text, default=None)
+    web_checked_at: Mapped[str | None] = mapped_column(String(40), default=None)
+
 
 class Alert(Base):
     """An inbox item written by a watcher. dedupe_key makes repeated scans idempotent."""

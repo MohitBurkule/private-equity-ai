@@ -31,6 +31,7 @@ class FakeSMTP:
 
 
 def test_digest_sends_once_and_validates(monkeypatch):
+    monkeypatch.delenv("SMTP_HOST", raising=False)  # CI sets SMTP_HOST for the Mailpit e2e test
     h, thr, o = breach_setup("nt1")
     c.post("/alerts/scan", headers=h)
     assert c.post("/alerts/digest", headers=h, json={"to": ["a@x.com"]}).status_code == 503  # no SMTP_HOST

@@ -162,7 +162,9 @@ def to_dict(t: Target) -> dict:
             "sector": t.sector, "sic": t.sic, "country": t.country, "region": t.region,
             "lat": None if t.lat is None else str(t.lat), "lng": None if t.lng is None else str(t.lng),
             "revenue": None if t.revenue is None else str(t.revenue), "currency": t.currency,
-            "revenue_period": t.revenue_period, "revenue_url": t.revenue_url, "status": t.status}
+            "revenue_period": t.revenue_period, "revenue_url": t.revenue_url, "status": t.status,
+            "website": t.website, "web_title": t.web_title, "web_description": t.web_description,
+            "web_site_name": t.web_site_name, "web_checked_at": t.web_checked_at}
 
 
 def benchmark(db: Session, tenant: str, sector: str | None, target: Target | None = None) -> dict:
