@@ -104,3 +104,36 @@ def test_retention_dry_run_then_purge_skips_held_and_is_audited():
     real = c.post("/retention/deals", headers=h, json={"older_than_days": 365, "dry_run": False}).json()
     assert real["deleted"] == ["Old"] and real["skipped"] == []
     assert sorted(d["name"] for d in c.get("/deals", headers=h).json()) == ["Held", "Live"]
+
+
+def test_document_retention_skips_held_deal_and_cited_docs():
+    from datetime import UTC, datetime, timedelta
+
+    from app.main import SessionLocal
+    from app.models import Document
+    from app.rls import bind_tenant
+
+    t = c.post("/admin/tenants", json={"name": "retdoc"}, headers={"X-Admin-Token": "test-admin"}).json()
+    h = {"Authorization": f"Bearer {t['api_key']}"}
+    c.post("/deals", headers=h, json={"name": "Held"})
+    c.patch("/deals/Held", headers=h, json={"legal_hold": True})
+    ids = []
+    for name, deal, value in [("a.xlsx", None, 10), ("b.xlsx", "Held", 20)]:
+        # Distinct content: identical bytes dedupe to one document id.
+        wb = Workbook()
+        wb.active["A1"], wb.active["B1"] = "Revenue", value
+        out = io.BytesIO()
+        wb.save(out)
+        data = {"deal": deal} if deal else {}
+        ids.append(c.post("/documents", files={"file": (name, out.getvalue(), "x")}, data=data,
+                          headers=h).json()["id"])
+    old = (datetime.now(UTC) - timedelta(days=400)).isoformat()
+    with SessionLocal() as db:
+        bind_tenant(db, t["tenant_id"])
+        for row in db.query(Document).all():
+            row.created_at = old
+        db.commit()
+    assert c.post("/retention/documents", headers=h, json={"older_than_days": 365}).json() == {
+        "dry_run": True, "candidates": [ids[0]]}
+    real = c.post("/retention/documents", headers=h, json={"older_than_days": 365, "dry_run": False}).json()
+    assert real["deleted"] == [ids[0]] and real["skipped"] == []

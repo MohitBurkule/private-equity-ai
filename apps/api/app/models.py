@@ -1,6 +1,7 @@
 """Core tables. A Fact cannot exist without a FactSource (citation is mandatory)."""
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -43,6 +44,8 @@ class Document(Base):
     n_pages: Mapped[int] = mapped_column(Integer)
     kind: Mapped[str] = mapped_column(String(16), default="pdf")
     deal: Mapped[str | None] = mapped_column(String(128), default=None, index=True)
+    # When the document was stored. NULL means unknown, and retention treats unknown age as too young to purge.
+    created_at: Mapped[str | None] = mapped_column(String(40), default=lambda: datetime.now(UTC).isoformat())
     pages: Mapped[list[PageRow]] = relationship(back_populates="document", cascade="all")
 
 
