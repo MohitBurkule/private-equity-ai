@@ -16,11 +16,14 @@ from email.message import EmailMessage
 
 from sqlalchemy.orm import Session
 
+from app import alerts as alerts_mod
+from app import ch_search as chs_mod
 from app import comps as comps_mod
+from app import sourcing_search as ss_mod
 from app.models import Alert, WorkflowSchedule
 from app.report import build_report
 
-KINDS = ("portfolio_report", "comps", "alert_digest")
+KINDS = ("portfolio_report", "comps", "alert_digest", "candidate_watch")
 Mailer = Callable[[list[str], str, str], None]
 
 
@@ -54,6 +57,8 @@ ORDER = {"critical": 0, "warning": 1, "info": 2}
 def _summary(kind: str, result: dict) -> str:
     if kind == "alert_digest":
         return "\n\n".join(f"[{a['severity'].upper()}] {a['title']}\n    {a['detail']}" for a in result["alerts"])
+    if kind == "candidate_watch":
+        return "\n".join(f"- {a['title']}: {a['detail']}" for a in result["alerts"]) or "No new candidates."
     if kind == "portfolio_report":
         lines = [f"Breaches: {len(result.get('breaches', []))}"]
         for b in result.get("breaches", []):
@@ -77,10 +82,30 @@ def _alert_digest(db: Session, w: WorkflowSchedule) -> dict:
     return {"alerts": [{"id": a.id, "severity": a.severity, "title": a.title, "detail": a.detail} for a in rows]}
 
 
+def _edgar_candidates(term: str, since: str, until: str) -> list[tuple[str, str, str]]:
+    return [(c.name, c.filing_url, "SEC EDGAR filing") for c in ss_mod.search(term, ["10-K"], since, until)]
+
+
+def _ch_candidates(term: str, since: str, until: str) -> list[tuple[str, str, str]]:
+    return [(c.name, c.company_url, "Companies House company page") for c in chs_mod.search(term)]
+
+
+def _candidate_watch(db: Session, w: WorkflowSchedule) -> dict:
+    """Weekly: searches EDGAR and Companies House for new companies in the accepted firm sectors.
+    The window is the last cadence period; new alerts reach the inbox and the next digest."""
+    until = _now().date()
+    since = (_now() - timedelta(days=w.every_days)).date()
+    created = alerts_mod.scan_candidates(db, w.tenant_id, _edgar_candidates if os.environ.get("SEC_USER_AGENT")
+                                         else None, _ch_candidates, since.isoformat(), until.isoformat())
+    return {"alerts": [{"id": a.id, "severity": a.severity, "title": a.title, "detail": a.detail} for a in created]}
+
+
 def _execute(db: Session, w: WorkflowSchedule, scope: set[str] | None) -> dict:
     p = json.loads(w.params)
     if w.kind == "alert_digest":
         return _alert_digest(db, w)
+    if w.kind == "candidate_watch":
+        return _candidate_watch(db, w)
     if w.kind == "portfolio_report":
         return build_report(db, w.tenant_id, scope)
     return comps_mod.run(db, w.tenant_id, p["target"], p["peers"], p["period"], p.get("metrics", ["revenue", "ebitda"]),
@@ -98,7 +123,8 @@ def run_due(db: Session, tenant: str, scope: set[str] | None, mailer: Mailer | N
             result = _execute(db, w, scope)
             body = _summary(w.kind, result)
             w.last_status, w.last_result = "ok", json.dumps({"summary": body, "result": result}, default=str)
-            if mailer and w.recipients and (w.kind != "alert_digest" or result["alerts"]):
+            quiet_when_empty = w.kind in ("alert_digest", "candidate_watch")
+            if mailer and w.recipients and (not quiet_when_empty or result["alerts"]):
                 mailer(w.recipients.split(","), f"[{w.name}] scheduled update", body)  # no mail for an empty digest
         except Exception as e:  # noqa: BLE001  recorded, never raised: one bad schedule must not stop the others
             w.last_status, w.last_result = "failed", f"{type(e).__name__}: {e}"
