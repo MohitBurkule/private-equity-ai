@@ -30,6 +30,7 @@ from app import (
     opendata_tools,  # noqa: F401  (registers open-data agent tools)
 )
 from app import outreach as outreach_mod
+from app import precedents as prec_mod
 from app import research as research_mod
 from app import seen_before as seen_mod
 from app import targets as tg_mod
@@ -1210,6 +1211,20 @@ def legal_terms(doc_id: str, doc_type: str, db: Db, who: Who):
         f["document_id"] = doc_id
     out["red_flags"] = legal_mod.red_flags(out)
     return out
+
+
+@app.get("/precedents/summary")
+def precedents_summary(db: Db, who: Who, document_ids: str):
+    """Stated EV and multiples across deal documents (comma-separated ids), with page and quote per input."""
+    ids = [x for x in document_ids.split(",") if x][:200]
+    if not ids:
+        raise HTTPException(422, "document_ids required")
+    deals = []
+    for doc_id in ids:
+        _own_doc(db, who, doc_id)
+        pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc_id).order_by(PageRow.number)]
+        deals.append({"name": doc_id, "document_id": doc_id, "terms": prec_mod.extract(pages)})
+    return {"deals": deals, "stats": prec_mod.summarise(deals)}
 
 
 class WorkflowIn(BaseModel):
