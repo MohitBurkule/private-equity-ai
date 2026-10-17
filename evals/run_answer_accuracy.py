@@ -64,13 +64,24 @@ def _read(path: Path) -> dict[str, dict]:
     return {r["id"]: r for r in (json.loads(line) for line in path.read_text().splitlines() if line.strip())}
 
 
-def run(data: Path, n: int, chunk: int, checkpoint: Path, k: int = 2) -> dict:
+class _Logged:
+    """Keeps the model's raw output for the question in progress, so the checkpoint shows what it said."""
+
+    def __init__(self, inner):
+        self.inner, self.last = inner, ""
+
+    def complete(self, system, prompt):
+        self.last = self.inner.complete(system, prompt)
+        return self.last
+
+
+def run(data: Path, n: int, chunk: int, checkpoint: Path, k: int = 2, ids: set[str] | None = None) -> dict:
     items = _load_items(data, n)
     done = _read(checkpoint)
-    todo = [g for g in items if g["financebench_id"] not in done][:chunk]
+    todo = [g for g in items if g["financebench_id"] not in done and (ids is None or g["financebench_id"] in ids)][:chunk]
     if todo:
         db = _db(data, todo, checkpoint.with_suffix(".pages"))  # only this chunk's filings
-        llm = LlamaCppLLM(max_tokens=256, n_ctx=8192 if k > 2 else 4096)  # short answers; prompt is the top-k pages only
+        llm = _Logged(LlamaCppLLM(max_tokens=512, n_ctx=8192 if k > 2 else 4096))  # room for the JSON; prompt is the top-k pages only
         with checkpoint.open("a") as out:
             for g in todo:
                 want = float(g["answer"].replace("$", "").replace(",", ""))
@@ -79,7 +90,8 @@ def run(data: Path, n: int, chunk: int, checkpoint: Path, k: int = 2) -> dict:
                 row = {"id": g["financebench_id"], "status": a.status,
                        "correct": a.status == "answered" and want in nums,
                        "verified_wrong": a.status == "answered" and want not in nums,
-                       "claims": [c.text for c in a.claims]}
+                       "claims": [c.text for c in a.claims],
+                       "raw": llm.last[:1500]}
                 out.write(json.dumps(row) + "\n")
                 out.flush()
                 done[row["id"]] = row
@@ -104,5 +116,6 @@ if __name__ == "__main__":
     ap.add_argument("--chunk", type=int, default=10)
     ap.add_argument("--checkpoint", type=Path, default=Path("answer_accuracy.checkpoint.jsonl"))
     ap.add_argument("--k", type=int, default=2, help="pages retrieved per question")
+    ap.add_argument("--ids", nargs="*", help="only these financebench_ids")
     a = ap.parse_args()
-    print(json.dumps(run(a.data, a.n, a.chunk, a.checkpoint, a.k), indent=1))
+    print(json.dumps(run(a.data, a.n, a.chunk, a.checkpoint, a.k, set(a.ids) if a.ids else None), indent=1))
