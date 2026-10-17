@@ -321,6 +321,29 @@ class Target(Base):
     web_checked_at: Mapped[str | None] = mapped_column(String(40), default=None)
 
 
+class MemoVersion(Base):
+    """A saved IC memo draft. Stored as the text the reviewer saw, so a later reader sees the same figures and sources."""
+    __tablename__ = "memo_version"
+    __table_args__ = (UniqueConstraint("tenant_id", "entity", "number"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    entity: Mapped[str] = mapped_column(String(200))
+    number: Mapped[int] = mapped_column()
+    markdown: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+
+
+class MemoComment(Base):
+    __tablename__ = "memo_comment"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("memo_version.id"), index=True)
+    author: Mapped[str] = mapped_column(String(64), default="")
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 class DigestPref(Base):
     """One signed-in person's alert digest: where it goes, the least severe alert it includes, and the last alert sent.
     Keyed on the OIDC subject, so a person's preference follows their account, not a shared key."""
