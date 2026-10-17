@@ -31,10 +31,12 @@ export function Flagship() {
   useEffect(() => {
     api.documents().then((list) => {
       setDocs(list);
-      const pick = list.find((d) => d.filename.includes("10-K")) ?? list[0];
+      // Default to the entity's own 10-K, so the screen opens on the filing the entity name names.
+      const pick = list.find((d) => d.filename.includes("10-K") && d.filename.toLowerCase().includes(entity.toLowerCase()))
+        ?? list.find((d) => d.filename.includes("10-K")) ?? list[0];
       if (pick) setDocId(pick.id);
     }).catch((e) => setError(String(e)));
-  }, []);
+  }, []); // the first load picks the default entity's 10-K; later edits to the entity do not move the selection
 
   const run = async () => {
     setBusy(true); setError(""); setResult(null);
