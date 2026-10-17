@@ -75,6 +75,7 @@ All SYNTHETIC: response shapes are invented for tests, not copied from any vendo
 | DealCloud (companies, deals) | WireMock stubs | `deploy/mocks/wiremock/mappings/dealcloud.json` | stub smoke test only; no connector |
 | iManage (folder documents) | SYNTHETIC API, WireMock 3.9.1 (jar) | wired | `apps/api/app/connectors/imanage.py`, `tests/test_imanage_flow.py`, `tests/test_imanage_wiremock.py`, stubs in `deploy/mocks/wiremock/mappings/imanage.json` |
 | NetDocuments (workspace documents) | SYNTHETIC API, WireMock 3.9.1 (jar) | wired | `apps/api/app/connectors/netdocuments.py`, `tests/test_netdocuments_flow.py`, `tests/test_netdocuments_wiremock.py`, stubs in `deploy/mocks/wiremock/mappings/netdocuments.json` |
+| Market data → comps (enterprise value) | SYNTHETIC feed shape, fake fetch in tests | wired | `apps/api/app/marketfeed_facts.py`, `POST /market/tev-sync`, `tests/test_marketfeed_facts.py` |
 | Datasite (room files) | WireMock stubs | `deploy/mocks/wiremock/mappings/datasite.json` | stub smoke test only; no connector |
 | Fund admin (capital calls, NAV) | WireMock stubs | `deploy/mocks/wiremock/mappings/fund-admin.json` | stub smoke test only; no connector |
 | SSO roles | Keycloak 26.0.7, realm `firm-synthetic` | compose `keycloak` on 8081 | not yet tested against the app |
