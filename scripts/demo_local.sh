@@ -54,6 +54,8 @@ if [ -f "$DATA_DIR/filings/3M_2019_10K.htm" ]; then
   fi
   # A synthetic holding with budget, marks and a target note, for the portfolio and targets screens.
   python3 scripts/seed_portfolio_synthetic.py "http://localhost:$API_PORT" "$KEY" | sed 's/^/synthetic: /'
+  # SYNTHETIC peer EVs and FY2025 revenue so the comps screen has usable peers; no real prices offline.
+  python3 scripts/seed_peer_ev_synthetic.py "$DATABASE_URL" | sed 's/^/synthetic peers: /'
   echo "Dated EDGAR cache: data/demo/cache (captured 2026-10-17). Firm rule is synthetic demo text."
 else
   echo "No seed data at $DATA_DIR; the UI starts empty. Add a tenant with POST /admin/tenants."
