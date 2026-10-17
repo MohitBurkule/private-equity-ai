@@ -136,3 +136,16 @@ def test_bridge_mismatch_raises_one_inbox_item():
     run(h, doc, "ebitda_bridge", lines)
     alerts = [a for a in c.get("/alerts", headers=h).json() if a["kind"] == "bridge_mismatch"]
     assert len(alerts) == 1 and "does not re-add" in alerts[0]["title"]
+
+
+def test_cohort_rows_keep_each_measure_and_reject_empty_rows():
+    h = new_tenant(c, "rows8")
+    doc = upload(h, {"A1": "2022 Q1 cohort", "B1": 1500000})
+    q = "Sheet!{}1: {} | row: 2022 Q1 cohort"
+    good = {"page": 1, "quote": q.format("B", "1,500,000"),
+            "fields": {"cohort": "2022 Q1", "period": "FY24", "arr": 1500000}}
+    empty = {"page": 1, "quote": q.format("B", "1,500,000"), "fields": {"cohort": "2022 Q1", "period": "FY24"}}
+    out = run(h, doc, "cohort", [good, empty])
+    assert [r["status"] for r in out["rows"]] == ["accepted", "rejected"]
+    metrics = sorted(f["metric"] for f in c.get("/facts", headers=h).json() if f["metric"].startswith("cohort_"))
+    assert metrics == ["cohort_arr"]

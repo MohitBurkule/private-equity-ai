@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.citations import quote_in_page, verify_number
 from app.extraction_schema import (
     CapTableRow,
+    CohortRow,
     ContractTerms,
     CustomerShare,
     EbitdaBridgeRow,
@@ -42,8 +43,9 @@ _ROWS = {
     "contract_terms": ContractTerms,
     "customer_concentration": CustomerShare,
     "ebitda_bridge": EbitdaBridgeRow,
+    "cohort": CohortRow,
 }
-_NUMERIC_UNITS = {"shares", "%", "days", "USD"}
+_NUMERIC_UNITS = {"shares", "%", "days", "USD", "count"}
 
 
 @dataclass
@@ -61,6 +63,12 @@ def _facts_for(schema: str, row: BaseModel) -> list[tuple[str, str, str, Decimal
     run's, since one customer table carries several periods."""
     data = row.model_dump()
     out = []
+    if schema == "cohort":
+        for field_name, metric, unit in (("arr", "cohort_arr", "USD"), ("customers", "cohort_customers", "count"),
+                                         ("nrr_pct", "cohort_nrr_pct", "%"), ("churn_pct", "cohort_churn_pct", "%")):
+            if data.get(field_name) is not None:
+                out.append((data["cohort"], data["period"], metric, Decimal(data[field_name]), unit))
+        return out
     if schema == "ebitda_bridge":
         out.append((data["item"], data["period"], f"ebitda_bridge {data['kind']}", Decimal(data["amount"]), "USD"))
         return out
