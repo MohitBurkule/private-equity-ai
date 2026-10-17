@@ -24,6 +24,19 @@ _MULT = re.compile(
     r"NTM|next twelve months|forward)\s+)?(revenue|EBITDA|adjusted EBITDA)",
     re.IGNORECASE,
 )
+# Headline deal value: the price the buyer pays, stated as a deal term. Banker and fairness-opinion text,
+# pro forma or combined figures, and peer or premia comparisons never count as the headline.
+_NOT_HEADLINE = re.compile(
+    r"pro forma|combined company|combined|implied|calculated|analysis|analyses|reviewed|premia|per share|"
+    r"opinion|financial advisor|fairness|selected|projection|range|comparable|peer|would|could|may",
+    re.IGNORECASE,
+)
+_DEAL_TERM = re.compile(
+    r"(agreed to (?:acquire|buy|be acquired)|will acquire|to acquire|will be acquired|acquisition of|"
+    r"merger consideration|aggregate consideration|purchase price|transaction (?:is|was) valued|"
+    r"merger agreement|price represents)",
+    re.IGNORECASE,
+)
 _SCALE = {"million": Decimal(1), "billion": Decimal(1000)}
 
 
@@ -33,6 +46,11 @@ _REVIEW = re.compile(
     r"pro forma|combined company|combined|implied|calculated|analysis|reviewed|premia|per share",
     re.IGNORECASE,
 )
+
+
+def _headline(sentence: str) -> bool:
+    """True only for a deal term in the buyer's own words: an acquisition phrase and no banker or peer context."""
+    return bool(_DEAL_TERM.search(sentence)) and not _NOT_HEADLINE.search(sentence)
 
 
 def _millions(num: str, scale: str) -> Decimal | None:
@@ -59,6 +77,7 @@ def extract(pages: list[tuple[int, str]]) -> dict:
                             "page": num,
                             "quote": s,
                             "needs_review": bool(_REVIEW.search(s)),
+                            "headline": _headline(s),
                         }
             for m in _MULT.finditer(s):
                 metric = m.group(2).lower().replace("adjusted ", "")
@@ -69,6 +88,7 @@ def extract(pages: list[tuple[int, str]]) -> dict:
                         "page": num,
                         "quote": s,
                         "needs_review": bool(_REVIEW.search(s)),
+                        "headline": _headline(s),
                     }
                 )
     if terms["ev_musd"] is None:
@@ -86,7 +106,7 @@ def summarise(deals: list[dict]) -> dict:
         for m in d["terms"]["multiples"]:
             val = Decimal(m["value"])
             # first positive stated multiple per metric: one deal is one data point
-            if m["metric"] in seen or val <= 0 or m["needs_review"]:
+            if m["metric"] in seen or val <= 0 or not m.get("headline"):
                 continue
             seen.add(m["metric"])
             by_metric.setdefault(m["metric"], []).append(
