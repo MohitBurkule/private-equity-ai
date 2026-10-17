@@ -73,3 +73,21 @@ def test_ex99_exhibit_read_and_cited():
     deal = next(d for d in r["deals"] if d["name"].startswith("Acme"))
     assert deal["terms"]["ev_musd"]["value"] == "2000.0"
     assert deal["terms"]["ev_musd"]["source_url"].endswith("ex99-1.htm")
+
+
+def test_proxy_form_scanned_and_unknown_form_refused():
+    seen = []
+
+    def f(url):
+        seen.append(url)
+        if "efts" in url:
+            return b'{"hits":{"hits":[]}}'
+        raise OSError("nope")
+
+    r = build("2026-01-01", "2026-12-31", fetch=f, form="DEFM14A")
+    assert r["deals"] == [] and any("forms=DEFM14A" in u for u in seen)
+    try:
+        build("2026-01-01", "2026-12-31", fetch=f, form="10-K")
+        raise AssertionError
+    except ValueError:
+        pass

@@ -39,10 +39,19 @@ def exhibit_urls(lead_url: str, fetch: Fetch) -> list[str]:
     return [lead_url] + [u for u in urls if u != lead_url]
 
 
+FORMS = ("8-K", "DEFM14A", "424B3")  # merger 8-K, merger proxy, merger prospectus
+
+
 def build(
-    since: str, until: str, fetch: Fetch = default_fetch, limit: int = 25
+    since: str,
+    until: str,
+    fetch: Fetch = default_fetch,
+    limit: int = 25,
+    form: str = "8-K",
 ) -> dict:
-    leads = dealscan.scan(since, until, fetch=fetch)[:limit]
+    if form not in FORMS:
+        raise ValueError(f"form must be one of {FORMS}")
+    leads = dealscan.scan(since, until, form=form, fetch=fetch)[:limit]
     deals, skipped = [], []
     for lead in leads:
         name = f"{lead.company} ({lead.filed})"
