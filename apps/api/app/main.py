@@ -87,6 +87,7 @@ from app.auth import (
     create_tenant,
     hash_key,
     key_id,
+    list_keys,
     principal_for_key,
     revoke_key,
 )
@@ -303,6 +304,15 @@ def admin_add_key(tenant_id: str, db: Db, body: KeyIn | None = None, x_admin_tok
         raise HTTPException(422, str(e)) from e
     return {"key_id": kid, "role": body.role, "deals": body.deals, "deal_roles": body.deal_roles, "api_key": key,
             "note": "store this key now; it is not shown again"}
+
+
+@app.get("/admin/tenants/{tenant_id}/keys")
+def admin_list_keys(tenant_id: str, db: Db, x_admin_token: Annotated[str | None, Header()] = None):
+    if not admin_token_ok(x_admin_token):
+        raise HTTPException(403, "admin token required")
+    if db.get(TenantRow, tenant_id) is None:
+        raise HTTPException(404, "tenant not found")
+    return {"keys": list_keys(db, tenant_id)}
 
 
 @app.delete("/admin/keys/{kid}")

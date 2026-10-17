@@ -17,6 +17,7 @@ import { Lbo } from "./Lbo";
 import { Qoe } from "./Qoe";
 import { DDQa } from "./DDQa";
 import { LboTies } from "./LboTies";
+import { MnpiWall } from "./MnpiWall";
 import { Flagship } from "./Flagship";
 import { Covenants } from "./Covenants";
 import { Sourcing } from "./Sourcing";
@@ -36,6 +37,7 @@ const NAV: { id: string; icon: ReactNode }[] = [
   { id: "QoE", icon: <Calculator size={16} /> },
   { id: "DD Q&A", icon: <FileText size={16} /> },
   { id: "LBO ties", icon: <Calculator size={16} /> },
+  { id: "MNPI wall", icon: <ShieldCheck size={16} /> },
   { id: "Sourcing", icon: <Map size={16} /> },
   { id: "Candidates", icon: <Briefcase size={16} /> },
   { id: "Dashboards", icon: <BarChart3 size={16} /> },
@@ -132,6 +134,7 @@ export function App() {
         {tab === "QoE" && <Qoe />}
         {tab === "DD Q&A" && <DDQa />}
         {tab === "LBO ties" && <LboTies />}
+        {tab === "MNPI wall" && <MnpiWall />}
         {tab === "Sourcing" && <Sourcing />}
         {tab === "Candidates" && <CandidateWatch />}
         {tab === "Dashboards" && <Dashboards />}

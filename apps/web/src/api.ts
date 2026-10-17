@@ -67,6 +67,8 @@ export interface LboTieRow {
   fact_ids: number[]; is_lbo_input: boolean;
 }
 export interface LboTiesOut { inputs: Record<string, LboTieRow>; untied: string[]; lbo_missing: string[] }
+/** One key of a tenant with its deal wall. A null deals list means unrestricted. */
+export interface KeyWall { key_id: string; role: string; revoked: boolean; deals: string[] | null; deal_roles: Record<string, string> }
 export interface EvalRunRow { id: number; suite: string; ran_at: string; note: string | null; metrics: Record<string, unknown> }
 /** Cited input: a verified fact id, as /lbo/returns requires. Multiples are inputs too, so they must be cited. */
 export interface LboAssumption { value: string; set_by: string; set_on: string; reason: string }
@@ -210,6 +212,10 @@ export const api2 = {
     call<{ ingested: unknown[]; skipped?: unknown[] }>(`/connectors/${name}/sync`, "POST", { token, deal: deal || null, limit: 50 }),
   comps: (body: { target: string; peers: string[]; period: string; metrics: string[] }) => call<CompsOut>("/calc/comps", "POST", body),
   /** Named inputs of an LBO workbook, each tied to verified facts with the same concept and value. */
+  /** Admin-only. The token is passed per call and never stored, so it dies with the page. */
+  adminKeys: (tenantId: string, adminToken: string) =>
+    fetch(`/api/admin/tenants/${encodeURIComponent(tenantId)}/keys`, { headers: { "X-Admin-Token": adminToken } })
+      .then((r) => j<{ keys: KeyWall[] }>(r)).then((d) => d.keys),
   lboWorkbookTies: (file: File) => {
     const fd = new FormData();
     fd.append("file", file);
