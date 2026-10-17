@@ -164,6 +164,17 @@ class DDRequest(Base):
     updated_at: Mapped[str] = mapped_column(String(40), default="")
 
 
+class DealNote(Base):
+    """A shared note on a deal, visible to everyone who can see the deal (the deal's own visibility rules apply)."""
+    __tablename__ = "deal_note"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    deal: Mapped[str] = mapped_column(String(128), index=True)
+    author: Mapped[str] = mapped_column(String(64))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 class DDQuestion(Base):
     """A question put to management or the seller. Answers stay open until someone records one; a document can
     be linked as the answer's source, and only a document the asker can see may be linked."""

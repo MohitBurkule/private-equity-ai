@@ -79,7 +79,7 @@ from app.acl import (
     visible_mnpi_deal_names,
 )
 from app.answer import answer_question
-from app.audit import log_event, verify_chain
+from app.audit import AuditEvent, log_event, verify_chain
 from app.auth import (
     add_key,
     admin_token_ok,
@@ -136,6 +136,7 @@ from app.models import (
     DDRequest,
     Deal,
     DealChecklistItem,
+    DealNote,
     DigestPref,
     Document,
     DocumentFile,
@@ -1128,6 +1129,32 @@ def _visible_deal_or_404(db: Session, who: Principal, name: str) -> Deal:
     if d is None or not _dd_scope_ok(who, name) or deal_hidden(d, who):
         raise HTTPException(404, "deal not found")
     return d
+
+
+class DealNoteIn(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+def _note_out(n: DealNote) -> dict:
+    return {"id": n.id, "deal": n.deal, "author": n.author, "body": n.body, "created_at": n.created_at}
+
+
+@app.get("/deals/{name}/notes")
+def deal_notes_list(name: str, db: Db, who: Who):
+    _visible_deal_or_404(db, who, name)
+    rows = db.query(DealNote).filter_by(tenant_id=who.tenant, deal=name).order_by(DealNote.id).all()
+    return [_note_out(r) for r in rows]
+
+
+@app.post("/deals/{name}/notes", status_code=201)
+def deal_notes_add(name: str, body: DealNoteIn, db: Db, who: Writer):
+    _visible_deal_or_404(db, who, name)
+    _require(who, "write", "add a note", deal=name)
+    n = DealNote(tenant_id=who.tenant, deal=name, author=actor(who), body=body.body.strip(), created_at=_now_iso())
+    db.add(n)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "deal.note", {"deal": name, "id": n.id})
+    return _note_out(n)
 
 
 @app.get("/deals/{name}/checklist")
@@ -2964,6 +2991,19 @@ def change(company_id: int, metric: str, new: str, old: str, db: Db, tenant: Ten
     v = qoq_change(db, tenant, company_id, metric, new, old)
     return {"metric": metric, "new": new, "old": old,
             "pct_change": None if v is None else str(v.quantize(Decimal("0.01")))}
+
+
+@app.get("/audit")
+def audit_list(db: Db, who: Who, action: str | None = None, limit: int = Query(100, ge=1, le=500)):
+    """The tenant's audit chain, newest first. Whole-tenant keys only: the trail names every deal."""
+    if who.restricted:
+        raise HTTPException(403, "the audit trail covers the whole tenant; use an unrestricted key")
+    q = db.query(AuditEvent).filter_by(tenant_id=who.tenant)
+    if action:
+        q = q.filter_by(action=action)
+    rows = q.order_by(AuditEvent.id.desc()).limit(limit).all()
+    return {"items": [{"id": r.id, "ts": r.ts, "actor": r.actor, "action": r.action,
+                       "payload": json.loads(r.payload)} for r in rows]}
 
 
 @app.get("/audit/verify")
