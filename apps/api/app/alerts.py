@@ -70,8 +70,8 @@ def covenant_watch(db: Session, tenant_id: str) -> list[AlertDraft]:
     return out
 
 
-STALL_DAYS = 30
-DD_OPEN_DAYS = 14
+STALL_DAYS = 30  # default when the firm has no accepted deal_stall_days rule
+DD_OPEN_DAYS = 14  # default when the firm has no accepted dd_response_days rule
 
 
 def _age_days(stamp: str | None) -> int | None:
@@ -79,6 +79,14 @@ def _age_days(stamp: str | None) -> int | None:
         return (datetime.now(UTC) - datetime.fromisoformat(stamp)).days if stamp else None
     except ValueError:
         return None
+
+
+def _firm_days(db: Session, tenant_id: str, key: str, default: int) -> int:
+    """The firm's accepted number for `key` (cited, human-accepted), else the default."""
+    found = fk.limit(db, tenant_id, key)
+    if found is None or found[0] <= 0:
+        return default
+    return int(found[0])
 
 
 def _week() -> str:
@@ -109,11 +117,12 @@ def firm_leverage_limit(db: Session, tenant_id: str) -> list[AlertDraft]:
 
 @register_watcher("stalled_deals")
 def stalled_deals(db: Session, tenant_id: str) -> list[AlertDraft]:
-    """Live deals untouched for STALL_DAYS. Re-alerts weekly while still stalled."""
+    """Live deals untouched for the firm's stall days. Re-alerts weekly while still stalled."""
+    stall_days = _firm_days(db, tenant_id, "deal_stall_days", STALL_DAYS)
     out = []
     for d in db.query(Deal).filter_by(tenant_id=tenant_id):
         age = _age_days(d.updated_at)
-        if d.stage in ("signed", "closed", "passed") or age is None or age < STALL_DAYS:
+        if d.stage in ("signed", "closed", "passed") or age is None or age < stall_days:
             continue
         out.append(AlertDraft("deal", "warning", f"{d.name}: no update for {age} days (stage {d.stage})",
                               f"Last change {d.updated_at}.", f"stalled:{d.id}:{_week()}"))
@@ -122,13 +131,14 @@ def stalled_deals(db: Session, tenant_id: str) -> list[AlertDraft]:
 
 @register_watcher("overdue_dd")
 def overdue_dd(db: Session, tenant_id: str) -> list[AlertDraft]:
-    """Open DD requests that have sat unchanged for DD_OPEN_DAYS, one alert per deal per week."""
+    """Open DD requests unchanged for the firm's response days, one alert per deal per week."""
+    response_days = _firm_days(db, tenant_id, "dd_response_days", DD_OPEN_DAYS)
     per_deal: dict[str, list[DDRequest]] = {}
     for r in db.query(DDRequest).filter_by(tenant_id=tenant_id, status="open"):
         age = _age_days(r.updated_at)
-        if age is not None and age >= DD_OPEN_DAYS:
+        if age is not None and age >= response_days:
             per_deal.setdefault(r.deal, []).append(r)
-    return [AlertDraft("dd", "warning", f"{deal}: {len(rows)} DD request(s) open for {DD_OPEN_DAYS}+ days",
+    return [AlertDraft("dd", "warning", f"{deal}: {len(rows)} DD request(s) open for {response_days}+ days",
                        "; ".join(f"{r.category}: {r.title}" for r in rows[:5]) + (" ..." if len(rows) > 5 else ""),
                        f"dd_overdue:{deal}:{_week()}") for deal, rows in per_deal.items()]
 

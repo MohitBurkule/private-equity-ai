@@ -46,6 +46,8 @@ TERMS: list[Term] = (
         ("leverage_limit", "Leverage limit", "maximum debt to EBITDA the firm will use"),
         ("esg_exclusions", "ESG exclusions", "sectors or activities never invested in"),
     ]) + _t("deal_process", [
+        ("deal_stall_days", "Deal stall days", "days a live deal may go without an update before the team is alerted"),
+        ("dd_response_days", "DD response days", "days a due-diligence request may stay open before escalation"),
         ("deal_screening_criteria", "Deal screening criteria", "size, sector, geography, growth and margin floors for a deal worth reviewing"),
         ("target_ev_range", "Target EV range", "enterprise value range the firm targets"),
         ("target_ebitda_range", "Target EBITDA range", "EBITDA range the firm targets"),
