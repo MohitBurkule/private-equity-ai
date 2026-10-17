@@ -22,6 +22,8 @@ Run: `python evals/pdf_benchmark.py --data /mnt/project-files/data` (harness `ev
 | docling | 13/13 | 13/18 | 26/31 | 28/31 | 26 | 8.42 |
 | rapidocr | 11/13 | 14/18 | 25/31 | 28/31 | 25 | 1.69 |
 | router | 13/13 | 14/18 | 27/31 | 29/31 | 27 | 0.77 |
+| camelot (stream) | 13/13 | 3/18 | 16/31 | 17/31 | 16 | 0.08 |
+| marker (text pages) | 13/13 | 3/18 | 16/31 | 17/31 | 0 | 0.97 |
 
 `pdftotext` is poppler raw reading order (rows split). `pdftotext_layout`, `pymupdf`, `pdfplumber`, `pypdf`, `pdfium` all tie on clean text-layer statements (13/13); the router adds OCR for scans.
 
@@ -45,4 +47,9 @@ Run: `python evals/pdf_benchmark.py --data /mnt/project-files/data` (harness `ev
 | prose (legal) | otherwise | PyMuPDF | pdfplumber / pdfium |
 
 ## Not yet benchmarked
-Marker, MinerU, Unstructured, Camelot (adapter added, not yet scored), VLM page parsing. Next runs add them with the same harness, plus CIM-deck and covenant-agreement pages.
+Camelot stream and Marker were scored above. Neither beats PyMuPDF on text pages, and both lose on scans:
+- **Camelot**: same 13/13 on clean statements, no bbox gain over PyMuPDF; stream mode finds no tables on SH01 scans.
+- **Marker**: 13/13 on text pages at about 1 s/page, but its output is markdown without bboxes, so it cannot give citation coordinates. On scanned pages it needs an LLM backend (llama.cpp binary, not installed here) and fails with SpawnError; those pages are not scored.
+- **MinerU**: not run. It is a VLM pipeline that needs GPU weights, and in this CPU container it is not practical. Revisit on a GPU host.
+- **Unstructured**: not run; its hi-res path uses the same detectron-style models as Docling and would overlap it.
+- **VLM page parsing**: not run; no local model here. Next runs add them with the same harness, plus CIM-deck and covenant-agreement pages.
