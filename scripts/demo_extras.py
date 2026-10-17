@@ -10,8 +10,10 @@
 Nothing personal is written. Re-running adds nothing new (facts and alerts are deduplicated).
 """
 import json
+import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -87,6 +89,21 @@ if tenk.exists():
     flag = call("POST", "/flagship/run", {**base, "document_id": doc["id"]})
     (DEMO / "flagship_run.json").write_text(json.dumps(flag, indent=1))
     print("flagship:", {s["step"]: s["status"] for s in flag.get("steps", [])} or flag)
+    # Peer enterprise values from a market-data feed, cited to each feed record. Defaults to the SYNTHETIC WireMock
+    # feed on https://localhost:8443 (compose or make demo-mocks). The API must trust the mock's self-signed CA:
+    # start it with SSL_CERT_FILE=deploy/mocks/tls/out/cert.pem.
+    tmpl = os.environ.get("MARKET_FEED_URL_TEMPLATE", "https://localhost:8443/v2/tev?symbol={name}")
+    token = os.environ.get("MARKET_FEED_TOKEN", "synthetic-token")
+    comps = next((st for st in flag.get("steps", []) if st["step"] == "comps"), {})
+    if comps.get("status") == "ok":
+        for peer in comps["result"]["peers"]:
+            call("POST", "/market/tev-sync", {"entity": peer["name"], "period": "LTM", "source": os.environ.get("MARKET_FEED_SOURCE", "SYNTHETIC-market-feed"),
+                                              "url": tmpl.format(name=urllib.parse.quote(peer["name"])), "token": token})
+        flag = call("POST", "/flagship/run", {**base, "document_id": doc["id"]})
+        (DEMO / "flagship_run.json").write_text(json.dumps(flag, indent=1))
+        print("flagship with peer EV:", {s["step"]: s["status"] for s in flag.get("steps", [])} or flag)
+    else:
+        print("peer EV: MARKET_FEED_URL_TEMPLATE / MARKET_FEED_TOKEN not set, peers listed without EV")
     if amend.exists():
         legal_doc = upload(amend, "text/html")
         legal = call("POST", "/flagship/run", {"entity": "XPO", "document_id": legal_doc["id"], "legal_doc_type": "credit"})

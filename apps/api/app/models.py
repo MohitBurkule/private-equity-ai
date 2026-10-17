@@ -35,6 +35,8 @@ class ApiKey(Base):
     role: Mapped[str] = mapped_column(String(16), default="analyst", server_default="analyst")
     deals: Mapped[str | None] = mapped_column(Text, default=None)  # comma list; None = unrestricted
     deal_roles: Mapped[str | None] = mapped_column(Text, default=None)  # "deal:role,deal:role" overrides
+    identity: Mapped[str | None] = mapped_column(String(256), default=None)  # the person's external id, e.g. email
+    groups: Mapped[str | None] = mapped_column(Text, default=None)  # comma list of external group ids
 
 
 class Document(Base):
@@ -164,6 +166,17 @@ class DDRequest(Base):
     updated_at: Mapped[str] = mapped_column(String(40), default="")
 
 
+class DealNote(Base):
+    """A shared note on a deal, visible to everyone who can see the deal (the deal's own visibility rules apply)."""
+    __tablename__ = "deal_note"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    deal: Mapped[str] = mapped_column(String(128), index=True)
+    author: Mapped[str] = mapped_column(String(64))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 class DDQuestion(Base):
     """A question put to management or the seller. Answers stay open until someone records one; a document can
     be linked as the answer's source, and only a document the asker can see may be linked."""
@@ -178,6 +191,23 @@ class DDQuestion(Base):
     document_id: Mapped[str | None] = mapped_column(ForeignKey("document.id"), default=None)
     asked_at: Mapped[str] = mapped_column(String(40), default="")
     answered_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    # The citation for an answer: the page or block the answer came from, and the quote that is printed there.
+    page: Mapped[int | None] = mapped_column(Integer, default=None)
+    quote: Mapped[str | None] = mapped_column(Text, default=None)
+
+
+class ICDecision(Base):
+    """Append-only record of an investment decision: outcome, rationale, and any dissent on the record. Rows are
+    never edited or deleted, so a later change of mind is a new row, not a rewrite of the old one."""
+    __tablename__ = "ic_decision"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    deal: Mapped[str] = mapped_column(String(128), index=True)
+    outcome: Mapped[str] = mapped_column(String(32))  # proceed | pass | hold | more_diligence
+    rationale: Mapped[str] = mapped_column(Text)
+    dissent: Mapped[str | None] = mapped_column(Text, default=None)
+    dissenter: Mapped[str | None] = mapped_column(String(128), default=None)
+    recorded_at: Mapped[str] = mapped_column(String(40), default="")
 
 
 # Ordered deal pipeline. Order matters for reporting; "closed" and "passed" end a deal and gate retention.
@@ -197,6 +227,8 @@ class Deal(Base):
     legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Material non-public information: visible only to keys scoped to this deal by name.
     mnpi: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Same SIC code as portfolio companies, so precedents compare like with like.
+    sic: Mapped[str | None] = mapped_column(String(8), default=None)
     # Key id that flagged the deal MNPI; that key keeps access so its creator is not locked out.
     created_by: Mapped[str | None] = mapped_column(String(64), default=None)
     updated_at: Mapped[str] = mapped_column(String(40), default="")
@@ -279,6 +311,8 @@ class DocumentSource(Base):
     version: Mapped[str] = mapped_column(String(128))
     url: Mapped[str] = mapped_column(Text)
     sync_run_id: Mapped[int | None] = mapped_column(ForeignKey("sync_run.id"), default=None, index=True)
+    # JSON list of lowercase external ids the source grants access to. NULL = the source sets no access list.
+    acl: Mapped[str | None] = mapped_column(Text, default=None)
 
 
 class SyncRun(Base):

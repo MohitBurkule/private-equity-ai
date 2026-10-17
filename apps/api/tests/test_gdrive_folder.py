@@ -6,6 +6,9 @@ from app.connectors.files import GoogleDrive
 D = "https://www.googleapis.com/drive/v3/files"
 
 
+PERM = '{"permissions": [{"type": "user", "emailAddress": "Ana@Firm.test"}, {"type": "group", "emailAddress": "IC@firm.test"}, {"type": "anyone"}]}'
+
+
 def drive(routes):
     def http(url, headers):
         assert headers["Authorization"] == "Bearer tok"
@@ -33,12 +36,16 @@ def test_nested_folders_keep_paths_and_every_file_cites_drive():
             {"id": "m1", "name": "Model", "mimeType": "application/vnd.google-apps.spreadsheet", "modifiedTime": "t2"}]),
         f"{D}/top?alt=media": b"%PDF",
         f"{D}/m1/export": b"PK",
+        f"{D}/top/permissions": PERM,
+        f"{D}/m1/permissions": PERM,
     }
     items = list(GoogleDrive("tok", drive(routes)).items())
     names = sorted((i.name, i.url) for i in items)
     assert names == [
         ("Deals/Atlas/Model.xlsx", "https://drive.google.com/file/d/m1/view"),
         ("Teaser.pdf", "https://drive.google.com/file/d/top/view")]
+    # users by address, groups as group:{address}; "anyone" names no address, so it is not listed
+    assert {i.acl for i in items} == {("Ana@Firm.test", "group:IC@firm.test")}
     assert all(i.url.startswith("https://drive.google.com/") for i in items)
 
 
@@ -49,6 +56,8 @@ def test_limit_stops_the_walk_early():
             {"id": "b", "name": "b.pdf", "mimeType": "application/pdf"}]),
         f"{D}/a?alt=media": b"a",
         f"{D}/b?alt=media": b"b",
+        f"{D}/a/permissions": PERM,
+        f"{D}/b/permissions": PERM,
     }
     items = list(GoogleDrive("tok", drive(routes)).items(limit=1))
     assert [i.name for i in items] == ["a.pdf"]

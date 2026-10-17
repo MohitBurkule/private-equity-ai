@@ -7,6 +7,7 @@ ONE_OFF_PCT of reported EBITDA are flagged as likely one-offs for a person to lo
 """
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -45,8 +46,19 @@ def normalized_ebitda(db: Session, tenant: str, entity: str, period: str,
     return c
 
 
+# Lines that are part of EBITDA's own build-up (interest, tax, D&A sit below or outside EBITDA). A large one is
+# not a one-off, so flagging it would send a reviewer after a standard component.
+_STANDARD_COMPONENT = re.compile(r"interest|\btax|depreciation|amorti[sz]ation|\bd&a\b", re.IGNORECASE)
+
+
+def _row_label(quote: str) -> str:
+    """The row label a bridge quote names: 'Interest expense' from 'Sheet!B2: 20 | row: Interest expense'."""
+    return quote.split("row:", 1)[1] if "row:" in quote else quote
+
+
 def one_off_flags(c: Calc) -> list[dict]:
-    """Add-backs above ONE_OFF_PCT of reported EBITDA. Empty when the calc is not complete."""
+    """Add-backs above ONE_OFF_PCT of reported EBITDA, excluding standard EBITDA components. Empty when the calc
+    is not complete."""
     if not c.ok:
         return []
     reported = next((i.fact.value for i in c.inputs if i.role == "reported"), None)
@@ -55,7 +67,8 @@ def one_off_flags(c: Calc) -> list[dict]:
     limit = abs(reported) * ONE_OFF_PCT / 100
     return [{"fact_id": i.fact.id, "amount": str(i.fact.value), "quote": i.fact.sources[0].quote,
              "locator": i.fact.sources[0].locator} for i in c.inputs
-            if i.role == "add_back" and i.fact.value > limit]
+            if i.role == "add_back" and i.fact.value > limit
+            and not _STANDARD_COMPONENT.search(_row_label(i.fact.sources[0].quote))]
 
 
 def nwc_peg(db: Session, tenant: str, entity: str, periods: list[str],

@@ -10,6 +10,7 @@ from datetime import date as DateT
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Annotated, Literal
 
 from fastapi import (
@@ -55,6 +56,7 @@ from app import legal as legal_mod
 from app import lp_docs as lp_mod
 from app import lp_tone as lp_tone_mod
 from app import lp_waterfall as wf_lp_mod
+from app import marketfeed_facts as marketfeed_facts_mod
 from app import memo_diff as memo_diff_mod
 from app import notify as notify_mod
 from app import outreach as outreach_mod
@@ -69,6 +71,7 @@ from app import targets as tg_mod
 from app import workflows as wf_mod
 from app.acl import (
     Principal,
+    acl_hidden_doc_ids,
     deal_hidden,
     deal_scope,
     doc_visible,
@@ -79,18 +82,21 @@ from app.acl import (
     visible_mnpi_deal_names,
 )
 from app.answer import answer_question
-from app.audit import log_event, verify_chain
+from app.audit import AuditEvent, log_event, verify_chain
 from app.auth import (
     add_key,
     admin_token_ok,
     create_tenant,
     hash_key,
     key_id,
+    list_keys,
     principal_for_key,
     revoke_key,
 )
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
 from app.chat_alerts import chat_poster
+from app.citations import quote_in_page
+from app.comps import EV_METRIC
 from app.connectors import oauth, vault
 from app.connectors.base import ConnectorError, default_http
 from app.connectors.docusign import DocuSign
@@ -107,7 +113,7 @@ from app.email_links import links_for
 from app.envelope_stage import advance, deal_for_subject, parse_connect
 from app.expert_calls import flags, parse
 from app.extract.rows import _ROWS as ROW_SCHEMAS
-from app.extract.rows import extract_rows
+from app.extract.rows import _blocks, extract_rows
 from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
@@ -123,6 +129,7 @@ from app.ixbrl_full import read_filing
 from app.kpi_workbook import ingest_kpi_pack as kpi_pack_ingest
 from app.lbo_workbook import named_inputs, tie
 from app.llm import LLM, NoLLMConfigured, get_llm
+from app.marketdata import NoData
 from app.memo import build_memo, build_memo_docx, build_memo_pptx
 from app.memo_templates import TEMPLATES, build_memo_sections
 from app.migrate import migrate
@@ -136,6 +143,7 @@ from app.models import (
     DDRequest,
     Deal,
     DealChecklistItem,
+    DealNote,
     DigestPref,
     Document,
     DocumentFile,
@@ -145,6 +153,7 @@ from app.models import (
     FactSource,
     Holding,
     HtmlUnit,
+    ICDecision,
     IngestJob,
     LboRun,
     MemoComment,
@@ -282,6 +291,8 @@ class KeyIn(BaseModel):
     role: str = "analyst"
     deals: list[str] | None = None  # None = unrestricted; [] = sees nothing
     deal_roles: dict[str, str] | None = None  # per-deal role overrides, e.g. {"atlas": "partner"}
+    identity: str | None = Field(default=None, max_length=256)  # the person's external id, e.g. their email
+    groups: list[str] | None = None  # external group ids the person is in, e.g. Azure AD group object ids
 
 
 @app.post("/admin/tenants/{tenant_id}/keys", status_code=201)
@@ -292,11 +303,20 @@ def admin_add_key(tenant_id: str, db: Db, body: KeyIn | None = None, x_admin_tok
         raise HTTPException(404, "tenant not found")
     body = body or KeyIn()
     try:
-        kid, key = add_key(db, tenant_id, body.role, body.deals, body.deal_roles)
+        kid, key = add_key(db, tenant_id, body.role, body.deals, body.deal_roles, body.identity, body.groups)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     return {"key_id": kid, "role": body.role, "deals": body.deals, "deal_roles": body.deal_roles, "api_key": key,
             "note": "store this key now; it is not shown again"}
+
+
+@app.get("/admin/tenants/{tenant_id}/keys")
+def admin_list_keys(tenant_id: str, db: Db, x_admin_token: Annotated[str | None, Header()] = None):
+    if not admin_token_ok(x_admin_token):
+        raise HTTPException(403, "admin token required")
+    if db.get(TenantRow, tenant_id) is None:
+        raise HTTPException(404, "tenant not found")
+    return {"keys": list_keys(db, tenant_id)}
 
 
 @app.delete("/admin/keys/{kid}")
@@ -384,7 +404,8 @@ def admin_requeue(x_admin_token: Annotated[str | None, Header()] = None):
 
 def _own_doc(db: Session, who: Principal, doc_id: str) -> Document:
     doc = db.get(Document, doc_id)
-    if not doc_visible(doc, who, hidden_deal_names(db, who)):  # same 404 for "missing", "other tenant", "behind a wall"
+    if not doc_visible(doc, who, hidden_deal_names(db, who)) or doc_id in acl_hidden_doc_ids(db, who):
+        # same 404 for "missing", "other tenant", "behind a wall", "not on the source's access list"
         raise HTTPException(404, "document not found")
     if doc.deal and doc.deal in visible_mnpi_deal_names(db, who):
         log_event(db, who.tenant, actor(who), "document.mnpi_access", {"doc_id": doc.id, "deal": doc.deal})
@@ -687,6 +708,27 @@ def get_market_fetch():
     return default_fetch
 
 
+class TevSyncIn(BaseModel):
+    entity: str
+    period: str
+    source: str
+    url: str
+    token: str
+
+
+@app.post("/market/tev-sync")
+def market_tev_sync(body: TevSyncIn, db: Db, who: Writer, fetch: Annotated[Callable, Depends(get_market_fetch)]):
+    """Enterprise value from a market-data feed, saved as a cited fact that trading comps read."""
+    try:
+        f = marketfeed_facts_mod.sync_tev(db, who.tenant, entity=body.entity, period=body.period, source=body.source,
+                                          url=body.url, token=body.token, fetch=fetch)
+    except (NoData, CitationError, ValueError) as e:
+        raise HTTPException(422, str(e)) from e
+    db.commit()
+    return {"fact_id": f.id, "metric": f.metric, "value": str(f.value), "unit": f.unit,
+            "quote": f.sources[0].quote, "document_id": f.sources[0].document_id}
+
+
 @app.post("/lbo/returns")
 def lbo_returns(body: dict, db: Db, who: Who, fetch: Annotated[Callable, Depends(get_market_fetch)],
                 xlsx: bool = False):
@@ -957,11 +999,14 @@ class DDQuestionIn(BaseModel):
 class DDQuestionUpdate(BaseModel):
     answer: str | None = None
     document_id: str | None = None
+    page: int | None = None
+    quote: str | None = None
 
 
 def _dd_question_out(q: DDQuestion) -> dict:
     return {"id": q.id, "deal": q.deal, "request_id": q.request_id, "question": q.question, "status": q.status,
-            "answer": q.answer, "document_id": q.document_id, "asked_at": q.asked_at, "answered_at": q.answered_at}
+            "answer": q.answer, "document_id": q.document_id, "page": q.page, "quote": q.quote,
+            "asked_at": q.asked_at, "answered_at": q.answered_at}
 
 
 @app.post("/dd/questions", status_code=201)
@@ -990,24 +1035,36 @@ def dd_question_list(db: Db, who: Who, deal: str | None = None, status: str | No
 
 @app.patch("/dd/questions/{qid}")
 def dd_question_update(qid: int, body: DDQuestionUpdate, db: Db, who: Writer):
+    """Records an answer. An answer must cite a document the key can see, a page or block in it, and a quote that is
+    printed there: the same gate a fact passes. A cited quote that is not on the page is refused, so an answer
+    cannot point at a source that does not say it."""
     q = db.query(DDQuestion).filter_by(tenant_id=who.tenant, id=qid).first()
     if q is None or not _dd_scope_ok(who, q.deal):
         raise HTTPException(404, "question not found")
-    if body.document_id is not None:
+    if body.answer is not None:
+        if not body.answer.strip():
+            raise HTTPException(422, "answer is empty")
+        if body.document_id is None or body.page is None or not body.quote:
+            raise HTTPException(422, "an answer needs a document, a page and the quote it came from")
         scope = visible_doc_ids(db, who)  # None = unrestricted key
         doc = db.query(Document).filter_by(tenant_id=who.tenant, id=body.document_id).first()
         if doc is None or (scope is not None and doc.id not in scope):
             raise HTTPException(422, "document is not visible to this key")
-    if body.answer is not None:
+        blocks = _blocks(db, doc)
+        if body.page not in blocks:
+            raise HTTPException(422, "page not found in the document")
+        if not quote_in_page(body.quote, blocks[body.page]):
+            raise HTTPException(422, "quote not found on the cited page")
         q.answer = body.answer
         q.status = "answered"
         q.answered_at = _now_iso()
-    if body.document_id is not None:
-        q.document_id = body.document_id
+        q.document_id = doc.id
+        q.page = body.page
+        q.quote = body.quote
+    elif body.document_id is not None:
+        raise HTTPException(422, "a document can only be set together with an answer")
     db.commit()
     return _dd_question_out(q)
-
-
 class ExpertCallIn(BaseModel):
     transcript: str
 
@@ -1039,6 +1096,97 @@ async def model_audit(file: Annotated[UploadFile, File()], who: Who):
     return {"findings": audit(await file.read())}
 
 
+OUTCOMES = {"proceed", "pass", "hold", "more_diligence"}
+
+
+class ICDecisionIn(BaseModel):
+    deal: str
+    outcome: str
+    rationale: str = Field(min_length=1)
+    dissent: str | None = None
+    dissenter: str | None = None
+
+
+def _decision_out(d: ICDecision) -> dict:
+    return {"id": d.id, "deal": d.deal, "outcome": d.outcome, "rationale": d.rationale, "dissent": d.dissent,
+            "dissenter": d.dissenter, "recorded_at": d.recorded_at}
+
+
+@app.post("/ic/decisions", status_code=201)
+def ic_decision_add(body: ICDecisionIn, db: Db, who: Writer):
+    """Appends a decision. There is no edit or delete: a changed view is a new entry."""
+    if not _dd_scope_ok(who, body.deal):
+        raise HTTPException(403, "deal is outside this key's scope")
+    if body.outcome not in OUTCOMES:
+        raise HTTPException(422, f"outcome must be one of {sorted(OUTCOMES)}")
+    d = ICDecision(tenant_id=who.tenant, deal=body.deal, outcome=body.outcome, rationale=body.rationale,
+                   dissent=body.dissent, dissenter=body.dissenter, recorded_at=_now_iso())
+    db.add(d)
+    db.commit()
+    return _decision_out(d)
+
+
+@app.get("/ic/decisions")
+def ic_decision_list(deal: str, db: Db, who: Who):
+    if not _dd_scope_ok(who, deal):
+        raise HTTPException(403, "deal is outside this key's scope")
+    rows = db.query(ICDecision).filter_by(tenant_id=who.tenant, deal=deal).order_by(ICDecision.id).all()
+    return [_decision_out(d) for d in rows]
+
+
+@app.get("/ic/review")
+def ic_review(deal: str, db: Db, who: Who):
+    """The IC pack's record view: the latest decision, the dissents on file, and the documents filed since that
+    decision. Documents are filtered as the document list is, so a walled file never shows up as a change."""
+    if not _dd_scope_ok(who, deal):
+        raise HTTPException(403, "deal is outside this key's scope")
+    rows = db.query(ICDecision).filter_by(tenant_id=who.tenant, deal=deal).order_by(ICDecision.id).all()
+    latest = rows[-1] if rows else None
+    hidden = hidden_deal_names(db, who)
+    docs = [d for d in db.query(Document).filter_by(tenant_id=who.tenant, deal=deal).all()
+            if doc_visible(d, who, hidden)]
+    since = []
+    if latest is not None:
+        # Compare instants, not strings: the two timestamps are written by different code paths.
+        cut = datetime.fromisoformat(latest.recorded_at)
+        since = [{"document_id": d.id, "filename": d.filename, "created_at": d.created_at}
+                 for d in sorted(docs, key=lambda d: d.created_at or "")
+                 if d.created_at and datetime.fromisoformat(d.created_at) > cut]
+    return {"deal": deal, "latest": _decision_out(latest) if latest else None,
+            "dissents": [_decision_out(d) for d in rows if d.dissent],
+            "changed_since_ic": since, "ic_recorded": latest is not None}
+
+
+@app.get("/ic/precedents")
+def ic_precedents(deal: str, db: Db, who: Who):
+    """Past IC outcomes for deals at the same stage in this tenant, and the same SIC code when the target has one.
+    Only deals this key may see are compared: walled MNPI deals and other scopes are left out, and no other tenant
+    is ever read."""
+    if not _dd_scope_ok(who, deal):
+        raise HTTPException(403, "deal is outside this key's scope")
+    target = db.query(Deal).filter_by(tenant_id=who.tenant, name=deal).one_or_none()
+    stage = target.stage if target else None
+    visible = deal_scope(db, who)
+    if target is None or (visible is not None and deal not in visible):
+        raise HTTPException(404, "deal not found")
+    # A SIC match is the stronger comparison, so it is required when the target has one. Without one, stage alone.
+    match = "sic+stage" if target.sic else "stage"
+    peers = [d.name for d in db.query(Deal).filter_by(tenant_id=who.tenant, stage=stage).all()
+             if d.name != deal and (visible is None or d.name in visible)
+             and (not target.sic or d.sic == target.sic)]
+    rows = db.query(ICDecision).filter(ICDecision.tenant_id == who.tenant,
+                                       ICDecision.deal.in_(peers)).order_by(ICDecision.id).all() if peers else []
+    latest: dict[str, ICDecision] = {}
+    for r in rows:
+        latest[r.deal] = r  # rows are in id order, so the last one per deal is its current view
+    counts: dict[str, int] = {}
+    for r in latest.values():
+        counts[r.outcome] = counts.get(r.outcome, 0) + 1
+    return {"deal": deal, "stage": stage, "sic": target.sic, "match": match,
+            "precedents": [_decision_out(latest[n]) for n in sorted(latest)],
+            "outcome_counts": counts, "compared_deals": len(peers)}
+
+
 @app.get("/dd/summary")
 def dd_summary(deal: str, db: Db, who: Who):
     """Counts per category and the list of items still open: the missing-document tracker."""
@@ -1060,6 +1208,7 @@ class DealIn(BaseModel):
     stage: str = "sourcing"
     note: str | None = None
     mnpi: bool = False
+    sic: str | None = None
 
 
 class DealUpdate(BaseModel):
@@ -1067,13 +1216,14 @@ class DealUpdate(BaseModel):
     note: str | None = None
     legal_hold: bool | None = None
     mnpi: bool | None = None
+    sic: str | None = None
 
 
 def _deal_out(db: Session, who: Principal, d: Deal) -> dict:
     dd = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=d.name).all()
     docs = db.query(Document).filter_by(tenant_id=who.tenant, deal=d.name).count()
     closed = sum(r.status != "open" for r in dd)
-    return {"name": d.name, "stage": d.stage, "note": d.note, "legal_hold": d.legal_hold, "mnpi": d.mnpi, "updated_at": d.updated_at,
+    return {"name": d.name, "stage": d.stage, "sic": d.sic, "note": d.note, "legal_hold": d.legal_hold, "mnpi": d.mnpi, "updated_at": d.updated_at,
             "documents": docs, "dd_total": len(dd), "dd_open": len(dd) - closed}
 
 
@@ -1091,6 +1241,7 @@ def deal_create(body: DealIn, db: Db, who: Writer):
     if db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first():
         raise HTTPException(409, "deal already exists")
     d = Deal(tenant_id=who.tenant, name=name, stage=body.stage, note=body.note, mnpi=body.mnpi,
+             sic=(body.sic or "").strip() or None,
              created_by=who.key_id if body.mnpi else None, updated_at=_now_iso())
     db.add(d)
     db.commit()
@@ -1128,6 +1279,32 @@ def _visible_deal_or_404(db: Session, who: Principal, name: str) -> Deal:
     if d is None or not _dd_scope_ok(who, name) or deal_hidden(d, who):
         raise HTTPException(404, "deal not found")
     return d
+
+
+class DealNoteIn(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+def _note_out(n: DealNote) -> dict:
+    return {"id": n.id, "deal": n.deal, "author": n.author, "body": n.body, "created_at": n.created_at}
+
+
+@app.get("/deals/{name}/notes")
+def deal_notes_list(name: str, db: Db, who: Who):
+    _visible_deal_or_404(db, who, name)
+    rows = db.query(DealNote).filter_by(tenant_id=who.tenant, deal=name).order_by(DealNote.id).all()
+    return [_note_out(r) for r in rows]
+
+
+@app.post("/deals/{name}/notes", status_code=201)
+def deal_notes_add(name: str, body: DealNoteIn, db: Db, who: Writer):
+    _visible_deal_or_404(db, who, name)
+    _require(who, "write", "add a note", deal=name)
+    n = DealNote(tenant_id=who.tenant, deal=name, author=actor(who), body=body.body.strip(), created_at=_now_iso())
+    db.add(n)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "deal.note", {"deal": name, "id": n.id})
+    return _note_out(n)
 
 
 @app.get("/deals/{name}/checklist")
@@ -1190,6 +1367,9 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
         d.mnpi = body.mnpi
         if body.mnpi and d.created_by is None:
             d.created_by = who.key_id or None
+    if body.sic is not None:
+        _require(who, "write", "edit deal sector", deal=name)
+        d.sic = body.sic.strip() or None
     if body.stage is not None:
         if body.stage not in STAGES:
             raise HTTPException(422, f"stage must be one of {STAGES}")
@@ -1307,9 +1487,20 @@ def retention_documents(body: RetentionIn, db: Db, who: Writer):
     return {"dry_run": False, "deleted": deleted, "skipped": skipped}
 
 
+def _memo_comps(db: Session, who, entity: str, peers: str, period: str) -> dict | None:
+    """Optional comps section: peers (comma-separated entity names) at a period, EV / revenue. None when not asked."""
+    names = [n.strip() for n in peers.split(",") if n.strip()]
+    if not names or not period:
+        return None
+    if len(names) > 50:
+        raise HTTPException(422, "too many peers")
+    return comps_mod.run(db, who.tenant, entity, names, period, ["revenue"], visible_doc_ids(db, who))
+
+
 @app.get("/memo")
-def memo(entity: str, db: Db, who: Who):
-    return {"entity": entity, "markdown": build_memo(db, who.tenant, entity, visible_doc_ids(db, who))}
+def memo(entity: str, db: Db, who: Who, peers: str = "", period: str = ""):
+    comps = _memo_comps(db, who, entity, peers, period)
+    return {"entity": entity, "markdown": build_memo(db, who.tenant, entity, visible_doc_ids(db, who), comps)}
 
 
 @app.get("/memo/sections")
@@ -1810,9 +2001,10 @@ def lp_capital_call(body: CapitalCallIn, who: Writer, db: Db, format: str = "jso
 
 
 @app.get("/memo.docx")
-def memo_docx(entity: str, db: Db, who: Who):
+def memo_docx(entity: str, db: Db, who: Who, peers: str = "", period: str = ""):
     log_event(db, who.tenant, actor(who), "memo.export", {"entity": entity, "format": "docx"})
-    return Response(build_memo_docx(db, who.tenant, entity, visible_doc_ids(db, who)), headers={
+    comps = _memo_comps(db, who, entity, peers, period)
+    return Response(build_memo_docx(db, who.tenant, entity, visible_doc_ids(db, who), comps), headers={
         "Content-Disposition": 'attachment; filename="memo.docx"'},
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
@@ -1827,6 +2019,18 @@ class FlagshipIn(BaseModel):
     cik: str | None = Field(default=None, max_length=12)  # the entity's own CIK, left out of its peers
     peers_pages: int = Field(default=1, ge=1, le=10)
     precedents: dict | None = None  # {"since": "YYYY-MM-DD", "until": "YYYY-MM-DD", "limit": 5}
+
+
+def _peer_ev(db: Session, tenant_id: str, name: str, scope: set[str] | None):
+    """The latest verified enterprise_value fact for a peer that this caller may see, from a market-data feed or a
+    filing. A fact cited to a document outside the caller's scope is skipped, as comps skip it."""
+    rows = (db.query(Fact).filter_by(tenant_id=tenant_id, entity=name, metric=EV_METRIC, status="verified")
+            .order_by(Fact.id.desc()).all())
+    f = next((f for f in rows if fact_visible(f, scope)), None)
+    if f is None:
+        return None
+    doc = db.get(Document, f.sources[0].document_id)  # the feed record: its file name carries the feed's label
+    return SimpleNamespace(id=f.id, value=f.value, unit=f.unit, label=doc.filename if doc else None)
 
 
 @app.post("/flagship/run")
@@ -1851,11 +2055,13 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
     exclude = {body.cik.zfill(10)} if body.cik else set()
     # Without a SEC contact the EDGAR-backed steps cannot run at all. That is a skip with the reason, not a failure.
     no_sec_contact = not os.environ.get("SEC_USER_AGENT")
+    scope = visible_doc_ids(db, who)
     if no_sec_contact:
         steps.append(flagship_mod.Step("comps", "skipped", "SEC_USER_AGENT not set: SIC peers come from EDGAR"))
     else:
         try:
-            steps.append(flagship_mod.comps_step(revenue, body.sic, exclude, body.peers_pages, peers_mod.discover))
+            steps.append(flagship_mod.comps_step(revenue, body.sic, exclude, body.peers_pages, peers_mod.discover,
+                                                 ev_lookup=lambda name: _peer_ev(db, who.tenant, name, scope)))
         except (OSError, ValueError, RuntimeError) as e:
             steps.append(flagship_mod.Step("comps", "failed", f"{type(e).__name__}: {e}"))
     if no_sec_contact and body.precedents:
@@ -1933,6 +2139,19 @@ def saved_search_run(search_id: int, db: Db, who: Who, k: int = Query(5, ge=1, l
     if row is None or row.tenant_id != who.tenant:
         raise HTTPException(404, "saved search not found")
     return {"search": row.name, "items": search(row.query, db, who, None, k)}
+
+
+@app.get("/search/notes")
+def search_notes(q: str, db: Db, who: Who, limit: int = Query(50, ge=1, le=200)):
+    """Shared deal notes that contain the words in q. Deal visibility and MNPI hiding apply before matching."""
+    terms = [t.lower() for t in q.split() if t.strip()]
+    if not terms:
+        raise HTTPException(422, "query is required")
+    scope = deal_scope(db, who)
+    rows = db.query(DealNote).filter_by(tenant_id=who.tenant).order_by(DealNote.id.desc()).all()
+    hits = [n for n in rows if (scope is None or n.deal in scope)
+            and all(t in n.body.lower() for t in terms)]
+    return {"query": q, "items": [_note_out(n) for n in hits[:limit]]}
 
 
 @app.get("/search")
@@ -2976,6 +3195,19 @@ def change(company_id: int, metric: str, new: str, old: str, db: Db, tenant: Ten
     v = qoq_change(db, tenant, company_id, metric, new, old)
     return {"metric": metric, "new": new, "old": old,
             "pct_change": None if v is None else str(v.quantize(Decimal("0.01")))}
+
+
+@app.get("/audit")
+def audit_list(db: Db, who: Who, action: str | None = None, limit: int = Query(100, ge=1, le=500)):
+    """The tenant's audit chain, newest first. Whole-tenant keys only: the trail names every deal."""
+    if who.restricted:
+        raise HTTPException(403, "the audit trail covers the whole tenant; use an unrestricted key")
+    q = db.query(AuditEvent).filter_by(tenant_id=who.tenant)
+    if action:
+        q = q.filter_by(action=action)
+    rows = q.order_by(AuditEvent.id.desc()).limit(limit).all()
+    return {"items": [{"id": r.id, "ts": r.ts, "actor": r.actor, "action": r.action,
+                       "payload": json.loads(r.payload)} for r in rows]}
 
 
 @app.get("/audit/verify")

@@ -184,9 +184,12 @@ COMPS_BAND = (Decimal("0.5"), Decimal(2))
 COMPS_WIDE_BAND = (Decimal("0.33"), Decimal(3))
 
 
-def comps_step(revenue: Decimal | None, sic: str | None, exclude: set[str], pages: int, discover) -> Step:
+def comps_step(revenue: Decimal | None, sic: str | None, exclude: set[str], pages: int, discover,
+               ev_lookup=None) -> Step:
     """SIC peers by size (0.5x to 2x the entity's revenue). When fewer than five are found, the band widens to
-    0.33x to 3x for the rest. Each peer keeps its rule, which names the band it was selected in, and its filing link."""
+    0.33x to 3x for the rest. Each peer keeps its rule, which names the band it was selected in, and its filing link.
+    ev_lookup(name) returns a verified enterprise_value fact for a peer, or None. A peer with one gets its EV, the
+    fact it is cited to, and EV / revenue; a peer without one is listed without it, never estimated."""
     if revenue is None or not sic:
         return Step("comps", "skipped", "needs the entity's revenue (extraction) and a SIC code")
     found = discover(revenue, sic, exclude, pages=pages, low=COMPS_BAND[0], high=COMPS_BAND[1])
@@ -195,8 +198,21 @@ def comps_step(revenue: Decimal | None, sic: str | None, exclude: set[str], page
         found += discover(revenue, sic, seen, pages=pages, low=COMPS_WIDE_BAND[0], high=COMPS_WIDE_BAND[1],
                           want=10 - len(found))
     return Step("comps", "ok", result={"sic": sic, "target_revenue": str(revenue), "peers": [
-        {"cik": p.cik, "name": p.name, "revenue": str(p.revenue), "period": p.period,
-         "source_url": p.source_url, "rule": p.rule} for p in found]})
+        _peer_row(p, ev_lookup(p.name) if ev_lookup and p.name else None) for p in found]})
+
+
+def _peer_row(p, ev) -> dict:
+    row = {"cik": p.cik, "name": p.name, "revenue": str(p.revenue), "period": p.period,
+           "source_url": p.source_url, "rule": p.rule}
+    if ev is not None:
+        row.update({"enterprise_value": str(ev.value), "ev_unit": ev.unit, "ev_fact_id": ev.id,
+                    "ev_source": getattr(ev, "label", None), "ev_revenue_multiple": None})
+        # filing revenue is USD; an EV in another unit would give a wrong multiple, so it is not divided
+        if ev.unit != "USD":
+            row["ev_note"] = f"EV is in {ev.unit}, not USD; no multiple"
+        elif p.revenue > 0:
+            row["ev_revenue_multiple"] = str((ev.value / p.revenue).quantize(Decimal("0.01")))
+    return row
 
 
 def precedents_step(window: dict | None, build) -> Step:

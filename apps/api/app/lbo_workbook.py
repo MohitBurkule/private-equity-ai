@@ -7,6 +7,7 @@ may be right and the source not yet loaded.
 from __future__ import annotations
 
 import io
+import re
 from decimal import Decimal, InvalidOperation
 
 from openpyxl import load_workbook
@@ -35,8 +36,14 @@ def named_inputs(data: bytes) -> dict[str, dict]:
     return out
 
 
+def _tokens(text: str) -> set[str]:
+    return {t for t in re.split(r"[^a-z0-9]+", text.lower()) if t}
+
+
 def tie(db: Session, tenant: str, scope: set[str] | None, inputs: dict[str, dict]) -> dict[str, dict]:
-    """Each named input gets the verified facts whose value equals its cell value. No match is `untied`."""
+    """Each named input gets verified facts with the same value AND the same concept: every word of the fact's
+    metric must appear in the input's name, so entry_ebitda matches an ebitda fact but not an unrelated one. Value
+    alone is never enough, since two unrelated figures can share a number. No match is `untied`."""
     verified = db.query(Fact).filter_by(tenant_id=tenant, status="verified").all()
     visible = [f for f in verified if fact_visible(f, scope)]
     out: dict[str, dict] = {}
@@ -45,7 +52,9 @@ def tie(db: Session, tenant: str, scope: set[str] | None, inputs: dict[str, dict
             out[name] = {**inp, "tie": "no_value", "fact_ids": []}
             continue
         value = Decimal(inp["value"])
-        ids = [f.id for f in visible if f.value == value]
+        name_tokens = _tokens(name)
+        ids = [f.id for f in visible
+               if f.value == value and _tokens(f.metric) and _tokens(f.metric) <= name_tokens]
         out[name] = {**inp, "tie": "tied" if ids else "untied", "fact_ids": ids,
                      "is_lbo_input": name in LBO_NAMES}
     return out

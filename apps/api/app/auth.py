@@ -13,8 +13,10 @@ from app.acl import (
     Principal,
     format_deal_roles,
     format_deals,
+    format_groups,
     parse_deal_roles,
     parse_deals,
+    parse_groups,
 )
 from app.models import ApiKey, Tenant
 
@@ -48,20 +50,31 @@ def principal_for_key(db: Session, key: str) -> Principal | None:
     if row is None or row.revoked:
         return None
     return Principal(row.tenant_id, row.role, parse_deals(row.deals), key_id(row.key_hash),
-                     parse_deal_roles(row.deal_roles))
+                     parse_deal_roles(row.deal_roles), identity=row.identity, groups=parse_groups(row.groups))
 
 
 def add_key(db: Session, tenant_id: str, role: str = "analyst",
-            deals: list[str] | None = None, deal_roles: dict[str, str] | None = None) -> tuple[str, str]:
+            deals: list[str] | None = None, deal_roles: dict[str, str] | None = None,
+            identity: str | None = None, groups: list[str] | None = None) -> tuple[str, str]:
     """Additional key for rotation: issue the new one, switch clients, then revoke the old one."""
     key = "pe_" + secrets.token_urlsafe(32)
     h = hash_key(key)
     if role not in ROLES:
         raise ValueError(f"role must be one of {ROLES}")
     db.add(ApiKey(key_hash=h, tenant_id=tenant_id, role=role, deals=format_deals(deals),
-                  deal_roles=format_deal_roles(deal_roles, deals)))
+                  deal_roles=format_deal_roles(deal_roles, deals), identity=identity.lower() if identity else None,
+                  groups=format_groups(groups)))
     db.commit()
     return key_id(h), key
+
+
+def list_keys(db: Session, tenant_id: str) -> list[dict]:
+    """Every key of a tenant with its deal wall, for the admin screen. Hashes never leave the server: a key is
+    named by its key_id, the same handle revoke_key takes."""
+    rows = db.query(ApiKey).filter_by(tenant_id=tenant_id).order_by(ApiKey.key_hash).all()
+    return [{"key_id": key_id(r.key_hash), "role": r.role, "revoked": bool(r.revoked),
+             "deals": None if (d := parse_deals(r.deals)) is None else sorted(d),
+             "deal_roles": dict(parse_deal_roles(r.deal_roles))} for r in rows]
 
 
 def revoke_key(db: Session, kid: str) -> bool:

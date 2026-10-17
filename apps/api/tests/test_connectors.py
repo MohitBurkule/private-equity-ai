@@ -75,6 +75,7 @@ def test_graph_drive_recurses_and_preserves_path(monkeypatch):
         f"{G}/root/children": {"value": [{"id": "f1", "name": "Legal", "folder": {}}]},
         f"{G}/items/f1/children": {"value": [{"id": "d1", "name": "note.eml", "file": {}, "webUrl": "https://sp/x", "eTag": "e1"}]},
         f"{G}/items/d1/content": xl,
+        f"{G}/items/d1/permissions": {"value": []},
     }
     monkeypatch.setattr(m, "CONNECTOR_HTTP", fake(routes))
     h = new_tenant(c, "sp")
@@ -95,6 +96,8 @@ def test_gdrive_exports_native_sheets_and_recurses(monkeypatch):
     plain = eml("drv", "hello")
     routes = {
         f"{D}/s1/export": plain, f"{D}/p1?alt=media": plain,
+        f"{D}/p1/permissions": {"permissions": [{"type": "user", "emailAddress": "ana@firm.test"}]},
+        f"{D}/s1/permissions": {"permissions": [{"type": "user", "emailAddress": "ana@firm.test"}]},
         D + "?q=%27sub%27": {"files": [{"id": "p1", "name": "n.eml", "mimeType": "message/rfc822", "webViewLink": "https://d/p1", "modifiedTime": "t1"}]},
         D + "?q=%27root%27": {"files": [
             {"id": "sub", "name": "Legal", "mimeType": "application/vnd.google-apps.folder"},

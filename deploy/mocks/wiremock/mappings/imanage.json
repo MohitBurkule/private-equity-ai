@@ -41,6 +41,34 @@
       "metadata": {
         "note": "SYNTHETIC mock: response shape is invented for tests, not copied from a vendor's API docs."
       }
+    },
+    {
+      "name": "imanage-document-acl",
+      "request": {
+        "method": "GET",
+        "urlPath": "/synthetic/imanage/v1/documents/IM-9001/acl"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "jsonBody": {
+          "acl": [
+            {
+              "type": "user",
+              "id": "ana@firm.test"
+            },
+            {
+              "type": "group",
+              "id": "IC-GROUP"
+            }
+          ]
+        }
+      },
+      "metadata": {
+        "note": "SYNTHETIC mock: response shape is invented for tests, not copied from a vendor's API docs."
+      }
     }
   ]
 }

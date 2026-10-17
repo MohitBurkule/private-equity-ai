@@ -1,0 +1,199 @@
+{
+  "_about": "Hand-labelled gold for the legal benchmark (evals/legal_benchmark.py). Value null = the exhibit does not state the term in its own text (cross-references to a merger agreement not filed here count as not stated). Escrow and MAE are presence labels. Labels were read from the filed text; see docs/LEGAL_BENCHMARK.md.",
+  "1167419_0001079973-23-000004": {
+    "governing_law": "Nevada",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1274173_0001104659-26-033933": {
+    "governing_law": null,
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1413898_0001413898-25-000077": {
+    "governing_law": null,
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1417663_0001140361-24-028573": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1439404_0001193125-22-141377": {
+    "governing_law": null,
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1514056_0001493152-23-018785": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": true
+  },
+  "1529113_0001213900-22-011356": {
+    "governing_law": "New York",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1529463_0001104659-22-028397": {
+    "governing_law": null,
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1533924_0001104659-25-035124": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1566373_0001193125-22-289465": {
+    "governing_law": null,
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1584412_0001552781-23-000483": {
+    "governing_law": null,
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1609471_0001104659-22-057131": {
+    "governing_law": "Maryland",
+    "termination_fee": "50000000",
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": true
+  },
+  "1625278_0001625278-22-000089": {
+    "governing_law": "Delaware",
+    "termination_fee": "5000000",
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "1713863_0001213900-25-011774": {
+    "governing_law": "New York",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1714562_0001493152-23-045920": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1782754_0001140361-25-017321": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1816937_0001493152-25-020689": {
+    "governing_law": "Nevada",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1820872_0001104659-25-004453": {
+    "governing_law": null,
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1838672_0001193125-24-082733": {
+    "governing_law": "Delaware",
+    "termination_fee": "11355513",
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": true
+  },
+  "1839360_0001213900-23-098207": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "1856031_0000950170-23-059730": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "1874944_0001140361-25-009124": {
+    "governing_law": null,
+    "termination_fee": "6000000",
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": true
+  },
+  "39899_0001193125-22-076150": {
+    "governing_law": null,
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "837852_0001104659-23-009345": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": 48,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "887151_0001213900-25-114137": {
+    "governing_law": "Nevada",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "89140_0001437749-25-018732": {
+    "governing_law": null,
+    "termination_fee": "12500000",
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "922247_0001437749-25-002723": {
+    "governing_law": "New York",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  },
+  "946581_0001193125-22-141376": {
+    "governing_law": null,
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": false
+  }
+}

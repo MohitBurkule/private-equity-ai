@@ -48,6 +48,10 @@ if [ -f "$DATA_DIR/filings/3M_2019_10K.htm" ]; then
   # Term Loan A terms, a labelled-assumption LBO run, and one candidate watch over the dated cache.
   python3 scripts/demo_extras.py "http://localhost:$API_PORT" "$KEY" "$DATABASE_URL" "$DATA_DIR" "$DEMO_DIR" \
     | sed 's/^/extras: /'
+  # QoE bridge, NWC peg, a DD answer and a synthetic LBO workbook, all cited to the FY2025 and FY2024 10-Ks.
+  if [ -f "$DATA_DIR/filings/XPO_10-K_FY2024.htm" ]; then
+    python3 scripts/seed_xpo_qoe.py "http://localhost:$API_PORT" "$KEY" "$DATA_DIR/filings" | sed 's/^/qoe: /'
+  fi
   echo "Dated EDGAR cache: data/demo/cache (captured 2026-10-17). Firm rule is synthetic demo text."
 else
   echo "No seed data at $DATA_DIR; the UI starts empty. Add a tenant with POST /admin/tenants."

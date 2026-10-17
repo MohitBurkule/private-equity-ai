@@ -57,6 +57,21 @@ export interface FactRow {
 }
 export interface DealRow { name: string; stage: string; note: string | null; documents: number; dd_total: number; dd_open: number }
 export interface DDRow { id: number; deal: string; category: string; title: string; status: string; document_id: string | null }
+export interface DDQuestionRow {
+  id: number; deal: string; request_id: number | null; question: string; status: "open" | "answered";
+  answer: string | null; document_id: string | null; page: number | null; quote: string | null;
+  asked_at: string; answered_at: string | null;
+}
+export interface LboTieRow {
+  cell: string | null; value: string | null; reason: string | null; tie: "tied" | "untied" | "no_value";
+  fact_ids: number[]; is_lbo_input: boolean;
+}
+export interface LboTiesOut { inputs: Record<string, LboTieRow>; untied: string[]; lbo_missing: string[] }
+export interface ICDecisionRow { id: number; deal: string; outcome: string; rationale: string; dissent: string | null; dissenter: string | null; recorded_at: string }
+export interface ICPrecedents { deal: string; stage: string | null; precedents: ICDecisionRow[]; outcome_counts: Record<string, number>; compared_deals: number }
+export interface ICReview { deal: string; latest: ICDecisionRow | null; dissents: ICDecisionRow[]; changed_since_ic: { document_id: string; filename: string; created_at: string | null }[]; ic_recorded: boolean }
+/** One key of a tenant with its deal wall. A null deals list means unrestricted. */
+export interface KeyWall { key_id: string; role: string; revoked: boolean; deals: string[] | null; deal_roles: Record<string, string> }
 export interface EvalRunRow { id: number; suite: string; ran_at: string; note: string | null; metrics: Record<string, unknown> }
 /** Cited input: a verified fact id, as /lbo/returns requires. Multiples are inputs too, so they must be cited. */
 export interface LboAssumption { value: string; set_by: string; set_on: string; reason: string }
@@ -106,6 +121,19 @@ export interface Connector {
   name: string; label: string; category: string; auth: string; status: "live" | "planned"; state: ConnectorState; detail: string;
   health?: ConnectorHealth; last_run?: string | null; last_status?: string | null;
 }
+/** A computed figure with every input's citation. Withheld (ok false) names what is missing; never a guess. */
+export interface QoeCalc {
+  name: string; entity: string; ok: boolean; value: string | null; unit: string | null; formula: string;
+  missing: string[]; problems: string[];
+  inputs: { role: string; sign: number; fact_id: number; metric: string; period: string; value: string; unit: string;
+    sources: { document_id: string; page: number; locator: string; quote: string }[] }[];
+  one_off_flags?: { fact_id: number; amount: string; quote: string; locator: string }[];
+}
+export type NwcPeg = QoeCalc & { per_period: Record<string, QoeCalc> };
+export interface TrendRow {
+  period: string; revenue: string | null; growth_pct: string | null; ebitda_margin_pct: string | null; missing: string[];
+}
+
 export interface CompsOut {
   target: string; period: string;
   peers: { entity: string; multiples: Record<string, string | null> }[];
@@ -176,12 +204,34 @@ export const api2 = {
   dd: (deal: string) => call<DDRow[]>(`/dd/requests?deal=${encodeURIComponent(deal)}`),
   ddSeed: (deal: string) => call<{ created: number }>("/dd/requests/seed", "POST", { deal }),
   ddStatus: (id: number, status: string) => call<DDRow>(`/dd/requests/${id}`, "PATCH", { status }),
+  icPrecedents: (deal: string) => call<ICPrecedents>(`/ic/precedents?deal=${encodeURIComponent(deal)}`),
+  icReview: (deal: string) => call<ICReview>(`/ic/review?deal=${encodeURIComponent(deal)}`),
+  ddQuestions: (deal: string) => call<DDQuestionRow[]>(`/dd/questions?deal=${encodeURIComponent(deal)}`),
+  ddQuestionAdd: (deal: string, question: string) => call<DDQuestionRow>("/dd/questions", "POST", { deal, question }),
+  ddQuestionAnswer: (id: number, cite: { answer: string; document_id: string; page: number; quote: string }) =>
+    call<DDQuestionRow>(`/dd/questions/${id}`, "PATCH", cite),
   report: () => call<Report>("/portfolio/report"),
   brief: (since: string) => call<AlertBrief>(`/alerts/brief?since=${encodeURIComponent(since)}`),
   connectors: () => call<Connector[]>("/connectors"),
   syncConnector: (name: string, token: string, deal: string) =>
     call<{ ingested: unknown[]; skipped?: unknown[] }>(`/connectors/${name}/sync`, "POST", { token, deal: deal || null, limit: 50 }),
   comps: (body: { target: string; peers: string[]; period: string; metrics: string[] }) => call<CompsOut>("/calc/comps", "POST", body),
+  /** Named inputs of an LBO workbook, each tied to verified facts with the same concept and value. */
+  /** Admin-only. The token is passed per call and never stored, so it dies with the page. */
+  adminKeys: (tenantId: string, adminToken: string) =>
+    fetch(`/api/admin/tenants/${encodeURIComponent(tenantId)}/keys`, { headers: { "X-Admin-Token": adminToken } })
+      .then((r) => j<{ keys: KeyWall[] }>(r)).then((d) => d.keys),
+  lboWorkbookTies: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return fetch("/api/lbo/workbook/ties", { method: "POST", body: fd, headers: auth() }).then((r) => j<LboTiesOut>(r));
+  },
+  qoeEbitda: (entity: string, period: string) =>
+    call<QoeCalc>(`/calc/normalized-ebitda?entity=${encodeURIComponent(entity)}&period=${encodeURIComponent(period)}`),
+  nwcPeg: (entity: string, periods: string) =>
+    call<NwcPeg>(`/calc/nwc-peg?entity=${encodeURIComponent(entity)}&periods=${encodeURIComponent(periods)}`),
+  revenueTrend: (entity: string, periods: string) =>
+    call<{ entity: string; rows: TrendRow[] }>(`/calc/revenue-trend?entity=${encodeURIComponent(entity)}&periods=${encodeURIComponent(periods)}`),
   agent: (goal: string) => call<AgentRunOut>("/agent/run", "POST", { goal }),
   workflows: () => call<WorkflowInfo[]>("/agent/workflows"),
   runWorkflow: (name: string, inputs: Record<string, string>) => call<AgentRunOut>(`/agent/workflows/${name}/run`, "POST", { inputs }),

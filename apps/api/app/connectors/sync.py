@@ -37,19 +37,26 @@ def sync(db: Session, who, conn: Connector, deal: str | None, limit: int = 50,
 
 
 def _pull(db: Session, who, conn: Connector, deal: str | None, limit: int, run_id: int) -> dict:
-    seen = {(s.external_id, s.version) for s in
-            db.query(DocumentSource).filter_by(tenant_id=who.tenant, connector=conn.name)}
+    newest = {}  # external_id -> the latest stored source row for this connector
+    for s in db.query(DocumentSource).filter_by(tenant_id=who.tenant, connector=conn.name).order_by(DocumentSource.id):
+        newest[s.external_id] = s
     out = {"ingested": [], "unchanged": 0, "skipped": []}
     for it in conn.items(limit):
-        if (it.external_id, it.version) in seen:
+        acl = _acl_json(it.acl)
+        known = newest.get(it.external_id)
+        if known is not None and known.version == it.version:
             out["unchanged"] += 1
+            if known.acl != acl:  # permissions changed at the source: the next read applies it, so a revoke is immediate
+                known.acl = acl
+                db.commit()
             continue
         res = ingest_any(db, who.tenant, it.data, it.name)
         kept, skipped = finalize_upload(db, who, res, deal)
         out["skipped"] += skipped
         for d in kept:
             db.add(DocumentSource(tenant_id=who.tenant, document_id=d.id, connector=conn.name,
-                                  external_id=it.external_id, version=it.version, url=it.url, sync_run_id=run_id))
+                                  external_id=it.external_id, version=it.version, url=it.url, sync_run_id=run_id,
+                                  acl=acl))
             out["ingested"].append({"document_id": d.id, "filename": d.filename, "source_url": it.url})
             # fund-admin workbooks and capital-call notices become cited facts on arrival; other files yield none
             fund_admin_facts_mod.extract_facts(db, who.tenant, d, d.deal or d.filename,
@@ -61,6 +68,13 @@ def _pull(db: Session, who, conn: Connector, deal: str | None, limit: int, run_i
     if isinstance(conn, CalendarConnector):
         record_events(db, who.tenant, conn.name, conn.last_events)
     return out
+
+
+def _acl_json(acl: tuple[str, ...] | None) -> str | None:
+    """The source's access list as stored: sorted, lowercase, without blanks. None when the source sets none."""
+    if acl is None:
+        return None
+    return json.dumps(sorted({a.strip().lower() for a in acl if a.strip()}))
 
 
 def _mapped_company(conn: Connector) -> int | None:

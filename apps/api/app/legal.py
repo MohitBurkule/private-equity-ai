@@ -30,7 +30,7 @@ OTHER_JURISDICTIONS = (
     "Hong Kong|Singapore|Japan|Germany|France|Switzerland|Netherlands|Luxembourg|Israel|India|Brazil|Mexico|Spain|Italy"
 )
 GOVERNING_LAW_RE = (
-    r"governed by[^.]{0,120}?\blaws?\s+of\s+(?:the\s+)?(?:state\s+of\s+)?"
+    r"governed\b[^.]{0,60}?\b(?:by|under)\b[^.]{0,120}?\blaws?\s+(?:\([^)]*\)\s+)?of\s+(?:the\s+)?(?:state\s+of\s+)?"
     r"((?:" + US_STATES + "|" + OTHER_JURISDICTIONS + r"))\b"
 )
 
@@ -49,7 +49,7 @@ TERMS: dict[str, dict] = {
     },
     "non_solicit_months": {
         "doc": ("nda", "spa"),
-        "re": r"(?:non-?solicit\w*|not (?:to )?solicit)[^.]{0,120}?(\d{1,3}|\w+)\s*(?:\(\d+\)\s*)?months?",
+        "re": r"(?:non-?solicit\w*|not (?:to )?solicit)[^.]{0,120}?(\d{1,3}|\w+)\s*(?:\(\d+\)\s*)?(?:months?|years?)|(\d{1,3}|\w+)\s*(?:\(\d+\)\s*)?(?:months?|years?)[^.]{0,160}?\bsolicit\b|(?:non-?solicit\w*|not (?:to )?solicit)[^.]{0,120}?((?:first|second|third|fourth|fifth)\s*(?:\(\d+(?:st|nd|rd|th)\)\s*)?anniversary)",
     },
     "non_compete_months": {
         "doc": ("spa",),
@@ -73,7 +73,7 @@ TERMS: dict[str, dict] = {
     },
     "termination_fee": {
         "doc": ("spa",),
-        "re": r'(?:reverse )?termination fee[^.]{0,120}?((?:US\$|\$|£|€)\s?[\d,]+(?:\.\d+)?(?:\s?(?:million|billion))?)|((?:US\$|\$|£|€)\s?[\d,]+(?:\.\d+)?(?:\s?(?:million|billion))?)[^.]{0,60}?\(the [“"]?(?:reverse )?termination fee',
+        "re": r'(?:reverse )?termination fee(?:(?!exceed)[^.]){0,120}?((?:US\$|\$|£|€)\s?[\d,]+(?:\.\d+)?(?:\s?(?:million|billion))?)|((?:US\$|\$|£|€)\s?[\d,]+(?:\.\d+)?(?:\s?(?:million|billion))?)[^.]{0,60}?\(the [“"]?(?:reverse )?termination fee',
     },
     "material_adverse_effect": {
         "doc": ("spa", "credit"),
@@ -111,6 +111,22 @@ class Finding:
     needs_review: bool
 
 
+NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+                "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
+ORDINAL_YEARS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5}
+
+
+def _months(value: str, matched: str) -> str:
+    """A non-solicit period in months: '4 years' and 'four (4) years' become 48."""
+    if "anniversary" in value.lower():  # "second (2nd) anniversary" of closing: two years
+        n = ORDINAL_YEARS.get(value.split()[0].lower())
+        return str(n * 12) if n else value
+    n = int(value) if value.isdigit() else NUMBER_WORDS.get(value.lower())
+    if n is None or not re.search(r"\byears?\b", matched, re.IGNORECASE):
+        return value
+    return str(n * 12)
+
+
 def extract(pages: list[tuple[int, str]], doc_type: str) -> dict:
     """pages: (number, text). doc_type: nda | spa | credit. Returns findings and absent term names."""
     if doc_type not in ("nda", "spa", "credit"):
@@ -130,10 +146,13 @@ def extract(pages: list[tuple[int, str]], doc_type: str) -> dict:
                 m = rx.search(sent)
                 if m:
                     hits += 1
+                    value = next(g for g in m.groups() if g).strip()
+                    if term == "non_solicit_months":
+                        value = _months(value, m.group(0))
                     found.append(
                         Finding(
                             term,
-                            next(g for g in m.groups() if g).strip(),
+                            value,
                             num,
                             sent.strip(),
                             bool(_NEG.search(sent)),

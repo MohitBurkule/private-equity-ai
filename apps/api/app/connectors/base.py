@@ -62,6 +62,7 @@ class Item:
     data: bytes
     url: str  # human link back to the original (the citation target)
     version: str  # modified time / etag: unchanged version is skipped on re-sync
+    acl: tuple[str, ...] | None = None  # identities the source grants access to; None = the source sets no list
 
 
 class Connector:

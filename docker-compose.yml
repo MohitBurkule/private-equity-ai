@@ -51,8 +51,11 @@ services:
     # Dev-only mock of SaaS HTTP APIs (Graph, Drive, CRM, Slack, Teams). Stubs are posted per test to /__admin.
     # Point tests at it with WIREMOCK_URL=http://localhost:8089 (see docs/MOCKS.md).
     image: wiremock/wiremock:3.9.1
-    ports: ["8089:8080"]
-    volumes: ["./deploy/mocks/wiremock/mappings:/home/wiremock/mappings:ro"]
+    # HTTPS on 8443 with a self-signed SYNTHETIC cert (deploy/mocks/tls/make-cert.sh) for the market-data feed.
+    command: ["--https-port", "8443", "--https-keystore", "/home/wiremock/tls/keystore.p12",
+              "--keystore-password", "synthetic", "--key-manager-password", "synthetic"]
+    ports: ["8089:8080", "8443:8443"]
+    volumes: ["./deploy/mocks/wiremock/mappings:/home/wiremock/mappings:ro", "./deploy/mocks/tls/out:/home/wiremock/tls:ro"]
   keycloak:
     # Dev-only OIDC provider for SSO role testing. Realm is SYNTHETIC (deploy/mocks/keycloak).
     image: quay.io/keycloak/keycloak:26.0.7

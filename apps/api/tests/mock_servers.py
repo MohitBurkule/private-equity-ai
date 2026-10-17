@@ -28,6 +28,10 @@ class WireMock:
         self.external = os.environ.get("WIREMOCK_URL", "").rstrip("/")
         self.port = free_port()
         self.base = self.external or f"http://127.0.0.1:{self.port}"
+        # HTTPS only when a synthetic keystore is given (deploy/mocks/tls/make-cert.sh); for the market-data feed.
+        self.keystore = os.environ.get("WIREMOCK_TLS_KEYSTORE", "")
+        self.https_port = free_port()
+        self.https_base = os.environ.get("WIREMOCK_HTTPS_URL", "").rstrip("/") or f"https://localhost:{self.https_port}"
         self.proc = None
 
     @property
@@ -36,8 +40,11 @@ class WireMock:
 
     def __enter__(self):
         if not self.external:
-            self.proc = subprocess.Popen(["java", "-jar", self.jar, "--port", str(self.port), "--disable-banner"],
-                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            args = ["java", "-jar", self.jar, "--port", str(self.port), "--disable-banner"]
+            if self.keystore:
+                args += ["--https-port", str(self.https_port), "--https-keystore", self.keystore,
+                         "--keystore-password", "synthetic", "--key-manager-password", "synthetic"]
+            self.proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(100):
             try:
                 urllib.request.urlopen(f"{self.base}/__admin/mappings", timeout=1).read()

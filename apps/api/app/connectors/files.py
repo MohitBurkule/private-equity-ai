@@ -19,6 +19,13 @@ class GoogleDrive(Connector):
     """opts: folder=<folder id> (default root)."""
     name, label = "gdrive", "Google Drive / Sheets"
 
+    def _drive_acl(self, fid: str) -> tuple[str, ...]:
+        """Email addresses of the users and groups a file is shared with. Groups appear as "group:{email}". Anyone-with-
+        the-link and domain-wide shares name no address, so they are left out and fail closed."""
+        perms = self._get_json(f"{D}/files/{fid}/permissions?fields=permissions(type,emailAddress)").get("permissions", [])
+        return tuple(f"group:{p['emailAddress']}" if p.get("type") == "group" else p["emailAddress"]
+                     for p in perms if p.get("emailAddress") and p.get("type") in ("user", "group"))
+
     def items(self, limit: int = 50):
         stack, n = [(self.opts.get("folder", "root"), "")], 0
         while stack and n < limit:
@@ -45,7 +52,8 @@ class GoogleDrive(Connector):
                         data = self.http(f"{D}/files/{f['id']}?alt=media", self._auth())
                     # Every file cites its Drive page; the fallback covers responses that omit webViewLink.
                     url = f.get("webViewLink") or f"https://drive.google.com/file/d/{f['id']}/view"
-                    yield Item(f["id"], f"{prefix}{name}", data, url, f.get("modifiedTime", ""))
+                    acl = self._drive_acl(f["id"])
+                    yield Item(f["id"], f"{prefix}{name}", data, url, f.get("modifiedTime", ""), acl=acl)
                     n += 1
                 token = page.get("nextPageToken", "")
                 if not token:
