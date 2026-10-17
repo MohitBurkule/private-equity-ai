@@ -17,6 +17,7 @@ DIRECT = ["document", "fact", "portfolio_company", "kpi_observation", "audit_eve
 CHILD = {
     "page": ("document_id", "document", "id"),
     "fact_source": ("fact_id", "fact", "id"),
+    "html_unit": ("document_id", "document", "id"),
 }
 CURRENT = "nullif(current_setting('app.tenant_id', true), '')"
 

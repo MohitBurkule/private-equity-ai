@@ -97,24 +97,34 @@ def _to_fact(a: dict, text: str) -> Fact | None:
     return Fact((a.get("name") or "").split(":")[-1], a.get("contextref") or "", val)
 
 
+# Headline P&L lines, under the names used by the UK GAAP and FRS 102 taxonomies (older and newer spellings).
+# They are read for the latest 12-month period and reported as tagged; no identity checks apply to them.
+PNL = {"Turnover": ("Turnover", "TurnoverRevenue", "Revenue"),
+       "GrossProfit": ("GrossProfit", "GrossProfitLoss"),
+       "OperatingProfit": ("OperatingProfit", "OperatingProfitLoss")}
+
+
 @dataclass
 class Report:
     facts: dict[str, Decimal] = field(default_factory=dict)  # headline figures, latest instant
     instant: str | None = None
     checks: dict[str, bool | None] = field(default_factory=dict)
     reliable: bool = True
+    pnl: dict[str, Decimal] = field(default_factory=dict)  # tagged P&L lines for the latest 12-month period
+    pnl_period: str | None = None  # "start to end"; None when no P&L line is tagged
 
 
 def read_ixbrl(html: str) -> Report:
     p = _Parser()
     p.feed(html)
+    rep = Report()
+    _read_pnl(p, rep)  # P&L is read even when there is no balance sheet to check
     # latest non-dimensional balance-sheet instant that has balance-sheet items
     balance = {"FixedAssets", "CurrentAssets", "NetCurrentAssetsLiabilities",
                "TotalAssetsLessCurrentLiabilities", "NetAssetsLiabilities", "Equity"}
     insts = sorted({p.contexts[f.context].instant for f in p.facts
                     if f.name in balance and f.context in p.contexts
                     and p.contexts[f.context].instant and not p.contexts[f.context].dimensional})
-    rep = Report()
     if not insts:
         rep.checks = {"fixed+netcurrent=TALCL": None, "netassets=equity": None}
         return rep
@@ -133,3 +143,33 @@ def read_ixbrl(html: str) -> Report:
         rep.checks["netassets=equity"] = na == eq
     rep.reliable = all(v is not False for v in rep.checks.values())
     return rep
+
+
+def _read_pnl(p: _Parser, rep: Report) -> None:
+    """Latest 12-month, non-dimensional period that carries a tagged P&L line. Shorter or longer periods
+    (a first period, a long comparative) are skipped rather than annualised."""
+    from datetime import date
+
+    def months(c: Ctx) -> int | None:
+        if not (c.start and c.end) or c.dimensional:
+            return None
+        days = (date.fromisoformat(c.end) - date.fromisoformat(c.start)).days
+        return days if 350 <= days <= 380 else None
+
+    best: tuple[str, str] | None = None
+    for f in p.facts:
+        c = p.contexts.get(f.context)
+        if c is None or months(c) is None:
+            continue
+        if any(f.name in names for names in PNL.values()) and (best is None or c.end > best[1]):
+            best = (c.start, c.end)
+    if best is None:
+        return
+    rep.pnl_period = f"{best[0]} to {best[1]}"
+    for f in p.facts:
+        c = p.contexts.get(f.context)
+        if c is None or (c.start, c.end) != best or months(c) is None:
+            continue
+        for line, names in PNL.items():
+            if f.name in names:
+                rep.pnl.setdefault(line, f.value)

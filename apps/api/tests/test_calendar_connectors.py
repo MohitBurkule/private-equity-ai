@@ -1,7 +1,7 @@
 """Calendar connectors against WireMock (open-source jar, Graph and Google stubs shaped like the real APIs),
 plus the board-cadence watcher fed by a calendar sync. Stub-only tests need no jar."""
 import json
-from datetime import date
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -81,6 +81,6 @@ def test_board_cadence_flags_overdue_board_meetings_only(monkeypatch):
     assert r.status_code == 200, r.text
     c.post("/alerts/scan", headers=h)
     board = [a for a in c.get("/alerts", headers=h).json() if a["kind"] == "board"]
-    days = (date.today() - date(2020, 1, 10)).days
+    days = (datetime.now(UTC).date() - date(2020, 1, 10)).days
     assert [a["title"] for a in board] == [f"Acme: no board meeting for {days} days (firm cadence 92 days)"]
     assert "board meets quarterly" in board[0]["detail"]
