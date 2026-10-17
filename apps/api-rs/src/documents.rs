@@ -17,7 +17,7 @@ pub async fn list_documents(
     State(s): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, ApiError> {
-    let (p, mut tx) = principal(&s.pool, &headers).await?;
+    let (p, mut tx) = principal(&s, &headers).await?;
     let vis = Visibility::load(&mut tx, &p).await?;
     let rows: Vec<(String, String, i32, Option<String>)> =
         sqlx::query_as("SELECT id, filename, n_pages, deal FROM document ORDER BY id")
@@ -38,7 +38,7 @@ pub async fn get_page(
     headers: HeaderMap,
     Path((doc_id, number)): Path<(String, i32)>,
 ) -> Result<Json<Value>, ApiError> {
-    let (p, mut tx) = principal(&s.pool, &headers).await?;
+    let (p, mut tx) = principal(&s, &headers).await?;
     let vis = Visibility::load(&mut tx, &p).await?;
     // _own_doc: missing, other-tenant, walled and ACL-hidden documents all get the same 404.
     let doc: Option<(String, Option<String>)> =

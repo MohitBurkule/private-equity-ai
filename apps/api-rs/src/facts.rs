@@ -90,7 +90,7 @@ pub async fn list_facts(
     headers: HeaderMap,
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let (p, mut tx) = principal(&s.pool, &headers).await?;
+    let (p, mut tx) = principal(&s, &headers).await?;
     let vis = Visibility::load(&mut tx, &p).await?;
     let facts: Vec<FactRow> = sqlx::query_as(
         "SELECT id, entity, metric, period, value, unit, basis, status, reviewed_by, reviewed_at, review_note
@@ -139,7 +139,7 @@ pub async fn create_fact(
     headers: HeaderMap,
     Json(body): Json<FactIn>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let (p, mut tx) = principal(&s.pool, &headers).await?;
+    let (p, mut tx) = principal(&s, &headers).await?;
     require_writer(&p)?;
     let vis = Visibility::load(&mut tx, &p).await?;
 
