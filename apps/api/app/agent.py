@@ -21,7 +21,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app import firm_knowledge as fk
-from app.acl import Principal, visible_doc_ids
+from app.acl import Principal, deal_scope, visible_doc_ids
 from app.answer import Claim, answer_question, verify_claim
 from app.hybrid import default_index
 from app.llm import LLM
@@ -144,8 +144,10 @@ def _facts(ctx: Ctx, entity: str | None = None):
 
 @register_tool("list_deals", "Deals with stage.", {})
 def _deals(ctx: Ctx):
+    scope = deal_scope(ctx.db, ctx.who)  # MNPI and walled deals are not listed to the agent
     return [{"name": d.name, "stage": d.stage} for d in
-            ctx.db.query(Deal).filter_by(tenant_id=ctx.tenant).order_by(Deal.id)]
+            ctx.db.query(Deal).filter_by(tenant_id=ctx.tenant).order_by(Deal.id)
+            if scope is None or d.name in scope]
 
 
 @register_tool("list_alerts", "Open alerts from the proactive inbox (covenant breaches and similar), with fact ids.", {})

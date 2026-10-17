@@ -70,9 +70,11 @@ from app import workflows as wf_mod
 from app.acl import (
     Principal,
     deal_hidden,
+    deal_scope,
     doc_visible,
     fact_visible,
     hidden_deal_names,
+    mnpi_name_conflict,
     visible_doc_ids,
     visible_mnpi_deal_names,
 )
@@ -2556,7 +2558,10 @@ def targets_outreach_send(body: OutreachSend, db: Db, who: Writer):
     msg = outreach_mod.draft(t, body.sender, body.firm)
     if body.confirm_subject != msg["subject"]:
         raise HTTPException(409, "the draft changed since it was reviewed; review it again and confirm its subject")
-    scope = None if who.deals is None else set(who.deals)
+    if mnpi_name_conflict(db, who, t.name):
+        log_event(db, who.tenant, actor(who), "outreach.mnpi_blocked", {"id": t.id, "route": "send"})
+        raise HTTPException(409, "outreach blocked: this target matches a deal under MNPI restriction")
+    scope = deal_scope(db, who)
     name = f"research-{t.id}.docx"
     files = [(name, research_mod.build_docx(db, who.tenant, t, scope), DOCX_MIME)]
     if body.memo_entity:
@@ -2609,6 +2614,10 @@ def outreach_queue(body: OutreachQueueIn, db: Db, who: Writer):
     missing = sorted(set(body.target_ids) - {t.id for t in rows})
     if missing:
         raise HTTPException(404, f"targets not found: {missing}")
+    blocked = sorted(t.id for t in rows if mnpi_name_conflict(db, who, t.name))
+    if blocked:
+        log_event(db, who.tenant, actor(who), "outreach.mnpi_blocked", {"ids": blocked, "route": "queue"})
+        raise HTTPException(409, f"outreach blocked for targets {blocked}: they match a deal under MNPI restriction")
     now = datetime.now(UTC).isoformat(timespec="seconds")
     items = []
     for t in rows:
@@ -2703,7 +2712,10 @@ def outreach_queue_send(item_id: int, body: OutreachQueueSend, db: Db, who: Writ
         it.reviewed_by = None
         db.commit()
         raise HTTPException(409, "the draft changed since it was approved; it is back in the queue for review")
-    scope = None if who.deals is None else set(who.deals)
+    if mnpi_name_conflict(db, who, t.name):
+        log_event(db, who.tenant, actor(who), "outreach.mnpi_blocked", {"id": t.id, "route": "queue_send"})
+        raise HTTPException(409, "outreach blocked: this target matches a deal under MNPI restriction")
+    scope = deal_scope(db, who)
     files = [(f"research-{t.id}.docx", research_mod.build_docx(db, who.tenant, t, scope), DOCX_MIME)]
     if body.memo_entity:
         files.append(("memo.pptx", build_memo_pptx(db, who.tenant, body.memo_entity, visible_doc_ids(db, who)), PPTX_MIME))
@@ -2727,7 +2739,7 @@ def target_research(tid: int, db: Db, who: Who):
     if t is None or t.tenant_id != who.tenant:
         raise HTTPException(404, "target not found")
     log_event(db, who.tenant, actor(who), "target.research_export", {"id": tid})
-    return Response(research_mod.build_docx(db, who.tenant, t, None if who.deals is None else set(who.deals)),
+    return Response(research_mod.build_docx(db, who.tenant, t, deal_scope(db, who)),
                     headers={"Content-Disposition": f'attachment; filename="research-{tid}.docx"'},
                     media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
@@ -2737,7 +2749,12 @@ def seen_before(q: str, db: Db, who: Who):
     """Have we seen this company or deal before? Searches targets, portfolio companies and deals you can see."""
     if len(q.strip()) < 2:
         raise HTTPException(422, "query must be at least 2 characters")
-    return seen_mod.lookup(db, who.tenant, q, None if who.deals is None else set(who.deals))
+    out = seen_mod.lookup(db, who.tenant, q, deal_scope(db, who))
+    mnpi = set(visible_mnpi_deal_names(db, who))
+    shown = sorted(h["name"] for h in out["hits"] if h["kind"] == "deal" and h["name"] in mnpi)
+    if shown:  # walled-deal access audit: a cleared person saw an MNPI deal's name
+        log_event(db, who.tenant, actor(who), "mnpi.view", {"route": "seen-before", "deals": shown})
+    return out
 
 
 @app.get("/targets/benchmark")
@@ -2867,6 +2884,10 @@ def targets_outreach(body: OutreachIn, db: Db, who: Writer):
     if not 0 < len(body.target_ids) <= 200:
         raise HTTPException(422, "send 1 to 200 target ids")
     rows = db.query(Target).filter(Target.tenant_id == who.tenant, Target.id.in_(body.target_ids)).all()
+    blocked = sorted(t.id for t in rows if mnpi_name_conflict(db, who, t.name))
+    if blocked:
+        log_event(db, who.tenant, actor(who), "outreach.mnpi_blocked", {"ids": blocked, "route": "draft"})
+        raise HTTPException(409, f"drafts blocked for targets {blocked}: they match a deal under MNPI restriction")
     missing = sorted(set(body.target_ids) - {t.id for t in rows})
     if missing:
         raise HTTPException(404, f"targets not found: {missing}")
