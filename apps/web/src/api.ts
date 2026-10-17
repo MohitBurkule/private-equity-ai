@@ -87,6 +87,8 @@ export type TargetBenchmark = {
 export type TargetFilter = { sector?: string; country?: string; min_revenue?: string; max_revenue?: string; q?: string };
 export type Facets = { sector: { value: string | null; count: number }[]; country: { value: string | null; count: number }[]; total: number; revenue_unknown: number };
 
+export interface AlertBrief { since: string; total: number; by_kind: Record<string, number>; by_severity: Record<string, number> }
+
 export const api2 = {
   targets: (f: TargetFilter) => {
     const p = new URLSearchParams({ limit: "1000" });
@@ -105,6 +107,7 @@ export const api2 = {
   ddSeed: (deal: string) => call<{ created: number }>("/dd/requests/seed", "POST", { deal }),
   ddStatus: (id: number, status: string) => call<DDRow>(`/dd/requests/${id}`, "PATCH", { status }),
   report: () => call<Report>("/portfolio/report"),
+  brief: (since: string) => call<AlertBrief>(`/alerts/brief?since=${encodeURIComponent(since)}`),
   connectors: () => call<Connector[]>("/connectors"),
   syncConnector: (name: string, token: string, deal: string) =>
     call<{ ingested: unknown[]; skipped?: unknown[] }>(`/connectors/${name}/sync`, "POST", { token, deal: deal || null, limit: 50 }),

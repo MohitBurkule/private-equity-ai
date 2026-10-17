@@ -13,11 +13,20 @@ export function Inbox({ onGo }: { onGo: (tab: string) => void }) {
   useEffect(() => {
     const load = async () => {
       const out: Item[] = [];
-      const [report, conflicts, queue, deals] = await Promise.all([
-        api2.report().catch(() => null), api2.conflicts().catch(() => []),
+      const day = new Date(Date.now() - 864e5).toISOString();
+      const [brief, report, conflicts, queue, deals] = await Promise.all([
+        api2.brief(day).catch(() => null), api2.report().catch(() => null), api2.conflicts().catch(() => []),
         Promise.all([api2.facts("auto"), api2.facts("ocr_unverified")]).then((a) => a.flat()).catch(() => []),
         api2.deals().catch(() => []),
       ]);
+      if (brief && brief.total > 0) {
+        const crit = brief.by_severity.critical ?? 0;
+        out.push({
+          key: "brief", tone: crit ? "bad" : "warn", icon: <AlertTriangle size={16} />, go: "Portfolio",
+          title: `${brief.total} new alert${brief.total > 1 ? "s" : ""} in the last 24 hours`,
+          body: Object.entries(brief.by_severity).map(([s, n]) => `${n} ${s}`).join(", ") + ". Mailed daily when a digest is scheduled.",
+        });
+      }
       report?.breaches.forEach((b, i) => out.push({
         key: `b${i}`, tone: "bad", icon: <AlertTriangle size={16} />, go: "Portfolio",
         title: `Covenant breach: ${b.company}`,

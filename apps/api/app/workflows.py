@@ -24,7 +24,7 @@ from app import sourcing_search as ss_mod
 from app.models import Alert, WorkflowSchedule
 from app.report import build_report
 
-KINDS = ("portfolio_report", "comps", "alert_digest", "candidate_watch")
+KINDS = ("portfolio_report", "comps", "alert_digest", "candidate_watch", "daily_brief")
 Mailer = Callable[[list[str], str, str], None]
 
 
@@ -58,6 +58,8 @@ ORDER = {"critical": 0, "warning": 1, "info": 2}
 def _summary(kind: str, result: dict) -> str:
     if kind == "alert_digest":
         return "\n\n".join(f"[{a['severity'].upper()}] {a['title']}\n    {a['detail']}" for a in result["alerts"])
+    if kind == "daily_brief":
+        return alerts_mod.brief_text(result["brief"])
     if kind == "candidate_watch":
         return "\n".join(f"- {a['title']}: {a['detail']}" for a in result["alerts"]) or "No new candidates."
     if kind == "portfolio_report":
@@ -81,6 +83,13 @@ def _alert_digest(db: Session, w: WorkflowSchedule) -> dict:
             .filter(Alert.created_at >= since).all())
     rows.sort(key=lambda a: (ORDER.get(a.severity, 3), a.id))
     return {"alerts": [{"id": a.id, "severity": a.severity, "title": a.title, "detail": a.detail} for a in rows]}
+
+
+def _daily_brief(db: Session, w: WorkflowSchedule) -> dict:
+    """Daily: what the system raised since the previous run (or the last day on the first run), critical first."""
+    since = w.last_run or _iso(_now() - timedelta(days=1))
+    b = alerts_mod.brief(db, w.tenant_id, since)
+    return {"alerts": b["top"], "brief": b}
 
 
 def _edgar_candidates(term: str, since: str, until: str) -> list[tuple[str, str, str]]:
@@ -112,6 +121,8 @@ def _execute(db: Session, w: WorkflowSchedule, scope: set[str] | None) -> dict:
         return _alert_digest(db, w)
     if w.kind == "candidate_watch":
         return _candidate_watch(db, w)
+    if w.kind == "daily_brief":
+        return _daily_brief(db, w)
     if w.kind == "portfolio_report":
         return build_report(db, w.tenant_id, scope)
     return comps_mod.run(db, w.tenant_id, p["target"], p["peers"], p["period"], p.get("metrics", ["revenue", "ebitda"]),
@@ -129,7 +140,7 @@ def run_due(db: Session, tenant: str, scope: set[str] | None, mailer: Mailer | N
             result = _execute(db, w, scope)
             body = _summary(w.kind, result)
             w.last_status, w.last_result = "ok", json.dumps({"summary": body, "result": result}, default=str)
-            quiet_when_empty = w.kind in ("alert_digest", "candidate_watch")
+            quiet_when_empty = w.kind in ("alert_digest", "candidate_watch", "daily_brief")
             if mailer and w.recipients and (not quiet_when_empty or result["alerts"]):
                 mailer(w.recipients.split(","), f"[{w.name}] scheduled update", body)  # no mail for an empty digest
         except Exception as e:  # noqa: BLE001  recorded, never raised: one bad schedule must not stop the others
