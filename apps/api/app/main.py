@@ -697,8 +697,10 @@ def get_page(doc_id: str, number: int, db: Db, who: Who):
 @app.get("/documents")
 def list_documents(db: Db, who: Who):
     hidden = hidden_deal_names(db, who)
+    acl_hidden = acl_hidden_doc_ids(db, who)  # the same test _own_doc applies, so a listed name always opens
     return [{"id": d.id, "filename": d.filename, "n_pages": d.n_pages, "deal": d.deal}
-            for d in db.query(Document).filter_by(tenant_id=who.tenant).all() if doc_visible(d, who, hidden)]
+            for d in db.query(Document).filter_by(tenant_id=who.tenant).all()
+            if doc_visible(d, who, hidden) and d.id not in acl_hidden]
 
 
 class FactIn(BaseModel):
