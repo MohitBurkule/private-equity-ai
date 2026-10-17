@@ -42,7 +42,23 @@ class OneDriveSharePoint(Connector):
                         stack.append((f"{G}/{drive}/items/{e['id']}/children", f"{prefix}{e['name']}/"))
                     elif "file" in e and n < limit:
                         data = self.http(f"{G}/{drive}/items/{e['id']}/content", {"Authorization": f"Bearer {self.token}"})
+                        perms = self._get_json(f"{G}/{drive}/items/{e['id']}/permissions").get("value", [])
                         yield Item(e["id"], f"{prefix}{e['name']}", data, e.get("webUrl", ""),
-                                   e.get("eTag") or e.get("lastModifiedDateTime", ""))
+                                   e.get("eTag") or e.get("lastModifiedDateTime", ""), acl=_grantees(perms))
                         n += 1
                 url = page.get("@odata.nextLink", "")
+
+
+def _grantees(perms: list) -> tuple[str, ...]:
+    """Emails of the people a SharePoint item's permissions name. Group grants and sharing links carry no person
+    email, so they are left out: a document is then visible only to the named people. That fails closed."""
+    emails = []
+    for perm in perms:
+        grants = [perm.get("grantedToV2"), perm.get("grantedTo"), *perm.get("grantedToIdentitiesV2", []),
+                  *perm.get("grantedToIdentities", [])]
+        for grant in grants:
+            user = (grant or {}).get("user") or {}
+            email = user.get("email") or user.get("userPrincipalName")
+            if email:
+                emails.append(email)
+    return tuple(emails)

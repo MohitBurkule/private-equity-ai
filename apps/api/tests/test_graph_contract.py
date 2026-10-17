@@ -50,10 +50,14 @@ def test_sharepoint_site_drive_and_folder_path():
         f"{G}/{site}/items/d1/children": {"value": [{"id": "f2", "name": "lbo.xlsx", "file": {}, "webUrl": "https://sp/lbo", "eTag": "e2"}]},
         f"{G}/{site}/items/f1/content": b"%PDF",
         f"{G}/{site}/items/f2/content": b"xlsx",
+        f"{G}/{site}/items/f1/permissions": {"value": [
+            {"grantedToV2": {"user": {"email": "Ana@Firm.test"}}}, {"grantedToV2": {"group": {"displayName": "IC"}}}]},
+        f"{G}/{site}/items/f2/permissions": {"value": []},
     })
     items = list(OneDriveSharePoint("tok", http, drive=site, folder="Deals/Atlas").items())
     assert [(i.name, i.url, i.version) for i in items] == [
         ("CIM.pdf", "https://sp/cim", "e1"), ("Models/lbo.xlsx", "https://sp/lbo", "e2")]
+    assert [i.acl for i in items] == [("Ana@Firm.test",), ()]  # a group grant names no person, so it is not listed
 
 
 def test_bad_graph_response_is_a_connector_error():

@@ -48,18 +48,19 @@ def principal_for_key(db: Session, key: str) -> Principal | None:
     if row is None or row.revoked:
         return None
     return Principal(row.tenant_id, row.role, parse_deals(row.deals), key_id(row.key_hash),
-                     parse_deal_roles(row.deal_roles))
+                     parse_deal_roles(row.deal_roles), identity=row.identity)
 
 
 def add_key(db: Session, tenant_id: str, role: str = "analyst",
-            deals: list[str] | None = None, deal_roles: dict[str, str] | None = None) -> tuple[str, str]:
+            deals: list[str] | None = None, deal_roles: dict[str, str] | None = None,
+            identity: str | None = None) -> tuple[str, str]:
     """Additional key for rotation: issue the new one, switch clients, then revoke the old one."""
     key = "pe_" + secrets.token_urlsafe(32)
     h = hash_key(key)
     if role not in ROLES:
         raise ValueError(f"role must be one of {ROLES}")
     db.add(ApiKey(key_hash=h, tenant_id=tenant_id, role=role, deals=format_deals(deals),
-                  deal_roles=format_deal_roles(deal_roles, deals)))
+                  deal_roles=format_deal_roles(deal_roles, deals), identity=identity.lower() if identity else None))
     db.commit()
     return key_id(h), key
 

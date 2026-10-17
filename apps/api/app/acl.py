@@ -11,11 +11,12 @@ Enforced in the application layer; Postgres RLS remains tenant-level (documented
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from app.models import Deal, Document, Fact
+from app.models import Deal, Document, DocumentSource, Fact
 
 # Why these roles: the associate/VP/partner split decides who may change a deal, and compliance must be
 # able to hold and purge deals without being able to edit analysis. "analyst" is the legacy name for
@@ -41,6 +42,7 @@ class Principal:
     key_id: str = ""
     # (deal, role) pairs that replace the key role on that one deal, e.g. a viewer key that is partner on Atlas.
     deal_roles: tuple[tuple[str, str], ...] = ()
+    identity: str | None = None  # the person's external id, matched against a synced source's access list
 
     def role_on(self, deal: str | None) -> str:
         for d, r in self.deal_roles:
@@ -98,7 +100,29 @@ def format_deal_roles(deal_roles: dict[str, str] | None, deals: list[str] | None
 
 
 def visible_doc_ids(db: Session, p: Principal) -> set[str] | None:
-    """None means unrestricted. Otherwise the set of document ids this principal may see."""
+    """None means unrestricted. Otherwise the set of document ids this principal may see: the deal wall, minus the
+    documents whose source access list does not name this principal."""
+    scope = _deal_visible_doc_ids(db, p)
+    hidden = acl_hidden_doc_ids(db, p)
+    if not hidden:
+        return scope
+    if scope is None:
+        scope = {i for (i,) in db.query(Document.id).filter(Document.tenant_id == p.tenant)}
+    return scope - hidden
+
+
+def acl_hidden_doc_ids(db: Session, p: Principal) -> set[str]:
+    """Documents a synced source restricts to named people that this principal is not on. A principal without an
+    identity is on none of them, so restricted documents fail closed. A document with several sources is hidden when
+    any one of them denies it."""
+    hidden: set[str] = set()
+    for src in db.query(DocumentSource).filter(DocumentSource.tenant_id == p.tenant, DocumentSource.acl.isnot(None)):
+        if p.identity is None or p.identity.lower() not in json.loads(src.acl):
+            hidden.add(src.document_id)
+    return hidden
+
+
+def _deal_visible_doc_ids(db: Session, p: Principal) -> set[str] | None:
     if p.deals is None:
         hidden = hidden_deal_names(db, p)
         if not hidden:

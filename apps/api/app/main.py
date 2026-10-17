@@ -71,6 +71,7 @@ from app import targets as tg_mod
 from app import workflows as wf_mod
 from app.acl import (
     Principal,
+    acl_hidden_doc_ids,
     deal_hidden,
     deal_scope,
     doc_visible,
@@ -290,6 +291,7 @@ class KeyIn(BaseModel):
     role: str = "analyst"
     deals: list[str] | None = None  # None = unrestricted; [] = sees nothing
     deal_roles: dict[str, str] | None = None  # per-deal role overrides, e.g. {"atlas": "partner"}
+    identity: str | None = Field(default=None, max_length=256)  # the person's external id, e.g. their email
 
 
 @app.post("/admin/tenants/{tenant_id}/keys", status_code=201)
@@ -300,7 +302,7 @@ def admin_add_key(tenant_id: str, db: Db, body: KeyIn | None = None, x_admin_tok
         raise HTTPException(404, "tenant not found")
     body = body or KeyIn()
     try:
-        kid, key = add_key(db, tenant_id, body.role, body.deals, body.deal_roles)
+        kid, key = add_key(db, tenant_id, body.role, body.deals, body.deal_roles, body.identity)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     return {"key_id": kid, "role": body.role, "deals": body.deals, "deal_roles": body.deal_roles, "api_key": key,
@@ -401,7 +403,8 @@ def admin_requeue(x_admin_token: Annotated[str | None, Header()] = None):
 
 def _own_doc(db: Session, who: Principal, doc_id: str) -> Document:
     doc = db.get(Document, doc_id)
-    if not doc_visible(doc, who, hidden_deal_names(db, who)):  # same 404 for "missing", "other tenant", "behind a wall"
+    if not doc_visible(doc, who, hidden_deal_names(db, who)) or doc_id in acl_hidden_doc_ids(db, who):
+        # same 404 for "missing", "other tenant", "behind a wall", "not on the source's access list"
         raise HTTPException(404, "document not found")
     if doc.deal and doc.deal in visible_mnpi_deal_names(db, who):
         log_event(db, who.tenant, actor(who), "document.mnpi_access", {"doc_id": doc.id, "deal": doc.deal})

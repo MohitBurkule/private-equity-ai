@@ -75,6 +75,7 @@ def test_graph_drive_recurses_and_preserves_path(monkeypatch):
         f"{G}/root/children": {"value": [{"id": "f1", "name": "Legal", "folder": {}}]},
         f"{G}/items/f1/children": {"value": [{"id": "d1", "name": "note.eml", "file": {}, "webUrl": "https://sp/x", "eTag": "e1"}]},
         f"{G}/items/d1/content": xl,
+        f"{G}/items/d1/permissions": {"value": []},
     }
     monkeypatch.setattr(m, "CONNECTOR_HTTP", fake(routes))
     h = new_tenant(c, "sp")
