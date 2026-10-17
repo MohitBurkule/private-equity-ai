@@ -1,4 +1,5 @@
 import io
+from datetime import date
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -51,6 +52,15 @@ def test_comps_endpoint_cited_and_abstains():
     assert out["peers"][0]["facts"]["enterprise_value"]
     body["peers"] = ["P1", "P2", "T"]  # 2 peers: no range
     assert c.post("/calc/comps", json=body, headers=h).json()["implied"][0]["mid"] is None
+
+
+def test_as_of_older_than_a_week_is_stale_and_undated_is_not_flagged():
+    from app.comps import is_stale_as_of
+    today = date(2026, 10, 17)
+    assert not is_stale_as_of("2026-10-16", today)
+    assert not is_stale_as_of(None, today)
+    assert is_stale_as_of("2026-10-01", today)
+    assert is_stale_as_of("not-a-date", today)
 
 
 def test_comps_peer_cells_carry_source_and_flag_stale_periods():
