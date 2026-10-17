@@ -30,6 +30,7 @@ from app import (
     opendata_tools,  # noqa: F401  (registers open-data agent tools)
 )
 from app import outreach as outreach_mod
+from app import seen_before as seen_mod
 from app import targets as tg_mod
 from app import workflows as wf_mod
 from app.acl import Principal, doc_visible, fact_visible, visible_doc_ids
@@ -1310,6 +1311,14 @@ def targets_facets(db: Db, who: Who):
     out["total"] = db.query(Target).filter_by(tenant_id=who.tenant).count()
     out["revenue_unknown"] = db.query(Target).filter(Target.tenant_id == who.tenant, Target.revenue.is_(None)).count()
     return out
+
+
+@app.get("/seen-before")
+def seen_before(q: str, db: Db, who: Who):
+    """Have we seen this company or deal before? Searches targets, portfolio companies and deals you can see."""
+    if len(q.strip()) < 2:
+        raise HTTPException(422, "query must be at least 2 characters")
+    return seen_mod.lookup(db, who.tenant, q, None if who.deals is None else set(who.deals))
 
 
 @app.get("/targets/benchmark")
