@@ -321,6 +321,19 @@ class Target(Base):
     web_checked_at: Mapped[str | None] = mapped_column(String(40), default=None)
 
 
+class DigestPref(Base):
+    """One signed-in person's alert digest: where it goes, the least severe alert it includes, and the last alert sent.
+    Keyed on the OIDC subject, so a person's preference follows their account, not a shared key."""
+    __tablename__ = "digest_pref"
+    __table_args__ = (UniqueConstraint("tenant_id", "subject"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    subject: Mapped[str] = mapped_column(String(128))
+    email: Mapped[str] = mapped_column(String(256))
+    min_severity: Mapped[str] = mapped_column(String(16), default="info")
+    last_alert_id: Mapped[int] = mapped_column(default=0)
+
+
 class Alert(Base):
     """An inbox item written by a watcher. dedupe_key makes repeated scans idempotent."""
     __tablename__ = "alert"

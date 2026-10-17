@@ -7,7 +7,7 @@ from datetime import date as DateT
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import (
     Depends,
@@ -117,6 +117,7 @@ from app.models import (
     DDRequest,
     Deal,
     DealChecklistItem,
+    DigestPref,
     Document,
     DocumentFile,
     DocumentSource,
@@ -2688,6 +2689,49 @@ def alerts_status(alert_id: int, body: AlertStatusIn, db: Db, who: Writer):
 
 class DigestIn(BaseModel):
     to: list[str]
+
+
+class DigestPrefBody(BaseModel):
+    email: str = Field(min_length=3, max_length=256)
+    min_severity: Literal["critical", "warning", "info"] = "info"
+
+
+def _signed_in_subject(who: Principal) -> str:
+    # OIDC tokens carry the account's subject as key_id ("oidc:<sub>"); API keys have no person behind them.
+    if not who.key_id.startswith("oidc:"):
+        raise HTTPException(403, "digest preferences belong to a signed-in person; sign in with SSO")
+    return who.key_id[len("oidc:"):]
+
+
+@app.put("/me/digest")
+def put_my_digest(body: DigestPrefBody, db: Db, who: Who):
+    """Set this person's alert digest: where it goes and the least severe alert it includes."""
+    subject = _signed_in_subject(who)
+    row = db.query(DigestPref).filter_by(tenant_id=who.tenant, subject=subject).one_or_none()
+    if row is None:
+        row = DigestPref(tenant_id=who.tenant, subject=subject, last_alert_id=0)
+        db.add(row)
+    row.email, row.min_severity = body.email, body.min_severity
+    db.commit()
+    return {"email": row.email, "min_severity": row.min_severity}
+
+
+@app.post("/me/digest/send")
+def send_my_digest(db: Db, who: Who):
+    """Email this person the new alerts at their severity or above. Only their own watermark moves."""
+    subject = _signed_in_subject(who)
+    if who.restricted:
+        raise HTTPException(403, "alerts cover the whole tenant; use an unrestricted sign-in")
+    row = db.query(DigestPref).filter_by(tenant_id=who.tenant, subject=subject).one_or_none()
+    if row is None:
+        raise HTTPException(404, "set your digest first with PUT /me/digest")
+    try:
+        n = notify.send_personal_digest(db, who.tenant, row)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except notify.MailNotConfigured as e:
+        raise HTTPException(503, str(e)) from e
+    return {"sent": n}
 
 
 @app.post("/alerts/digest")
