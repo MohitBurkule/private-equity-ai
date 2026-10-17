@@ -112,3 +112,12 @@ def _tenant_with_endpoint(name: str):
     with SessionLocal() as db:
         tid = db.get(WebhookEndpoint, r.json()["id"]).tenant_id
     return h, tid, r.json()["secret"]
+
+
+def test_background_delivery_applies_the_same_walls():
+    _, tid, _ = _tenant_with_endpoint("hook-bg")
+    sent = []
+    fut = webhooks.enqueue(SessionLocal, tid, "document.moved", ["d1"], None, "NoSuchDeal", pii=False,
+                           post=lambda u, b, hd: sent.append(u) or 204)
+    assert set(fut.result(timeout=10).values()) == {"withheld"}
+    assert sent == []

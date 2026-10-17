@@ -55,6 +55,17 @@ def _layout_text(db: Session, document_id: str, page: int) -> str | None:
         return engines.run("pdftotext_layout", path, [page])[0].text
 
 
+def _reject_unit_mix(db: Session, tenant_id: str, entity: str, metric: str, period: str, basis: str, unit: str) -> None:
+    """One metric, entity, period and basis must carry one unit. A second unit (say $000 beside $m, or GBP beside
+    USD) would let ratios and bridges mix scales silently, so the write is refused and the reviewer decides."""
+    other = (db.query(Fact.unit)
+             .filter(Fact.tenant_id == tenant_id, Fact.entity == entity, Fact.metric == metric,
+                     Fact.period == period, Fact.basis == basis, Fact.unit != unit)
+             .first())
+    if other is not None:
+        raise CitationError(f"unit {unit} conflicts with existing {other[0]} for {metric} {period}")
+
+
 def add_verified_fact(
     db: Session, *, tenant_id: str, entity: str, metric: str, period: str, value: Decimal, unit: str,
     document_id: str, page: int, quote: str, scale: Decimal = Decimal(1), basis: str = "GAAP",
@@ -75,6 +86,7 @@ def add_verified_fact(
         layout_only = True
     if not verify_number(value, quote, scale, outflow=is_outflow(metric)):
         raise CitationError("value does not match any number in the quote")
+    _reject_unit_mix(db, tenant_id, entity, metric, period, basis, unit)
     fact = Fact(tenant_id=tenant_id, entity=entity, metric=metric, period=period, value=value, unit=unit,
                 basis=basis, as_of=as_of,
                 status="ocr_unverified" if row.method == "ocr" or layout_only else "verified")
