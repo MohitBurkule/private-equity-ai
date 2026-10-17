@@ -82,7 +82,7 @@ def slack_call(fields: dict, headers: dict):
 
 
 def test_signed_slack_question_gets_cited_ephemeral_answer(world, monkeypatch):
-    monkeypatch.setattr(app_main, "get_llm", lambda: Cites(world["open_doc"], "Sheet!A1: alpha revenue\nSheet!B1: 1,234"))
+    monkeypatch.setattr(app_main, "get_llm", lambda *_: Cites(world["open_doc"], "Sheet!A1: alpha revenue\nSheet!B1: 1,234"))
     body = urlencode({"text": "what was alpha revenue?", "user_id": "U_ANALYST"}).encode()
     r = c.post("/chat/slack/inbound", content=body, headers=slack_headers(body))
     assert r.status_code == 200, r.text
@@ -92,7 +92,7 @@ def test_signed_slack_question_gets_cited_ephemeral_answer(world, monkeypatch):
 
 
 def test_unlinked_chat_user_gets_no_answer(world, monkeypatch):
-    monkeypatch.setattr(app_main, "get_llm", lambda: Cites(world["open_doc"], "Sheet!A1: alpha revenue\nSheet!B1: 1,234"))
+    monkeypatch.setattr(app_main, "get_llm", lambda *_: Cites(world["open_doc"], "Sheet!A1: alpha revenue\nSheet!B1: 1,234"))
     body = urlencode({"text": "alpha revenue 1234?", "user_id": "U_STRANGER"}).encode()
     out = c.post("/chat/slack/inbound", content=body, headers=slack_headers(body)).json()
     assert "not linked" in out["text"] and "Alpha revenue" not in out["text"]
@@ -107,14 +107,14 @@ def test_bad_or_stale_slack_signature_is_refused(world):
 
 def test_each_person_runs_with_their_own_scope(world, monkeypatch):
     link(world["tenant"], "slack:U_SCOPED", deals=["Alpha"])
-    monkeypatch.setattr(app_main, "get_llm", lambda: Cites(world["secret_doc"], "Sheet!A1: alpha revenue\nSheet!B1: 1,234"))
+    monkeypatch.setattr(app_main, "get_llm", lambda *_: Cites(world["secret_doc"], "Sheet!A1: alpha revenue\nSheet!B1: 1,234"))
     body = urlencode({"text": "alpha revenue 1234?", "user_id": "U_SCOPED"}).encode()
     out = c.post("/chat/slack/inbound", content=body, headers=slack_headers(body)).json()
     assert "Alpha revenue" not in out["text"]
 
 
 def test_shared_identity_is_not_linked(world, monkeypatch):
-    monkeypatch.setattr(app_main, "get_llm", lambda: Cites(world["open_doc"], "Sheet!A1: alpha revenue\nSheet!B1: 1,234"))
+    monkeypatch.setattr(app_main, "get_llm", lambda *_: Cites(world["open_doc"], "Sheet!A1: alpha revenue\nSheet!B1: 1,234"))
     link(world["tenant"], "slack:U_ANALYST")  # same identity on a second key: ambiguous, so refused
     body = urlencode({"text": "alpha revenue 1234?", "user_id": "U_ANALYST"}).encode()
     out = c.post("/chat/slack/inbound", content=body, headers=slack_headers(body)).json()
@@ -123,7 +123,7 @@ def test_shared_identity_is_not_linked(world, monkeypatch):
 
 def test_teams_mention_is_stripped_and_answer_is_a_message(world, monkeypatch):
     link(world["tenant"], "teams:aad-analyst")
-    monkeypatch.setattr(app_main, "get_llm", lambda: Cites(world["open_doc"], "Sheet!A1: alpha revenue\nSheet!B1: 1,234"))
+    monkeypatch.setattr(app_main, "get_llm", lambda *_: Cites(world["open_doc"], "Sheet!A1: alpha revenue\nSheet!B1: 1,234"))
     body = json.dumps({"text": "<at>PE Bot</at> what was alpha revenue?",
                        "from": {"id": "29:x", "aadObjectId": "aad-analyst"}}).encode()
     r = c.post("/chat/teams/inbound", content=body, headers=teams_headers(body))
