@@ -255,6 +255,24 @@ class DocumentSource(Base):
     external_id: Mapped[str] = mapped_column(String(512))
     version: Mapped[str] = mapped_column(String(128))
     url: Mapped[str] = mapped_column(Text)
+    sync_run_id: Mapped[int | None] = mapped_column(ForeignKey("sync_run.id"), default=None, index=True)
+
+
+class SyncRun(Base):
+    """One connector sync: which connection (or manual call) pulled what, when, and how it ended."""
+    __tablename__ = "sync_run"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    connector: Mapped[str] = mapped_column(String(32))
+    connection_id: Mapped[int | None] = mapped_column(default=None)  # None for a manual sync call
+    deal: Mapped[str | None] = mapped_column(String(128), default=None, index=True)
+    started_at: Mapped[str] = mapped_column(String(40))
+    finished_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    status: Mapped[str] = mapped_column(String(16), default="running")  # running, ok, error
+    ingested: Mapped[int] = mapped_column(default=0)
+    unchanged: Mapped[int] = mapped_column(default=0)
+    skipped: Mapped[int] = mapped_column(default=0)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
 
 
 class WorkflowSchedule(Base):
