@@ -106,6 +106,7 @@ from app.models import (
     WorkflowSchedule,
 )
 from app.models import Tenant as TenantRow
+from app.oidc import oidc_principal
 from app.parse.sh01 import parse_capital_form
 from app.portfolio import (
     Covenant,
@@ -154,7 +155,9 @@ Db = Annotated[Session, Depends(get_db)]
 def get_principal(db: Db, authorization: Annotated[str | None, Header()] = None) -> Principal:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(401, "missing bearer token")
-    p = principal_for_key(db, authorization[7:].strip())
+    token = authorization[7:].strip()
+    # A JWT has two dots; anything else is an API key. Keys keep working alongside SSO.
+    p = oidc_principal(db, token) if token.count(".") == 2 else principal_for_key(db, token)
     if p is None:
         raise HTTPException(401, "invalid token")
     if not limiter.allow(p.tenant):
