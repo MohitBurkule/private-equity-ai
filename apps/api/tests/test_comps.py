@@ -75,3 +75,29 @@ def test_comps_docx_has_sources():
     assert r.status_code == 200
     text = "\n".join(p.text for p in Docx(io.BytesIO(r.content)).paragraphs)
     assert "EV/ebitda: 475" in text and f"doc {doc[:8]} p.1" in text
+
+
+def test_comps_pptx_three_slides():
+    import io
+
+    from pptx import Presentation
+    h = new_tenant(c, "comps3")
+    wb = Workbook()
+    rows = [("P1", 1000, 100), ("P2", 1200, 100), ("P3", 900, 100), ("T", 0, 50)]
+    for i, (ent, ev, e) in enumerate(rows, 1):
+        wb.active[f"A{i}"], wb.active[f"B{i}"], wb.active[f"C{i}"] = ent, ev, e
+    b = io.BytesIO()
+    wb.save(b)
+    doc = c.post("/documents", files={"file": ("m.xlsx", b.getvalue(), "x")}, headers=h).json()["id"]
+    for i, (ent, ev, e) in enumerate(rows, 1):
+        for metric, val, col in (("enterprise_value", ev, "B"), ("ebitda", e, "C")):
+            if val:
+                c.post("/facts", headers=h, json={"entity": ent, "metric": metric, "period": "FY24",
+                       "value": str(val), "unit": "USD", "document_id": doc, "page": 1,
+                       "quote": f"Sheet!{col}{i}: {val:,}"})
+    r = c.post("/calc/comps.pptx", headers=h, json={"target": "T", "peers": ["P1", "P2", "P3", "T"],
+                                                   "period": "FY24", "metrics": ["ebitda"]})
+    assert r.status_code == 200
+    prs = Presentation(io.BytesIO(r.content))
+    assert len(prs.slides) == 3
+    assert "EV/ebitda" in "\n".join(sh.text_frame.text for sh in prs.slides[1].placeholders if sh.has_text_frame)
