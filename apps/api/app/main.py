@@ -2038,12 +2038,14 @@ class CompsIn(BaseModel):
 
 
 @app.post("/calc/comps")
-def calc_comps(body: CompsIn, db: Db, who: Who):
+def calc_comps(body: CompsIn, db: Db, who: Who, fetch: Annotated[Callable, Depends(get_market_fetch)]):
     """Trading comps (or precedents: peers are deal entities with enterprise_value facts) and implied range."""
     if len(body.peers) > 200 or len(body.metrics) > 10:
         raise HTTPException(422, "too many peers or metrics")
+    from app.macrodata import EcbFxProvider, fx_rate
+    fx = (lambda frm, to: fx_rate(EcbFxProvider(fetch), frm, to)) if fetch is not None else None
     return comps_mod.run(db, who.tenant, body.target, body.peers, body.period, body.metrics,
-                         visible_doc_ids(db, who), body.target_period, body.ev_period)
+                         visible_doc_ids(db, who), body.target_period, body.ev_period, fx)
 
 
 @app.post("/calc/comps.docx")
