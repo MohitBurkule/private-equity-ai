@@ -5,6 +5,7 @@ questions on the PDFs in DATA_DIR/sec. Scored by code: the verification gate alr
 unsupported quotes/numbers, so "wrong" means a verified-but-incorrect answer; "abstain" means not_found.
 Usage: python evals/run_llm_eval.py [DATA_DIR] [--n 20]
 """
+import hashlib
 import json
 import re
 import sys
@@ -38,12 +39,16 @@ EXTRACT = {"debt.principal": 250.0, "debt.margin_pct": 4.25, "debt.maturity_year
            "debt.max_net_leverage_x": 3.5, "customers.top1_pct": 42.0}
 
 
+def _id(name: str) -> str:
+    return hashlib.sha256(name.encode()).hexdigest()
+
+
 def _db(pages: dict[str, str]) -> Session:
     e = make_engine("sqlite:///:memory:")
     Base.metadata.create_all(e)
     s = Session(e)
     for name, text in pages.items():
-        d = Document(id=name.ljust(64, "0"), tenant_id="t", sha256=name, filename=name, n_pages=1)
+        d = Document(id=_id(name), tenant_id="t", sha256=name, filename=name, n_pages=1)
         d.pages = [PageRow(number=1, text=text)]
         s.add(d)
     s.commit()
@@ -66,7 +71,7 @@ def run_ask(llm) -> dict:
 
 def run_extract(llm) -> dict:
     db = _db({"facility": FACILITY})
-    doc = db.get(Document, "facility".ljust(64, "0"))
+    doc = db.get(Document, _id("facility"))
     res = extract_schema(db, "t", llm, doc, "debt", "Acme", "2026")
     res2 = extract_schema(db, "t", llm, doc, "customer_concentration", "Acme", "2026")
     got = {r.metric: r for r in res.results + res2.results}
@@ -95,7 +100,7 @@ def run_financebench(llm, data: Path, n: int) -> dict:
     ids = {}
     for name in docs:
         pgs = extract_pages(have[name])
-        d = Document(id=name.ljust(64, "0")[:64], tenant_id="t", sha256=name, filename=name, n_pages=len(pgs))
+        d = Document(id=_id(name), tenant_id="t", sha256=name, filename=name, n_pages=len(pgs))
         d.pages = [PageRow(number=p.number, text=p.text) for p in pgs]
         db.add(d)
         ids[name] = d.id
@@ -123,4 +128,4 @@ if __name__ == "__main__":
     if args:
         out.append(run_financebench(llm, Path(args[0]), n))
     print(json.dumps(out, indent=1, default=str))
-    sys.exit(0)  # report-only: a 1.5B model is not expected to be perfect; the numbers are the output
+    sys.exit(0 if all(o.get("ok") == o.get("total") for o in out[:2]) else 1)
