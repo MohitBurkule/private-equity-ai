@@ -49,7 +49,7 @@ Misses and the cause in each case:
 ### Reader false-finding sample
 Reader (local gemma 9B) run on the held-out terms the rules did not find, on the gold-null cases. A false finding is a reader value on an exhibit labelled null. Run on CPU is slow (minutes per call), so the sample is small: see the result line below.
 
-**Result:** 2 exhibits finished (1364885 Spirit, 1599489 Veritiv): 0 false findings out of 3 reader calls (2 asked on fee, 2 on non-solicit terms; 1 on the Spirit fee term was asked for non-solicit only). The third exhibit did not finish before the run was stopped, so the false-finding rate is unmeasured beyond these 2. Reader recall on the held-out misses is also not measured; the rules already catch 19 of 20 governing-law and 17 of 19 escrow positives.
+**Result:** 2 exhibits finished (1364885 Spirit, 1599489 Veritiv): 0 false findings out of 3 reader calls (Spirit: non-solicit only, since the rules had found its fee; Veritiv: fee and non-solicit). The third exhibit did not finish before the run was stopped, so the false-finding rate is unmeasured beyond these 2. Reader recall on the held-out misses is also not measured; the rules already catch 19 of 20 governing-law and 17 of 19 escrow positives.
 
 ## Current status (both sets)
 - Rules precision is 1.00 on the tuning set and 0.80 to 1.00 on the held-out set. The tuning set (28) is optimistic: its misses were fixed on it. The held-out set is the honest estimate, and it is still small.
