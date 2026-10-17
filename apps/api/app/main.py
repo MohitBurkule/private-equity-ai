@@ -372,6 +372,25 @@ def admin_list_keys(tenant_id: str, db: Db, x_admin_token: Annotated[str | None,
     return {"keys": list_keys(db, tenant_id)}
 
 
+@app.get("/admin/tenants/{tenant_id}/document-access")
+def admin_document_access(tenant_id: str, db: Db, x_admin_token: Annotated[str | None, Header()] = None):
+    """Synced documents whose source names who may read them, from the source's access list. Admin only: the
+    list names people and groups, so it stays off the key-scoped screens. Documents without an access list are
+    open to every key in the tenant and are not listed."""
+    if not admin_token_ok(x_admin_token):
+        raise HTTPException(403, "admin token required")
+    if db.get(TenantRow, tenant_id) is None:
+        raise HTTPException(404, "tenant not found")
+    bind_tenant(db, tenant_id)  # no key here, so RLS would hide the tenant's rows unless bound to it
+    rows = (db.query(DocumentSource, Document)
+            .join(Document, Document.id == DocumentSource.document_id)
+            .filter(DocumentSource.tenant_id == tenant_id, DocumentSource.acl.isnot(None))
+            .order_by(Document.filename).all())
+    docs = [{"document_id": d.id, "filename": d.filename, "deal": d.deal, "connector": src.connector,
+             "grants": json.loads(src.acl)} for src, d in rows]
+    return {"documents": docs, "restricted": len(docs)}
+
+
 @app.delete("/admin/keys/{kid}")
 def admin_revoke_key(kid: str, db: Db, x_admin_token: Annotated[str | None, Header()] = None):
     if not admin_token_ok(x_admin_token):

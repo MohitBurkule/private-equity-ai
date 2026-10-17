@@ -271,6 +271,9 @@ export const api2 = {
   // A plain link would not send the key, so the research deck is fetched with it and saved from a blob.
   researchPptxBlob: (targetId: number) => fetch(`/api/targets/${targetId}/research.pptx`, { headers: auth() })
     .then((r) => { if (!r.ok) throw new Error(`research deck: ${r.status}`); return r.blob(); }),
+  documentAccess: (tenantId: string, adminToken: string) => fetch(`/api/admin/tenants/${encodeURIComponent(tenantId)}/document-access`, {
+    headers: { "X-Admin-Token": adminToken },
+  }).then((r) => j<DocumentAccess>(r)),
   emailAttach: (docId: string, deal: string) => call<{ document_id: string; deal: string }>(`/email/review/${encodeURIComponent(docId)}/attach`, "POST", { deal }),
 };
 
@@ -284,5 +287,8 @@ export interface PeerSet { id: number; deal: string; name: string; target_id: nu
 
 export interface PersonRow { id: number; name: string; organisation: string | null; title: string | null; expertise: string[]; deal: string | null; recorded_at: string }
 export interface PersonIn { name: string; organisation?: string; title?: string; expertise?: string[]; deal?: string }
+
+export interface DocumentAccessRow { document_id: string; filename: string; deal: string | null; connector: string; grants: string[] }
+export interface DocumentAccess { documents: DocumentAccessRow[]; restricted: number }
 
 export const STAGES = ["sourcing", "screening", "dd", "ic", "signed", "closed", "passed"];
