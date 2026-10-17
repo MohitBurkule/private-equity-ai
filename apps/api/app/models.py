@@ -464,3 +464,12 @@ class LboRun(Base):
     created_at: Mapped[str] = mapped_column(String(40), default="")
     request: Mapped[str] = mapped_column(Text)  # JSON: the /lbo/returns body
     result: Mapped[str] = mapped_column(Text)  # JSON: the /lbo/returns response at save time
+
+
+class RateWindow(Base):
+    """Requests counted per tenant per minute, for the replica-shared rate limit. Rows are throwaway."""
+    __tablename__ = "rate_window"
+    tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    minute: Mapped[int] = mapped_column(Integer, primary_key=True)
+    n: Mapped[int] = mapped_column(Integer, default=0)
+

@@ -7,6 +7,8 @@ import os
 import threading
 import time
 
+from sqlalchemy import text
+
 
 class RateLimiter:
     def __init__(self, per_minute: int):
@@ -52,12 +54,37 @@ class RedisRateLimiter:
             return self.fallback.allow(key)
 
 
-def make_limiter(per_minute: int, redis_url: str | None):
+class PostgresRateLimiter:
+    """Fixed window of one minute per tenant, counted in the database, so every API replica shares it without
+    Redis. Each count runs in its own transaction with the tenant set, so row-level security applies to it.
+    Same burst caveat as the Redis limiter: up to 2x the limit at a window edge."""
+
+    def __init__(self, per_minute: int, engine):
+        self.cap = per_minute
+        self.engine = engine
+
+    def allow(self, key: str, now: float | None = None) -> bool:
+        if self.cap <= 0:
+            return True
+        minute = int((time.time() if now is None else now) // 60)
+        with self.engine.begin() as conn:
+            if conn.dialect.name == "postgresql":
+                conn.execute(text("select set_config('app.tenant_id', :t, true)"), {"t": key})
+            n = conn.execute(text(
+                "INSERT INTO rate_window (tenant_id, minute, n) VALUES (:t, :m, 1) "
+                "ON CONFLICT (tenant_id, minute) DO UPDATE SET n = rate_window.n + 1 RETURNING n"),
+                {"t": key, "m": minute}).scalar_one()
+        return n <= self.cap
+
+
+def make_limiter(per_minute: int, redis_url: str | None, engine=None):
+    """Per-process bucket by default. RATE_LIMIT_BACKEND=postgres shares the count through the database;
+    REDIS_URL shares it through Redis (the project runs PostgreSQL only, so prefer the database)."""
+    backend = os.environ.get("RATE_LIMIT_BACKEND", "")
+    if backend == "postgres" and engine is not None:
+        return PostgresRateLimiter(per_minute, engine)
     if not redis_url:
         return RateLimiter(per_minute)
     import redis
     return RedisRateLimiter(per_minute, redis.Redis.from_url(redis_url, socket_timeout=0.25,
                                                              socket_connect_timeout=0.25))
-
-
-limiter = make_limiter(int(os.environ.get("RATE_LIMIT_PER_MIN", "600")), os.environ.get("REDIS_URL"))

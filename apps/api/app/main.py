@@ -155,7 +155,7 @@ from app.portfolio import (
     qoq_change,
     record_observation,
 )
-from app.ratelimit import limiter
+from app.ratelimit import make_limiter
 from app.report import build_report, build_report_docx
 from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
 from app.shareledger import Event as LedgerEvent
@@ -167,6 +167,7 @@ from app.waterfall import PrefClass, waterfall
 from app.xbrl import candidates, crosscheck, load_companyfacts
 
 engine = make_engine()
+limiter = make_limiter(int(os.environ.get("RATE_LIMIT_PER_MIN", "600")), os.environ.get("REDIS_URL"), engine)
 SessionLocal = make_session_factory(engine)
 install_tenant_hook(SessionLocal)
 # Schema + RLS run as the owner role (MIGRATE_DATABASE_URL); requests run as the app role.

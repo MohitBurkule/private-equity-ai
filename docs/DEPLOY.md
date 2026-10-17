@@ -8,6 +8,7 @@ This covers what to change from the sample `docker-compose.yml` before real data
 2. **Two database roles.** The API runs as `pe_app` (bound by row-level security). Migrations run as `pe_owner` via `MIGRATE_DATABASE_URL`. Never point `DATABASE_URL` at a superuser: that would bypass tenant isolation.
 3. **TLS.** The compose file serves plain HTTP. Put a reverse proxy (Caddy, nginx, a cloud load balancer) in front, terminate TLS there, and publish only 443. Do not expose ports 8000, 5432 or 6379.
 4. **Redis.** Set `REDIS_URL` when running more than one API replica, otherwise each replica keeps its own rate-limit bucket. If Redis is down the API falls back to a per-replica limit rather than failing.
+5. **Rate limit across replicas.** The default limit is per process. With more than one API replica, set `RATE_LIMIT_BACKEND=postgres` so the count is shared through the database (migration 0041 creates `rate_window`).
 5. **Spool volume.** `SPOOL_DIR` must be a volume shared by all replicas that run background ingest, and included in backups until jobs finish.
 
 ## Settings
