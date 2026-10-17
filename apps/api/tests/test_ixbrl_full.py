@@ -67,3 +67,21 @@ def test_unsigned_figure_is_positive_and_scale_is_kept():
     (assets,) = figures(tags, "us-gaap:Assets", "@2025-12-31")
     assert assets.negative is False
     assert assets.scale == 3
+
+
+def test_real_filing_loss_is_negative():
+    # Hertz FY2025 10-K row: "Net income (loss) $ ( 747 )". The digits are printed in parentheses and
+    # the tag carries sign="-"; reading the digits alone would turn the loss into a profit.
+    from pathlib import Path
+
+    from app.ixbrl import _to_fact
+
+    html = (Path(__file__).parent / "fixtures" / "hertz_2025_net_loss_row.htm").read_text()
+    _, tags = read_filing(html)
+    (loss,) = figures(tags, "us-gaap:NetIncomeLoss", "2025-01-01/2025-12-31")
+    assert loss.negative is True
+    assert loss.text == "747"
+    assert loss.scale == 6
+    # The UK account reader must agree on the same tag: same sign, same scale.
+    tag_attrs = {"name": "us-gaap:NetIncomeLoss", "sign": "-", "scale": "6", "contextref": "c-1"}
+    assert _to_fact(tag_attrs, "747").value == -747_000_000
