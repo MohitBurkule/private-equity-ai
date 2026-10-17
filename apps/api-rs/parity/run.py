@@ -61,6 +61,28 @@ def seed(conn):
                 " VALUES (%s, %s, %s, %s, 'detail', %s, '[1]', 'new', %s)",
                 (tenant_id, kind, severity, title, f"{kind}:{title}", created),
             )
+        for deal, category, title, status in [
+            ("Other", "Financials", "Audited FY24", "open"),
+            ("Other", "Financials", "Tax returns", "received"),
+            ("Other", "Legal", "Charter", "waived"),
+            ("Zeta", "Legal", "Shareholder agreement", "open"),
+        ]:
+            cur.execute(
+                "INSERT INTO dd_request (tenant_id, deal, category, title, status, note, updated_at)"
+                " VALUES (%s, %s, %s, %s, %s, '', '2026-10-17T10:00:00+00:00')",
+                (tenant_id, deal, category, title, status),
+            )
+        cur.execute(
+            "INSERT INTO dd_question (tenant_id, deal, question, status, asked_at)"
+            " VALUES (%s, 'Other', 'Any pending litigation?', 'open', '2026-10-17T10:00:00+00:00')",
+            (tenant_id,),
+        )
+        cur.execute(
+            "INSERT INTO dd_question (tenant_id, deal, question, status, answer, asked_at, answered_at)"
+            " VALUES (%s, 'Zeta', 'Who signs?', 'answered', 'The CFO', '2026-10-17T10:00:00+00:00',"
+            " '2026-10-17T11:00:00+00:00')",
+            (tenant_id,),
+        )
     for name, body in [
         ("scoped_other", {"role": "analyst", "deals": ["Other"]}),
         ("zeta", {"role": "analyst", "deals": ["Zeta"]}),
@@ -104,6 +126,10 @@ def main():
             ("/memo/templates", None),
         ]
         for name in ["admin", "scoped_other", "zeta", "analyst"]:
+            for path in ["/dd/requests", "/dd/requests?deal=Other", "/dd/requests?status=open",
+                         "/dd/questions", "/dd/questions?deal=Zeta", "/dd/summary?deal=Other",
+                         "/dd/summary?deal=Zeta", "/dd/summary?deal=Nope"]:
+                requests.append((path, name))
             for path in ["/alerts", "/alerts?status=new", "/alerts/brief?since=2026-10-16T00:00:00%2B00:00",
                          "/alerts/brief?since=2030-01-01T00:00:00%2B00:00"]:
                 requests.append((path, name))
