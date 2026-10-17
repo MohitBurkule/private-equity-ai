@@ -26,6 +26,7 @@ KEYWORDS = {
     "escrow": ("escrow",),
     "indemnity_cap": ("cap", "indemnif"),
     "basket": ("basket", "deductible"),
+    "termination_fee": ("termination fee",),
 }
 MAX_SENTENCES = 12
 SYSTEM = ("You read one legal document excerpt. Copy one sentence, exactly as written, that states the term named. "
