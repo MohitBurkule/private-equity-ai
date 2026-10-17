@@ -18,6 +18,7 @@ and an e2e test that skips when the service is not running.
 | SFTP data room | Apache MINA SSHD (jar, `tests/mocks/sftp/SftpMock.java`) | wired | `apps/api/app/connectors/sftp.py`, `tests/test_sftp_mina.py`, needs `SSHD_CLASSPATH` |
 | Portfolio-company ledger (trial balance → monthly revenue, net income) | SYNTHETIC ledger API, WireMock 3.9.1 (jar) | wired | `apps/api/app/connectors/accounting.py`, `app/accounting.py`, `tests/test_accounting_flow.py`, `tests/test_accounting_wiremock.py` |
 | Carta cap table (holdings → cited shares and ownership per holder) | SYNTHETIC cap-table API, WireMock 3.9.1 (jar) | wired | `apps/api/app/connectors/carta.py`, `app/captable.py`, `tests/test_carta_flow.py`, `tests/test_carta_wiremock.py` |
+| DocuSign (envelope status → deal stage) | SYNTHETIC envelopes API, WireMock 3.9.1 (jar) | wired | `apps/api/app/connectors/docusign.py`, `app/envelope_stage.py`, `tests/test_docusign_stage.py`, `tests/test_docusign_wiremock.py` |
 | Google Sheets | WireMock 3.9.1 (jar) | wired | `tests/test_gsheets_wiremock.py` (pull through sync, push); `tests/test_gsheets.py` keeps an in-test fake so the flow runs without a jar |
 | Keycloak | not used | skipped | mock-oauth2-server covers OIDC |
 | MinIO | not used | blocked | binary download returned 410 in the build sandbox; S3 tests use moto |

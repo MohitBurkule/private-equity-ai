@@ -87,6 +87,7 @@ from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
 from app.chat_alerts import chat_poster
 from app.connectors import oauth, vault
 from app.connectors.base import ConnectorError, default_http
+from app.connectors.docusign import DocuSign
 from app.connectors.gsheets import GoogleSheets
 from app.connectors.linkedin import LinkedInExport
 from app.connectors.oauth import OAuthError
@@ -97,6 +98,7 @@ from app.db import make_engine, make_session_factory
 from app.dd import STATUSES, TEMPLATE
 from app.edgar import fetch_companyfacts
 from app.email_links import links_for
+from app.envelope_stage import advance
 from app.extract.rows import _ROWS as ROW_SCHEMAS
 from app.extract.rows import extract_rows
 from app.extract.run import extract_schema
@@ -3156,6 +3158,40 @@ def sync_connector(name: str, body: SyncBody, db: Db, who: Writer):
     log_event(db, who.tenant, actor(who), "connector.sync",
               {"connector": name, "deal": body.deal, "ingested": len(out["ingested"])})
     return out
+
+
+@app.post("/connectors/docusign/stage-sync")
+def docusign_stage_sync(body: SyncBody, db: Db, who: Writer):
+    """Move one deal's stage on its completed DocuSign envelopes (subject = the deal name, then a space or the end).
+    Only a deal in this key's scope can be moved, and only forward (app/envelope_stage.py)."""
+    deal = (body.deal or "").strip()
+    if not deal:
+        raise HTTPException(422, "deal is required")
+    _require(who, "write", "move a deal stage from DocuSign", deal=deal)
+    if who.restricted and deal not in who.deals:
+        raise HTTPException(403, "deal is required and must be within this key's scope")
+    d = db.query(Deal).filter_by(tenant_id=who.tenant, name=deal).first()
+    if d is None or deal_hidden(d, who):
+        raise HTTPException(404, "deal not found")
+    try:
+        envelopes = DocuSign(body.token, CONNECTOR_HTTP, **body.options).envelopes()
+    except (ConnectorError, ValueError, OSError) as e:
+        raise HTTPException(502, f"docusign failed: {e}") from e
+    before, applied = d.stage, []
+    for e in sorted(envelopes, key=lambda x: x["completedDateTime"]):
+        subject = e["emailSubject"]
+        if subject != deal and not subject.startswith(deal + " "):
+            continue
+        new = advance(d.stage, e["status"])
+        if new != d.stage:
+            d.stage = new
+            applied.append(e["envelopeId"])
+    if applied:
+        d.updated_at = _now_iso()
+        db.commit()
+    log_event(db, who.tenant, actor(who), "docusign.stage_sync",
+              {"deal": deal, "stage_before": before, "stage_after": d.stage, "envelopes": applied})
+    return {"deal": deal, "stage_before": before, "stage_after": d.stage, "envelopes": applied}
 
 
 @app.post("/connectors/{name}/stage-sync")
