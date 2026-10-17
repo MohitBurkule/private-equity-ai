@@ -162,6 +162,7 @@ from app.models import (
     MemoVersion,
     OutreachItem,
     PageRow,
+    Person,
     SavedScreen,
     SavedSearch,
     SyncRun,
@@ -1212,6 +1213,58 @@ def ic_precedents(deal: str, db: Db, who: Who):
     return {"deal": deal, "stage": stage, "sic": target.sic, "match": match,
             "precedents": [_decision_out(latest[n]) for n in sorted(latest)],
             "outcome_counts": counts, "compared_deals": len(peers)}
+
+
+class PersonIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    organisation: str | None = Field(default=None, max_length=200)
+    title: str | None = Field(default=None, max_length=200)
+    expertise: list[str] | None = None
+    deal: str | None = None  # sourced for this deal: visible only to keys that can see the deal
+
+
+def _person_out(p: Person) -> dict:
+    return {"id": p.id, "name": p.name, "organisation": p.organisation, "title": p.title,
+            "expertise": [t.strip() for t in (p.expertise or "").split(",") if t.strip()], "deal": p.deal,
+            "recorded_at": p.recorded_at}
+
+
+@app.post("/people", status_code=201)
+def person_add(body: PersonIn, db: Db, who: Writer):
+    if body.deal:
+        _visible_deal_or_404(db, who, body.deal)
+        _require(who, "write", "record an expert for this deal", deal=body.deal)
+    p = Person(tenant_id=who.tenant, name=body.name.strip(), organisation=body.organisation, title=body.title,
+               expertise=", ".join(dict.fromkeys(t.strip() for t in body.expertise or [] if t.strip())) or None,
+               deal=body.deal, recorded_at=_now_iso())
+    db.add(p)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "person.add", {"id": p.id, "deal": body.deal})
+    return _person_out(p)
+
+
+@app.get("/people")
+def person_search(db: Db, who: Who, q: str = Query("", max_length=200), deal: str | None = None):
+    """Experts and contacts matching q in name, organisation, title or expertise. Experts sourced for a deal the
+    caller cannot see are left out, and so is a deal filter the caller has no right to."""
+    needle = q.strip().lower()
+    visible = deal_scope(db, who)
+    if deal and visible is not None and deal not in visible:
+        raise HTTPException(404, "deal not found")
+    rows = db.query(Person).filter_by(tenant_id=who.tenant)
+    if deal:
+        rows = rows.filter(Person.deal == deal)
+    out = []
+    for p in rows.order_by(Person.id).all():
+        if p.deal and (visible is not None and p.deal not in visible):
+            continue
+        hay = " ".join(x or "" for x in (p.name, p.organisation, p.title, p.expertise)).lower()
+        if needle and needle not in hay:
+            continue
+        out.append(_person_out(p))
+        if len(out) == 100:
+            break
+    return {"query": q, "people": out}
 
 
 @app.get("/dd/summary")

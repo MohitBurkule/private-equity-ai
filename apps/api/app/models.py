@@ -441,6 +441,20 @@ class TargetContact(Base):
     name: Mapped[str | None] = mapped_column(String(200), default=None)
 
 
+class Person(Base):
+    """An expert or contact the firm has used. Tied to a deal when it was sourced for one, so a walled deal's
+    expert is hidden from keys that cannot see that deal."""
+    __tablename__ = "person"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    organisation: Mapped[str | None] = mapped_column(String(200), default=None)
+    title: Mapped[str | None] = mapped_column(String(200), default=None)
+    expertise: Mapped[str | None] = mapped_column(Text, default=None)  # comma-separated topics
+    deal: Mapped[str | None] = mapped_column(String(128), default=None, index=True)
+    recorded_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 class OutreachItem(Base):
     """One outreach draft in the review queue. The text is frozen at queueing; sending re-drafts and refuses if it moved."""
     __tablename__ = "outreach_item"
