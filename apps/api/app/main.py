@@ -43,6 +43,7 @@ from app import debt_parse as debt_parse_mod
 from app import derived as derived_mod
 from app import firm_knowledge as fk
 from app import flagship as flagship_mod
+from app import fundadmin as fundadmin_mod
 from app import html_doc as html_doc_mod
 from app import jobs as jobs_mod
 from app import lbo as lbo_mod
@@ -435,6 +436,32 @@ def capital_form_facts(doc_id: str, db: Db, who: Writer):
         created.append(fact.id)
     log_event(db, who.tenant, actor(who), "capital_form.facts", {"document_id": doc.id, "created": created})
     return {"created": created, "skipped": skipped, "problems": f.problems}
+
+
+@app.post("/documents/{doc_id}/fund-admin/facts", status_code=201)
+def fund_admin_facts(doc_id: str, entity: str, db: Db, who: Writer):
+    """Capital calls and NAV read from a fund-admin workbook (template in app/fundadmin.py) as facts. Each one is
+    cited to its cell through the same citation gate as /facts. Rows that do not match the template are skipped."""
+    doc = _own_doc(db, who, doc_id)
+    pages = db.query(PageRow).filter_by(document_id=doc.id).order_by(PageRow.number).all()
+    created, skipped = [], []
+    for f in fundadmin_mod.extract([(p.number, p.text) for p in pages]):
+        same = [x for x in db.query(Fact).filter_by(tenant_id=who.tenant, entity=entity, metric=f.metric,
+                                                     period=f.period, status="verified")
+                if any(s.document_id == doc.id and s.page == f.page and s.quote == f.quote for s in x.sources)]
+        if same:  # the same cell again: keep the fact already stored
+            created.append(same[0].id)
+            continue
+        try:
+            fact = add_verified_fact(db, tenant_id=who.tenant, entity=entity, metric=f.metric, period=f.period,
+                                     value=Decimal(f.value), unit="USD", document_id=doc.id, page=f.page,
+                                     quote=f.quote)
+        except CitationError as e:
+            skipped.append({"metric": f.metric, "period": f.period, "reason": str(e)})
+            continue
+        created.append(fact.id)
+    log_event(db, who.tenant, actor(who), "fund_admin.facts", {"document_id": doc.id, "created": created})
+    return {"created": created, "skipped": skipped}
 
 
 @app.post("/documents/{doc_id}/credit-agreement/facts", status_code=201)
