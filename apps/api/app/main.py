@@ -47,9 +47,10 @@ from app.auth import (
     revoke_key,
 )
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
-from app.connectors import vault
+from app.connectors import oauth, vault
 from app.connectors.base import ConnectorError, default_http
 from app.connectors.linkedin import LinkedInExport
+from app.connectors.oauth import OAuthError
 from app.connectors.registry import IMPLEMENTED, catalog
 from app.connectors.sync import sync as connector_sync
 from app.db import make_engine, make_session_factory
@@ -1735,10 +1736,21 @@ class ConnectionBody(BaseModel):
     interval_minutes: int | None = None  # None = manual only
 
 
+def _oauth_access_token(row: Connection) -> str:
+    """Trade the stored refresh token for an access token. Providers may rotate the refresh token,
+    so a new one is re-sealed onto the row (the caller commits)."""
+    tok = oauth.refresh(oauth.config_for(row.connector), vault.unseal(row.token_sealed), CONNECTOR_HTTP)
+    if tok.get("refresh_token"):
+        row.token_sealed = vault.seal(tok["refresh_token"])
+    return tok["access_token"]
+
+
 def _run_connection(db: Session, who: Principal, row: Connection) -> dict:
     cls = IMPLEMENTED[row.connector]
     try:
-        conn = cls(vault.unseal(row.token_sealed), CONNECTOR_HTTP, **json.loads(row.options))
+        opts = json.loads(row.options)
+        token = _oauth_access_token(row) if opts.pop("auth", None) == "oauth" else vault.unseal(row.token_sealed)
+        conn = cls(token, CONNECTOR_HTTP, **opts)
         out = connector_sync(db, who, conn, row.deal)
         row.last_status = f"ok: {len(out['ingested'])} new, {out['unchanged']} unchanged"
     except (ConnectorError, vault.VaultError, ValueError, OSError, PermissionError) as e:
@@ -1825,3 +1837,55 @@ async def import_linkedin(file: Annotated[UploadFile, File()], db: Db, who: Writ
     log_event(db, who.tenant, actor(who), "connector.sync",
               {"connector": "linkedin", "deal": deal, "ingested": len(out["ingested"])})
     return out
+
+
+class OAuthStartBody(BaseModel):
+    deal: str | None = None
+    interval_minutes: int | None = None
+    options: dict[str, str] = {}
+
+
+@app.post("/oauth/{name}/start")
+def oauth_start(name: str, body: OAuthStartBody, db: Db, who: Writer):
+    """Returns the provider's consent URL. The signed state carries the tenant, key, deal wall and options,
+    so the callback needs no bearer token."""
+    if name not in IMPLEMENTED:
+        raise HTTPException(404, "connector not implemented")
+    deal = (body.deal or "").strip() or None
+    if who.restricted and deal not in who.deals:
+        raise HTTPException(403, "deal is required and must be within this key's scope")
+    if body.interval_minutes is not None and body.interval_minutes < 5:
+        raise HTTPException(422, "interval_minutes must be at least 5")
+    try:
+        state = oauth.sign_state({"tenant": who.tenant, "key": actor(who), "connector": name, "deal": deal,
+                                  "interval": body.interval_minutes, "options": body.options})
+        url = oauth.authorize_url(oauth.config_for(name), oauth.redirect_uri(name), state)
+    except OAuthError as e:
+        raise HTTPException(503, str(e)) from e
+    return {"authorize_url": url}
+
+
+@app.get("/oauth/{name}/callback", status_code=201)
+def oauth_callback(name: str, code: str, state: str, db: Db):
+    try:
+        claims = oauth.verify_state(state)
+        if claims.get("connector") != name:
+            raise OAuthError("state was issued for another connector")
+        tok = oauth.exchange_code(oauth.config_for(name), code, oauth.redirect_uri(name), CONNECTOR_HTTP)
+    except OAuthError as e:
+        raise HTTPException(400, str(e)) from e
+    if not tok.get("refresh_token"):
+        raise HTTPException(400, "provider returned no refresh token; consent must grant offline access")
+    try:
+        sealed = vault.seal(tok["refresh_token"])
+    except vault.VaultError as e:
+        raise HTTPException(503, str(e)) from e
+    bind_tenant(db, claims["tenant"])  # no bearer token on this route: the signed state names the tenant
+    row = Connection(tenant_id=claims["tenant"], connector=name, deal=claims.get("deal"),
+                     options=json.dumps(dict(claims.get("options", {}), auth="oauth")), token_sealed=sealed,
+                     interval_minutes=claims.get("interval"), created_by=claims["key"])
+    db.add(row)
+    db.commit()
+    log_event(db, claims["tenant"], claims["key"], "connection.create",
+              {"id": row.id, "connector": name, "deal": row.deal, "auth": "oauth"})
+    return {"id": row.id, "connector": name, "deal": row.deal, "interval_minutes": row.interval_minutes}
