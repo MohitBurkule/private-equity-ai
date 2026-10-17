@@ -35,3 +35,9 @@ def test_negation_flagged_and_bad_type():
         raise AssertionError
     except ValueError:
         pass
+
+
+def test_termination_fee_amount_is_read_from_the_definition():
+    out = extract([(7, "“Company Termination Fee” means $12,500,000.")], "spa")
+    assert [(f["term"], f["value"]) for f in out["findings"] if f["term"] == "termination_fee"] == [
+        ("termination_fee", "$12,500,000")]

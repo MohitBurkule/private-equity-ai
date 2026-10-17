@@ -71,6 +71,10 @@ TERMS: dict[str, dict] = {
         "doc": ("spa",),
         "re": r"(?:basket|deductible)[^.]{0,100}?((?:US\$|\$|£|€)\s?[\d,]+(?:\.\d+)?(?:\s?(?:million|billion))?|\d+(?:\.\d+)?%)",
     },
+    "termination_fee": {
+        "doc": ("spa",),
+        "re": r"(?:reverse )?termination fee[^.]{0,120}?((?:US\$|\$|£|€)\s?[\d,]+(?:\.\d+)?(?:\s?(?:million|billion))?)",
+    },
     "material_adverse_effect": {
         "doc": ("spa", "credit"),
         "re": r"(material adverse (?:effect|change))",
