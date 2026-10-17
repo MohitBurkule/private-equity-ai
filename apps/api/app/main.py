@@ -135,6 +135,7 @@ from app.report import build_report, build_report_docx
 from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
 from app.shareledger import Event as LedgerEvent
 from app.shareledger import reconcile as reconcile_shares
+from app.stage_sync import stage_sync as run_stage_sync
 from app.sumcheck import sum_check
 from app.tracing import render_metrics, tracing_middleware
 from app.waterfall import PrefClass, waterfall
@@ -2257,6 +2258,22 @@ def sync_connector(name: str, body: SyncBody, db: Db, who: Writer):
         raise HTTPException(502, f"connector failed: {e}") from e
     log_event(db, who.tenant, actor(who), "connector.sync",
               {"connector": name, "deal": body.deal, "ingested": len(out["ingested"])})
+    return out
+
+
+@app.post("/connectors/{name}/stage-sync")
+def stage_sync_connector(name: str, body: SyncBody, db: Db, who: Writer):
+    """Two-way deal-stage sync with a CRM. Unrestricted keys only: it reads and writes stages across deals."""
+    _unrestricted(who)
+    cls = IMPLEMENTED.get(name)
+    if cls is None:
+        raise HTTPException(404, "connector not implemented")
+    try:
+        conn = cls(body.token, CONNECTOR_HTTP, **body.options)
+        out = run_stage_sync(db, who.tenant, conn, max(1, min(body.limit, 500)))
+    except (ConnectorError, ValueError, OSError) as e:
+        raise HTTPException(502, f"stage sync failed: {e}") from e
+    log_event(db, who.tenant, actor(who), "connector.stage_sync", {"connector": name, **out})
     return out
 
 
