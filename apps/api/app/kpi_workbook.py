@@ -77,7 +77,7 @@ def ingest_kpi_pack(db: Session, tenant_id: str, company_id: int, data: bytes, f
                 if metric is None or not _PERIOD.match(period) or value is None or not unit:
                     out.skipped.append({"cell": where, "reason": f"unmapped or unreadable row: {label!r} {period!r}"})
                     continue
-                quote = f"{cells['metric']} | {period} | {cells['value']} {unit}"
+                quote = f"{where}, row: {cells['metric']} | {period} | {cells['value']} {unit}"
                 fact = Fact(tenant_id=tenant_id, entity=company.name, metric=metric, period=period, value=value,
                             unit=unit, basis="MGMT", status="verified")
                 fact.sources = [FactSource(document_id=doc.id, page=sheet_no, quote=quote, kind="xlsx",

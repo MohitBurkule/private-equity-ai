@@ -51,7 +51,8 @@ def _printed(text: str) -> Decimal | None:
 def extract(db: Session, tenant: str, doc_id: str, entity: str, tags: list[Tagged]) -> dict:
     period = latest_fiscal_year(tags)
     if period is None:
-        return {"period": None, "created": [], "rejected": [{"metric": "*", "reason": "no 12-month revenue tag"}]}
+        return {"period": None, "period_end": None, "created": [],
+                "rejected": [{"metric": "*", "reason": "no 12-month revenue tag"}]}
     label = f"FY{period.split('/')[1][:4]}"
     balance = f"@{period.split('/')[1]}"  # balance-sheet figures are instants at the fiscal year end
     created, rejected = [], []
@@ -76,4 +77,4 @@ def extract(db: Session, tenant: str, doc_id: str, entity: str, tags: list[Tagge
                             "page": t.page, "quote": t.row})
         except CitationError as e:
             rejected.append({"metric": metric, "reason": str(e)})
-    return {"period": label, "created": created, "rejected": rejected}
+    return {"period": label, "period_end": period.split("/")[1], "created": created, "rejected": rejected}

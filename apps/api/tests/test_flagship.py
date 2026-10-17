@@ -1,9 +1,9 @@
 from decimal import Decimal
 
-from app.flagship import lbo_inputs, lbo_step
-from app.main import app
 from fastapi.testclient import TestClient
 
+from app.flagship import lbo_inputs, lbo_step
+from app.main import app
 from tests.helpers import new_tenant
 
 c = TestClient(app)
@@ -49,3 +49,19 @@ def test_ebitda_is_operating_income_plus_da_from_verified_extraction():
     assert spec["value"] == "1250" and spec["source"]["document_id"] == "doc-1"
     assert spec["source"]["quote"] == "derived: Operating income 1,000 + Depreciation 250"
     assert derive_ebitda([Step("extraction", "ok", result={"created": []})], "doc-1", "10k.htm") is None
+
+
+def test_crosscheck_flags_a_figure_that_differs_from_companyfacts():
+    import json
+
+    from app.flagship import Step, crosscheck_step
+    ext = Step("extraction", "ok", result={"period_end": "2025-12-31", "created": [
+        {"metric": "revenue", "value": "1000", "page": 1, "quote": "Revenue 1,000"},
+        {"metric": "total_assets", "value": "500", "page": 2, "quote": "Total assets 500"}]})
+    cf = {"facts": {"us-gaap": {
+        "Revenues": {"units": {"USD": [{"start": "2025-01-01", "end": "2025-12-31", "val": 999, "form": "10-K"}]}},
+        "Assets": {"units": {"USD": [{"end": "2025-12-31", "val": 500, "form": "10-K"}]}}}}}
+    st = crosscheck_step(ext, "1166003", lambda url: json.dumps(cf).encode())
+    assert st.status == "failed" and st.result["conflicts"][0]["companyfacts"] == "999"
+    assert st.result["matched"][0]["metric"] == "total_assets"
+    assert crosscheck_step(ext, None, None).status == "skipped"
