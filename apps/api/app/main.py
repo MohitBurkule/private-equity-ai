@@ -562,13 +562,14 @@ class DealIn(BaseModel):
 class DealUpdate(BaseModel):
     stage: str | None = None
     note: str | None = None
+    legal_hold: bool | None = None
 
 
 def _deal_out(db: Session, who: Principal, d: Deal) -> dict:
     dd = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=d.name).all()
     docs = db.query(Document).filter_by(tenant_id=who.tenant, deal=d.name).count()
     closed = sum(r.status != "open" for r in dd)
-    return {"name": d.name, "stage": d.stage, "note": d.note, "updated_at": d.updated_at,
+    return {"name": d.name, "stage": d.stage, "note": d.note, "legal_hold": d.legal_hold, "updated_at": d.updated_at,
             "documents": docs, "dd_total": len(dd), "dd_open": len(dd) - closed}
 
 
@@ -607,10 +608,30 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Writer):
         d.stage = body.stage
     if body.note is not None:
         d.note = body.note
+    if body.legal_hold is not None:
+        d.legal_hold = body.legal_hold
     d.updated_at = _now_iso()
     db.commit()
-    log_event(db, who.tenant, actor(who), "deal.update", {"name": name, "stage": d.stage})
+    log_event(db, who.tenant, actor(who), "deal.update", {"name": name, "stage": d.stage, "legal_hold": d.legal_hold})
     return _deal_out(db, who, d)
+
+
+@app.delete("/deals/{name}")
+def deal_delete(name: str, db: Db, who: Writer):
+    d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
+    if d is None or not _dd_scope_ok(who, name):
+        raise HTTPException(404, "deal not found")
+    # Holds and linked documents are refused rather than cascaded: deleting evidence the team
+    # still relies on is the one step here that cannot be walked back.
+    if d.legal_hold:
+        raise HTTPException(409, "deal is under legal hold")
+    if db.query(Document).filter_by(tenant_id=who.tenant, deal=name).first():
+        raise HTTPException(409, "documents still linked to this deal; unlink them first")
+    removed = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=name).delete()
+    db.delete(d)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "deal.delete", {"name": name, "dd_requests_removed": removed})
+    return {"deleted": name, "dd_requests_removed": removed}
 
 
 @app.get("/memo")
