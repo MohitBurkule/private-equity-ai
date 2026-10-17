@@ -412,6 +412,10 @@ def credit_agreement_facts(doc_id: str, db: Db, who: Writer):
         candidates.append((f"covenant {c['kpi_metric']} {word}", "x", Decimal(c["threshold"]), c["page"], c["quote"]))
     for t in debt_parse_mod.extract(pages):
         candidates.append((f"facility amount {t['facility']}", "USD", t["amount"], t["page"], t["quote"]))
+    for g in debt_parse_mod.margin_grid(pages):
+        tier = f"level {g['level']} ({g['leverage_test']})"
+        candidates.append((f"Term SOFR margin {tier}", "%", Decimal(g["sofr_pct"]), g["page"], g["quote"]))
+        candidates.append((f"Base Rate margin {tier}", "%", Decimal(g["base_pct"]), g["page"], g["quote"]))
     created, skipped, seen = [], [], set()
     for metric, unit, value, page, quote in candidates:
         if (metric, value, page, quote) in seen:
@@ -425,7 +429,8 @@ def credit_agreement_facts(doc_id: str, db: Db, who: Writer):
             continue
         created.append(fact.id)
     log_event(db, who.tenant, actor(who), "credit_agreement.facts", {"document_id": doc.id, "created": created})
-    return {"created": created, "skipped": skipped}
+    # Maturity is a defined tenor, not a number, so it is returned cited and not stored as a fact.
+    return {"created": created, "skipped": skipped, "maturity_clauses": debt_parse_mod.maturity_clauses(pages)}
 
 
 @app.get("/documents/{doc_id}/pages/{number}")
