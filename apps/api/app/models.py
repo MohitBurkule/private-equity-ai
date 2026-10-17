@@ -351,6 +351,18 @@ class MemoComment(Base):
     created_at: Mapped[str] = mapped_column(String(40), default="")
 
 
+class SavedSearch(Base):
+    """A search the team reruns across the documents it can see. Runs under the rerunning person's own access."""
+    __tablename__ = "saved_search"
+    __table_args__ = (UniqueConstraint("tenant_id", "name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    query: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 class SavedScreen(Base):
     """A named strategy screen the team reruns: its criteria as entered, so a rerun applies the same tests."""
     __tablename__ = "saved_screen"

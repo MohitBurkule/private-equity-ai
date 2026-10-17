@@ -139,6 +139,7 @@ from app.models import (
     OutreachItem,
     PageRow,
     SavedScreen,
+    SavedSearch,
     SyncRun,
     Target,
     TargetContact,
@@ -1764,6 +1765,39 @@ def memo_pptx(entity: str, db: Db, who: Who):
     return Response(build_memo_pptx(db, who.tenant, entity, visible_doc_ids(db, who)), headers={
         "Content-Disposition": 'attachment; filename="memo.pptx"'},
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+
+
+class SavedSearchIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    query: str = Field(min_length=2, max_length=500)
+
+
+@app.post("/search/saved", status_code=201)
+def saved_search_save(body: SavedSearchIn, db: Db, who: Writer):
+    """Save a named search. Saving under an existing name replaces its query."""
+    row = db.query(SavedSearch).filter_by(tenant_id=who.tenant, name=body.name).one_or_none()
+    if row is None:
+        row = SavedSearch(tenant_id=who.tenant, name=body.name, created_by=actor(who),
+                          created_at=datetime.now(UTC).isoformat(timespec="seconds"))
+        db.add(row)
+    row.query = body.query
+    db.commit()
+    return {"id": row.id, "name": row.name, "query": row.query}
+
+
+@app.get("/search/saved")
+def saved_search_list(db: Db, who: Who):
+    rows = db.query(SavedSearch).filter_by(tenant_id=who.tenant).order_by(SavedSearch.name).all()
+    return {"items": [{"id": r.id, "name": r.name, "query": r.query} for r in rows]}
+
+
+@app.get("/search/saved/{search_id}/run")
+def saved_search_run(search_id: int, db: Db, who: Who, k: int = Query(5, ge=1, le=20)):
+    """Rerun a saved search through the normal search path, so tenant, deal and document filters apply to the rerunner."""
+    row = db.get(SavedSearch, search_id)
+    if row is None or row.tenant_id != who.tenant:
+        raise HTTPException(404, "saved search not found")
+    return {"search": row.name, "items": search(row.query, db, who, None, k)}
 
 
 @app.get("/search")
