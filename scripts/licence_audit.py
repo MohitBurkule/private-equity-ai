@@ -14,7 +14,7 @@ from pathlib import Path
 
 PYPROJECT = Path(__file__).resolve().parents[1] / "apps" / "api" / "pyproject.toml"
 PERMISSIVE = ("MIT", "BSD", "Apache", "ISC", "PSF", "Python-2.0", "Unlicense", "0BSD", "MPL")
-COPYLEFT = ("GPL", "LGPL", "AGPL")
+COPYLEFT = ("GPL", "LGPL", "AGPL", "General Public License", "Affero")
 
 
 def declared(extras: tuple[str, ...]) -> list[str]:
