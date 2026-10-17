@@ -1,14 +1,14 @@
 """meeting bodies and the deal notes they become
 
-Revision ID: 0057
-Revises: 0056
+Revision ID: 0058
+Revises: 0057
 """
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = '0057'
-down_revision = '0056'
+revision = '0058'
+down_revision = '0057'
 branch_labels = None
 depends_on = None
 

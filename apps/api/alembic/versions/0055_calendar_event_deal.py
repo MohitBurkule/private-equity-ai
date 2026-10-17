@@ -1,14 +1,14 @@
 """calendar events carry the deal their title names
 
-Revision ID: 0056
-Revises: 0055
+Revision ID: 0055
+Revises: 0054
 """
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = '0056'
-down_revision = '0055'
+revision = '0055'
+down_revision = '0054'
 branch_labels = None
 depends_on = None
 

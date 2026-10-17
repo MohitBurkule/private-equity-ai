@@ -178,6 +178,7 @@ class DealNote(Base):
     # A note made from a calendar meeting: the event it came from, and the link that cites it
     calendar_event_id: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
     source_url: Mapped[str | None] = mapped_column(Text, default=None)
+    edited_at: Mapped[str] = mapped_column(String(40), default="")  # set on each edit; empty when never edited
 
 
 class DDQuestion(Base):
