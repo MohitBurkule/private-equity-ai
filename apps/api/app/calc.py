@@ -186,3 +186,26 @@ def net_debt_adjusted(db: Session, tenant: str, entity: str, period: str, scope:
     dl, not_found = debt_like(db, tenant, entity, period, scope)
     adjusted = nd.value + dl.value if nd.ok and dl.ok and nd.unit == dl.unit else None
     return {"net_debt": nd, "debt_like": dl, "not_found": not_found, "adjusted": adjusted}
+
+
+def to_usd(db: Session, tenant: str, c: Calc, rate_metric: str, period: str,
+           scope: set[str] | None = None) -> Calc:
+    """Restates a calc stated in another currency in USD, using a cited rate fact. The rate is a fact named
+    `rate_metric` for `period` whose unit is USD and whose value is USD per one unit of the calc's currency. No
+    rate on file means the calc stays missing a rate; the figure is never converted at a guessed rate."""
+    if not c.ok or c.unit in (None, "USD"):
+        return c
+    rate = _find(db, tenant, c.entity, rate_metric, period, scope)
+    if rate is None:
+        c.missing.append(f"fx rate: {rate_metric} for {period}")
+        c.value = None  # a figure without a rate is no figure in USD
+        return c
+    if rate.unit != "USD":
+        c.problems.append(f"fx rate {rate_metric} is in {rate.unit}, expected USD per unit")
+        c.value = None
+        return c
+    c.inputs.append(Input("fx rate", 1, rate))
+    c.value = (c.value * rate.value).quantize(Decimal("0.01"))
+    c.formula += f" x {rate_metric} ({c.unit} to USD)"
+    c.unit = "USD"
+    return c
