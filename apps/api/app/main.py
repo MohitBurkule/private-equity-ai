@@ -1644,7 +1644,7 @@ class FlagshipIn(BaseModel):
     extract: bool = False  # read the filing's inline XBRL tags into verified facts (no LLM)
     sic: str | None = Field(default=None, max_length=8)  # the entity's SIC code, for peers
     cik: str | None = Field(default=None, max_length=12)  # the entity's own CIK, left out of its peers
-    peers_pages: int = Field(default=1, ge=1, le=3)
+    peers_pages: int = Field(default=1, ge=1, le=10)
     precedents: dict | None = None  # {"since": "YYYY-MM-DD", "until": "YYYY-MM-DD", "limit": 5}
 
 
@@ -1675,7 +1675,12 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
     except (OSError, ValueError, RuntimeError) as e:
         steps.append(flagship_mod.Step("precedents", "failed", f"{type(e).__name__}: {e}"))
     steps.append(flagship_mod.legal_step(pages, doc.id, body.legal_doc_type, legal_mod))
-    steps.append(flagship_mod.lbo_step(body.lbo.get("inputs") or {}, doc.id))
+    lbo_raw = dict(body.lbo.get("inputs") or {})
+    if "ebitda" not in lbo_raw:
+        derived = flagship_mod.derive_ebitda(steps, doc.id, doc.filename)
+        if derived:
+            lbo_raw["ebitda"] = derived
+    steps.append(flagship_mod.lbo_step(lbo_raw, doc.id))
     verified = db.query(Fact).filter_by(tenant_id=who.tenant, entity=body.entity, status="verified").count()
     if verified:
         steps.append(flagship_mod.Step("memo", "ok", result={

@@ -10,6 +10,7 @@ from __future__ import annotations
 import html
 import json
 import re
+from datetime import date, timedelta
 
 from app import dealscan, precedents
 from app.secfeed import default_fetch
@@ -68,6 +69,53 @@ def theme_cites(theme: str, text: str, url: str) -> dict | None:
     return {"buyer": {"sentence": buyer, "source_url": url}, "target": {"sentence": target, "source_url": url}}
 
 
+# Filed when an 8-K states no value: the merger proxy and registration statement describe the same deal in full.
+FALLBACK_FORMS = ("DEFM14A", "S-4")
+
+
+def _terms(urls: list[str], fetch: Fetch, theme: str | None) -> tuple[dict, dict | None, str | None]:
+    """EV and multiples read from each URL, each figure cited to its own URL; theme sentences if asked."""
+    terms: dict = {"ev_musd": None, "multiples": [], "absent": []}
+    cites, failed = None, None
+    for url in urls:
+        try:
+            text = filing_text(fetch(url))
+        except Exception as e:  # noqa: BLE001  one bad document must not stop the rest
+            failed = failed or f"download failed: {e}"
+            continue
+        if theme and cites is None:
+            cites = theme_cites(theme, text, url)
+        part = precedents.extract([(1, text)])
+        for m in part["multiples"]:
+            m["source_url"] = url
+            terms["multiples"].append(m)
+        if part["ev_musd"] and terms["ev_musd"] is None:
+            part["ev_musd"]["source_url"] = url
+            terms["ev_musd"] = part["ev_musd"]
+    return terms, cites, failed
+
+
+def _has_terms(terms: dict) -> bool:
+    return bool(terms["multiples"] or terms["ev_musd"])
+
+
+def _proxy_terms(lead, since: str, until: str, fetch: Fetch, theme: str | None) -> tuple[dict, dict | None, str | None]:
+    """Fallback for an 8-K with no stated terms: the target's merger proxy or S-4, filed up to a year after the 8-K."""
+    until_ext = (date.fromisoformat(until) + timedelta(days=365)).isoformat()
+    miss = None
+    for form in FALLBACK_FORMS:
+        try:
+            hits = dealscan.scan_cik(lead.cik, form, since, until_ext, fetch=fetch)[:1]
+        except (OSError, ValueError) as e:
+            return {"ev_musd": None, "multiples": [], "absent": []}, None, f"{form} search failed: {e}"
+        for hit in hits:
+            terms, cites, failed = _terms([hit.url], fetch, theme)
+            if _has_terms(terms):
+                return terms, cites, None
+            miss = failed or miss
+    return {"ev_musd": None, "multiples": [], "absent": []}, None, miss
+
+
 def build(
     since: str,
     until: str,
@@ -84,37 +132,23 @@ def build(
     deals, skipped = [], []
     for lead in leads:
         name = f"{lead.company} ({lead.filed})"
-        terms: dict = {"ev_musd": None, "multiples": [], "absent": []}
-        failed = None
-        cites = None
-        for url in exhibit_urls(lead.url, fetch):
-            try:
-                text = filing_text(fetch(url))
-            except Exception as e:  # noqa: BLE001  one bad document must not stop the rest
-                failed = failed or f"download failed: {e}"
-                continue
-            if theme and cites is None:
-                cites = theme_cites(theme, text, url)
-            part = precedents.extract([(1, text)])
-            for m in part["multiples"]:
-                m["source_url"] = url
-                terms["multiples"].append(m)
-            if part["ev_musd"] and terms["ev_musd"] is None:
-                part["ev_musd"]["source_url"] = url
-                terms["ev_musd"] = part["ev_musd"]
+        terms, cites, failed = _terms(exhibit_urls(lead.url, fetch), fetch, theme)
+        source = lead.url
+        if not _has_terms(terms):
+            p_terms, p_cites, p_failed = _proxy_terms(lead, since, until, fetch, theme)
+            if _has_terms(p_terms):
+                terms, source = p_terms, "proxy"
+                cites = p_cites or cites
+            failed = failed or p_failed
         if theme and cites is None:
             skipped.append({"name": name, "url": lead.url, "reason": f"theme not stated: {theme}"})
             continue
-        if not terms["multiples"] and not terms["ev_musd"]:
-            skipped.append(
-                {
-                    "name": name,
-                    "url": lead.url,
-                    "reason": failed or "no stated EV or multiple",
-                }
-            )
+        if not _has_terms(terms):
+            skipped.append({"name": name, "url": lead.url, "reason": failed or "no stated EV or multiple"})
             continue
         deal = {"name": name, "document_id": lead.url, "terms": terms}
+        if source == "proxy":
+            deal["terms_from"] = "merger proxy or S-4 (8-K states no value)"
         if theme:
             deal["theme"] = {"rule": theme, **cites}
         deals.append(deal)
