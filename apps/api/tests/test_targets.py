@@ -102,3 +102,17 @@ def test_sec_target_placed_by_state_centroid_only_when_us_state_known():
     assert sec_target(foreign, None).lat is None  # never placed without a known state
     unknown = {**SUB, "addresses": {"business": {"stateOrCountry": "ZZ", "isForeignLocation": 0}}}
     assert sec_target(unknown, None).lat is None
+
+
+def test_screen_matches_carry_sources_and_firm_criteria_profile():
+    h = new_tenant(c, "tg6")
+    c.post("/targets", headers=h, json=[
+        {"name": "Cited", "source_ref": "c", "source_url": "http://co/c", "sector": "Software", "revenue": "50",
+         "revenue_url": "http://rev/c"},
+        {"name": "NoLinks", "source_ref": "n", "sector": "Software"}])
+    sc = c.post("/targets/screen", headers=h, json={"sectors": ["software"]}).json()
+    by = {i["name"]: i for i in sc["items"]}
+    assert by["Cited"]["sources"] == [{"label": "company record", "url": "http://co/c"},
+                                      {"label": "revenue", "url": "http://rev/c"}]
+    assert by["NoLinks"]["sources"] == []
+    assert sc["criteria_profile"] == []  # no accepted firm criteria yet: none invented
