@@ -166,6 +166,7 @@ from app.shareledger import reconcile as reconcile_shares
 from app.stage_sync import stage_sync as run_stage_sync
 from app.sumcheck import sum_check
 from app.tracing import render_metrics, tracing_middleware
+from app.versions import superseded
 from app.waterfall import PrefClass, waterfall
 from app.xbrl import candidates, crosscheck, load_companyfacts
 
@@ -651,12 +652,20 @@ def fact_derived(db: Db, who: Who, formula: str, entity: str, period: str):
 @app.get("/facts/conflicts")
 def fact_conflicts(db: Db, who: Who, entity: str | None = None, cross_document_only: bool = False):
     """Same entity, metric, period and basis with different values across facts. Reports only."""
-    return [{"entity": c.entity, "metric": c.metric, "period": c.period, "basis": c.basis,
-             "spread_pct": str(c.spread_pct.quantize(Decimal("0.01"))), "likely_rounding": c.likely_rounding,
-             "severity": c.severity, "cross_document": c.cross_document, "sources": c.sources,
-             "values": [{"value": str(v), "fact_id": fid} for v, fid in c.values]}
-            for c in find_conflicts(db, who.tenant, visible_doc_ids(db, who), entity)
-            if c.cross_document or not cross_document_only]
+    out = []
+    for c in find_conflicts(db, who.tenant, visible_doc_ids(db, who), entity):
+        if not (c.cross_document or not cross_document_only):
+            continue
+        # A newer version of the same model is a restatement candidate, not an error: report which document
+        # supersedes which so the reviewer does not chase a v3-vs-v5 difference as a conflict.
+        names = {d["document_id"]: d["filename"] for s in c.sources for d in s["documents"]}
+        newer = superseded({k: v for k, v in names.items() if v})
+        out.append({"entity": c.entity, "metric": c.metric, "period": c.period, "basis": c.basis,
+                    "spread_pct": str(c.spread_pct.quantize(Decimal("0.01"))), "likely_rounding": c.likely_rounding,
+                    "severity": c.severity, "cross_document": c.cross_document, "sources": c.sources,
+                    "values": [{"value": str(v), "fact_id": fid} for v, fid in c.values],
+                    "superseded_by": {str(k): str(v) for k, v in newer.items()}})
+    return out
 
 
 def get_market_fetch():
