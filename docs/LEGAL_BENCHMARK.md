@@ -124,3 +124,19 @@ Also fixed in this pass: "not assignable" is now a restriction; "shall not be re
 ### Update: termination notice and governing-law precision
 - `termination_notice_days` is now always `needs_review`, so it never shows as a clean finding. Added "thirty (30) days after the giving of such notice" (Mercantile now found: fresh set 1 of 1). Side effect: two extra "days after notice" hits in the first lease/employment set (score 4/3/0, was 4/1/0). Still review-only.
 - Blind governing-law precision 0.55 was a labelling error, not a rule error. The five blind "false positives" were exhibits where I had labelled null but the text states the law (Colorado, Michigan, Pennsylvania, Delaware, New Jersey). Corrected gold fixed it; the rule matched the text.
+
+## Reader (local gemma 9B) on lease and employment, CPU
+Run on the fresh 20-exhibit set (`evals/legal_gold_fresh_lease_employment.json`). Gold was written before the rules ran, then corrected (see above), so these are not held-out numbers.
+
+- **False-finding sample (rules on, reader on the rules' gaps):** 10 exhibits, 0 reader findings. 0 false findings. The reader only runs on terms the rules did not find, so this shows it added nothing here, not that it was checked on every term.
+- **Recall with rules disabled (every supported term asked):** 20 exhibits.
+
+| term | gold positives | reader found right value | recall | false findings |
+|---|---|---|---|---|
+| severance | 10 | 10 | 1.00 | 0 |
+| change_of_control | 7 | 5 | 0.71 | 0 |
+| governing_law | 12 | 8 | 0.67 | 0 |
+| assignment | 10 | 3 | 0.30 | 1 |
+| termination_notice_days | 1 | 0 | 0.00 | 0 |
+
+Read these with care: the match for governing law is a loose text match done in a scratch script, not in `evals/legal_benchmark.py`. Each exhibit takes 1 to 10 minutes on CPU, so the run was done one exhibit per call. The reader is a useful second reader for severance and change of control; it is not reliable for assignment or notice periods.
