@@ -2053,16 +2053,24 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
                                         status="verified").order_by(Fact.id.desc()).first()
     revenue = rev_fact.value if rev_fact else None
     exclude = {body.cik.zfill(10)} if body.cik else set()
+    # Without a SEC contact the EDGAR-backed steps cannot run at all. That is a skip with the reason, not a failure.
+    no_sec_contact = not os.environ.get("SEC_USER_AGENT")
     scope = visible_doc_ids(db, who)
-    try:
-        steps.append(flagship_mod.comps_step(revenue, body.sic, exclude, body.peers_pages, peers_mod.discover,
-                                             ev_lookup=lambda name: _peer_ev(db, who.tenant, name, scope)))
-    except (OSError, ValueError, RuntimeError) as e:
-        steps.append(flagship_mod.Step("comps", "failed", f"{type(e).__name__}: {e}"))
-    try:
-        steps.append(flagship_mod.precedents_step(body.precedents, pfetch_mod.build))
-    except (OSError, ValueError, RuntimeError) as e:
-        steps.append(flagship_mod.Step("precedents", "failed", f"{type(e).__name__}: {e}"))
+    if no_sec_contact:
+        steps.append(flagship_mod.Step("comps", "skipped", "SEC_USER_AGENT not set: SIC peers come from EDGAR"))
+    else:
+        try:
+            steps.append(flagship_mod.comps_step(revenue, body.sic, exclude, body.peers_pages, peers_mod.discover,
+                                                 ev_lookup=lambda name: _peer_ev(db, who.tenant, name, scope)))
+        except (OSError, ValueError, RuntimeError) as e:
+            steps.append(flagship_mod.Step("comps", "failed", f"{type(e).__name__}: {e}"))
+    if no_sec_contact and body.precedents:
+        steps.append(flagship_mod.Step("precedents", "skipped", "SEC_USER_AGENT not set: merger 8-Ks come from EDGAR"))
+    else:
+        try:
+            steps.append(flagship_mod.precedents_step(body.precedents, pfetch_mod.build))
+        except (OSError, ValueError, RuntimeError) as e:
+            steps.append(flagship_mod.Step("precedents", "failed", f"{type(e).__name__}: {e}"))
     legal_type = body.legal_doc_type or flagship_mod.detect_doc_type(pages)
     try:
         reader = get_llm() if legal_type else None
@@ -2070,8 +2078,12 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
         reader = None
     steps.append(flagship_mod.legal_step(pages, doc.id, legal_type, legal_mod, reader))
     ext_step = next((s for s in steps if s.name == "extraction"), None)
-    steps.append(flagship_mod.crosscheck_step(ext_step, body.cik, None) if body.extract
-                 else flagship_mod.Step("crosscheck", "skipped", "set extract=true to cross-check its figures"))
+    if not body.extract:
+        steps.append(flagship_mod.Step("crosscheck", "skipped", "set extract=true to cross-check its figures"))
+    elif no_sec_contact:
+        steps.append(flagship_mod.Step("crosscheck", "skipped", "SEC_USER_AGENT not set: companyfacts needs a contact"))
+    else:
+        steps.append(flagship_mod.crosscheck_step(ext_step, body.cik, None))
     lbo_raw = dict(body.lbo.get("inputs") or {})
     if "ebitda" not in lbo_raw:
         derived = flagship_mod.derive_ebitda(steps, doc.id, doc.filename)
