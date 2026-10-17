@@ -95,3 +95,28 @@ Not covered: lease rent and term; change-of-control language that is a consent r
 
 Next: a fresh lease and employment set, labelled before rules run, to measure these terms honestly.
 
+
+## Fresh lease and employment set (after the #413 fixes)
+20 new exhibits (10 lease, 10 employment; EDGAR EX-10 via full-text search, none in the #413 set). `evals/legal_gold_fresh_lease_employment.json`.
+
+Gold was written from keyword-sentence dumps before the rules ran. Then 12 values were corrected after reading the rule quotes, because the dump had missed sentences (uppercase, "construed and enforced" wording, notice wording). Both scores are below.
+
+| term | blind P / R (tp/fp/fn) | corrected P / R (tp/fp/fn) |
+|---|---|---|
+| governing_law | 0.55 / 0.86 (6/5/1) | 1.00 / 0.92 (11/0/1) |
+| assignment | 0.55 / 1.00 (6/5/0) | 0.91 / 1.00 (10/1/0) |
+| change_of_control | 0.86 / 1.00 (6/1/0) | 1.00 / 1.00 (7/0/0) |
+| severance | 1.00 / 1.00 (10/0/0) | 1.00 / 1.00 (10/0/0) |
+| termination_notice_days | 0.00 / 0.00 (0/3/1) | 0.00 / 0.00 (0/3/1) |
+
+Read the corrected column as optimistic: the corrections came from looking at the rules' output.
+
+Known errors:
+- Termination notice: 3 FPs. Two lease holdover and eminent-domain "30 days" sentences (Colorado PSA and amendment), one parking-lot "30 days" (Body & Mind). One FN: "Any such termination shall be effective thirty (30) days after the giving of such notice" (Mercantile). This term is the weakest; do not quote it.
+- Governing law FN: none in the corrected set except one. Blind misses were "construed and enforced in accordance with the laws of the State of" and uppercase text; the regex now reads both.
+- Assignment: 1 FP in the corrected set.
+- Amendments that reduce a non-compete (Fidelity 038783) are labelled null and the rule now skips them on purpose.
+
+Termination fee ordering (open item, decided): a fee sentence with "instead of" or "thereafter" is still reported but now flagged `needs_review`. The held-out Lantheus 1521036 value stays $15,000,000 as scored, against gold $10,000,000. Gold reading is the base fee; the amendment raises it to $15M on a condition. Not changed in the held-out numbers above.
+
+Also fixed in this pass: "not assignable" is now a restriction; "shall not be required" is not; a non-compete inside an amendment that reduces it is skipped; a "notice ... days" phrase that ends in "service" or "within" is skipped.
