@@ -139,7 +139,9 @@ scan_doc = upload_pdf(scan_path, "SYNTHETIC_scanned_pack.pdf")
 s, fact = call("POST", "/facts", {"entity": HOLDING, "metric": "revenue", "period": "2027",
                                    "value": str(440 * M), "unit": "USD", "document_id": scan_doc, "page": 1,
                                    "quote": SCAN_LINES[1], "scale": str(M), "basis": "forecast"})
-print("scanned-page fact:", fact.get("status") if s == 201 else fact)
+if s != 201 or fact.get("status") != "ocr_unverified":
+    sys.exit(f"scanned-page fact not queued for review: {fact}. Is OCR_ENABLED=1 set on the API? Scanned pages are read by OCR only then.")
+print("scanned-page fact: ocr_unverified")
 
 s, _ = call("POST", "/targets", [{"name": TARGET, "source": "manual", "source_ref": "SYNTH-001",
                                   "sector": "Industrials", "country": "GB"}])
