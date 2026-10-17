@@ -21,7 +21,9 @@ def visible_facts(db: Session, tenant_id: str, entity: str | None, scope: set[st
     q = db.query(Fact).filter_by(tenant_id=tenant_id)
     if entity:
         q = q.filter_by(entity=entity)
-    return [f for f in q.order_by(Fact.entity, Fact.metric, Fact.period, Fact.id).all() if fact_visible(f, scope)]
+    # Only verified facts leave the app as a workbook; pending OCR and rejected rows stay in the queue.
+    return [f for f in q.filter_by(status="verified").order_by(Fact.entity, Fact.metric, Fact.period, Fact.id).all()
+            if fact_visible(f, scope)]
 
 
 def fact_rows(db: Session, tenant_id: str, entity: str | None, scope: set[str] | None) -> list[list]:
