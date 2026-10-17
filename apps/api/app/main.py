@@ -1603,24 +1603,42 @@ class FlagshipIn(BaseModel):
     entity: str = Field(min_length=1, max_length=256)
     legal_doc_type: str | None = Field(default=None, pattern="^(nda|spa|credit)$")
     lbo: dict = Field(default_factory=dict)  # {"inputs": {name: {value, source} | {value, assumption}}, ...}
+    extract: bool = False  # read the filing's inline XBRL tags into verified facts (no LLM)
+    sic: str | None = Field(default=None, max_length=8)  # the entity's SIC code, for peers
+    cik: str | None = Field(default=None, max_length=12)  # the entity's own CIK, left out of its peers
+    peers_pages: int = Field(default=1, ge=1, le=3)
+    precedents: dict | None = None  # {"since": "YYYY-MM-DD", "until": "YYYY-MM-DD", "limit": 5}
 
 
 @app.post("/flagship/run")
 def flagship_run(body: FlagshipIn, who: Who, db: Db):
-    """One run over an uploaded document. Steps: intake, extraction (a separate job), comps and precedents (separate
-    runs), legal red flags, LBO returns, and the IC memo deck for the entity. Each step reports ok, skipped or failed
-    with its reason; the memo deck is downloaded from /memo.pptx?entity=..."""
+    """One run over an uploaded document. Steps: intake, extraction (the filing's own tags, cited), comps (SIC peers by
+    size), precedents (merger 8-Ks in a window), legal red flags, LBO returns and the IC memo deck. Each step reports
+    ok, skipped or failed with its reason; the memo is downloaded from /memo.pptx?entity=..."""
     doc = _own_doc(db, who, body.document_id)
     pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc.id).order_by(PageRow.number)]
-    verified = (db.query(Fact).filter_by(tenant_id=who.tenant, entity=body.entity, status="verified").count())
-    steps = [
-        flagship_mod.Step("intake", "ok", result={"document": doc.filename, "pages": len(pages)}),
-        flagship_mod.Step("extraction", "skipped", "run POST /documents/{id}/extract first; it is a separate job"),
-        flagship_mod.Step("comps", "skipped", "needs a peer list and sector; run POST /comps"),
-        flagship_mod.Step("precedents", "skipped", "needs a date range and SEC_USER_AGENT; run GET /precedents/scan"),
-        flagship_mod.legal_step(pages, doc.id, body.legal_doc_type, legal_mod),
-        flagship_mod.lbo_step(body.lbo.get("inputs") or {}, doc.id),
-    ]
+    steps = [flagship_mod.Step("intake", "ok", result={"document": doc.filename, "pages": len(pages)})]
+    if body.extract:
+        blob = db.get(DocumentFile, doc.id)
+        steps.append(flagship_mod.extraction_step(db, who.tenant, doc.id, body.entity, blob.data) if blob
+                     else flagship_mod.Step("extraction", "failed", "original file not stored"))
+    else:
+        steps.append(flagship_mod.Step("extraction", "skipped", "set extract=true to read the filing's tags"))
+    rev_fact = db.query(Fact).filter_by(tenant_id=who.tenant, entity=body.entity, metric="revenue",
+                                        status="verified").order_by(Fact.id.desc()).first()
+    revenue = rev_fact.value if rev_fact else None
+    exclude = {body.cik.zfill(10)} if body.cik else set()
+    try:
+        steps.append(flagship_mod.comps_step(revenue, body.sic, exclude, body.peers_pages, peers_mod.discover))
+    except (OSError, ValueError, RuntimeError) as e:
+        steps.append(flagship_mod.Step("comps", "failed", f"{type(e).__name__}: {e}"))
+    try:
+        steps.append(flagship_mod.precedents_step(body.precedents, pfetch_mod.build))
+    except (OSError, ValueError, RuntimeError) as e:
+        steps.append(flagship_mod.Step("precedents", "failed", f"{type(e).__name__}: {e}"))
+    steps.append(flagship_mod.legal_step(pages, doc.id, body.legal_doc_type, legal_mod))
+    steps.append(flagship_mod.lbo_step(body.lbo.get("inputs") or {}, doc.id))
+    verified = db.query(Fact).filter_by(tenant_id=who.tenant, entity=body.entity, status="verified").count()
     if verified:
         steps.append(flagship_mod.Step("memo", "ok", result={
             "verified_facts": verified, "download": f"/memo.pptx?entity={body.entity}"}))

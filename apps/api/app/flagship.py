@@ -79,3 +79,36 @@ def legal_step(pages: list[tuple[int, str]], doc_id: str, doc_type: str | None, 
     for f in flags:
         f.setdefault("document_id", doc_id)
     return Step("legal", "ok", result={"red_flags": flags, "absent": out.get("absent", [])})
+
+
+def extraction_step(db, tenant: str, doc_id: str, entity: str, data: bytes) -> Step:
+    """Verified facts from the filing's own iXBRL tags (no LLM). Failed citations are listed, not stored."""
+    from app.ixbrl_facts import extract
+    from app.ixbrl_full import read_filing
+
+    _, tags = read_filing(data.decode("utf-8", errors="replace"))
+    if not tags:
+        return Step("extraction", "skipped", "no inline XBRL tags in this file; use the table or LLM extractors")
+    res = extract(db, tenant, doc_id, entity, tags)
+    status = "ok" if res["created"] else "failed"
+    reason = "" if res["created"] else "no figure passed the citation check"
+    return Step("extraction", status, reason, result=res)
+
+
+def comps_step(revenue: Decimal | None, sic: str | None, exclude: set[str], pages: int, discover) -> Step:
+    """SIC peers by size (0.5x to 2x the entity's revenue), each with its rule and filing link."""
+    if revenue is None or not sic:
+        return Step("comps", "skipped", "needs the entity's revenue (extraction) and a SIC code")
+    found = discover(revenue, sic, exclude, pages=pages)
+    return Step("comps", "ok", result={"sic": sic, "target_revenue": str(revenue), "peers": [
+        {"cik": p.cik, "name": p.name, "revenue": str(p.revenue), "period": p.period,
+         "source_url": p.source_url, "rule": p.rule} for p in found]})
+
+
+def precedents_step(window: dict | None, build) -> Step:
+    """Merger 8-Ks in a date window; each deal's EV and multiples are cited to its filing."""
+    if not window:
+        return Step("precedents", "skipped", "no date window given (since, until)")
+    res = build(window["since"], window["until"], limit=int(window.get("limit", 5)))
+    return Step("precedents", "ok", result={"deals": res["deals"], "skipped": res["skipped"],
+                                            "stats": res["stats"]})
