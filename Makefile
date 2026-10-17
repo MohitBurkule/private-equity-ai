@@ -29,6 +29,11 @@ ci:  ## Local merge gate (Actions is blocked): ruff, alembic heads, pytest on SQ
 
 .PHONY: ci
 
+parity:  ## Optional: FastAPI vs Rust API on a throwaway Postgres, diffs status, bodies and audit rows (PG_RUN_AS, cargo, uvicorn)
+	bash scripts/parity.sh
+
+.PHONY: parity
+
 # Firm-system mocks (all SYNTHETIC): WireMock stubs for DealCloud, iManage, Datasite and fund admin, a Keycloak
 # realm for SSO roles, and an SFTP drop for fund-admin files. Starts them, then runs the tests that use each one.
 demo-mocks:  ## Run the firm-system mock flows: compose mocks when Docker runs, else local jars (see docs/MOCKS.md)
