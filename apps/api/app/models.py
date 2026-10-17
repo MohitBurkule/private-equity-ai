@@ -391,6 +391,8 @@ class MemoTemplate(Base):
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     name: Mapped[str] = mapped_column(String(64))
     sections: Mapped[str] = mapped_column(Text)  # JSON list of section keys
+    headings: Mapped[str] = mapped_column(Text, default="{}")  # JSON: section key -> firm heading text
+    intro: Mapped[str] = mapped_column(Text, default="")  # firm line printed under the memo title
     created_by: Mapped[str] = mapped_column(String(64), default="")
     created_at: Mapped[str] = mapped_column(String(40), default="")
 

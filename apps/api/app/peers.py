@@ -51,19 +51,52 @@ def group_codes(sic: str) -> list[str]:
     return [sic[:3] + d for d in "0123456789" if sic[:3] + d != sic]
 
 
-def discover_with_group(target_revenue: Decimal, sic: str, exclude: set[str], pages: int = 3, min_peers: int = 3,
-                        get: Fetch | None = None, facts_get: Fetch | None = None, want: int = 10) -> list[Peer]:
-    """Exact-SIC peers first. When fewer than `min_peers` pass, widen to the other codes in the same SIC family.
-    Every widened peer is tagged `matched_on="sic_group"` and its rule names the family it came from."""
-    found = discover(target_revenue, sic, exclude, pages=pages, get=get, facts_get=facts_get, want=want)
-    if len(found) >= min_peers:
+@dataclass(frozen=True)
+class PeerRule:
+    low: Decimal = Decimal("0.5")
+    high: Decimal = Decimal(2)
+    min_year: int = 2024
+    min_peers: int = 3
+    widen: bool = True  # False: exact SIC code only, never the family
+
+
+_BAND = re.compile(r"\bband\s*[=:]\s*(\d+(?:\.\d+)?)\s*x?\s*(?:to|-)\s*(\d+(?:\.\d+)?)\s*x?", re.IGNORECASE)
+_MIN_PEERS = re.compile(r"\bmin\s*peers\s*[=:]\s*(\d+)", re.IGNORECASE)
+_MIN_YEAR = re.compile(r"\bmin\s*year\s*[=:]\s*(\d{4})", re.IGNORECASE)
+_FAMILY = re.compile(r"\bfamily\s*[=:]\s*(yes|no)\b", re.IGNORECASE)
+
+
+def parse_rule(text: str) -> PeerRule:
+    """Firm peer rule, e.g. "band: 0.4 to 2.5; min peers: 4; min year: 2025; family: no".
+    Anything the rule does not state keeps the default, so an empty rule is the standard selection."""
+    d = PeerRule()
+    if m := _BAND.search(text):
+        d = replace(d, low=Decimal(m.group(1)), high=Decimal(m.group(2)))
+    if m := _MIN_PEERS.search(text):
+        d = replace(d, min_peers=int(m.group(1)))
+    if m := _MIN_YEAR.search(text):
+        d = replace(d, min_year=int(m.group(1)))
+    if m := _FAMILY.search(text):
+        d = replace(d, widen=m.group(1).lower() == "yes")
+    return d
+
+
+def discover_with_group(target_revenue: Decimal, sic: str, exclude: set[str], pages: int = 3,
+                        rule: PeerRule | None = None, get: Fetch | None = None, facts_get: Fetch | None = None,
+                        want: int = 10) -> list[Peer]:
+    """Exact-SIC peers first. When fewer than `rule.min_peers` pass and the rule allows it, widen to the other
+    codes in the same SIC family. Every widened peer is tagged `matched_on="sic_group"` and its rule names the family."""
+    rule = rule or PeerRule()
+    band = {"low": rule.low, "high": rule.high, "min_year": rule.min_year}
+    found = discover(target_revenue, sic, exclude, pages=pages, get=get, facts_get=facts_get, want=want, **band)
+    if len(found) >= rule.min_peers or not rule.widen:
         return found
     seen = set(exclude) | {p.cik.zfill(10) for p in found}
     for code in group_codes(sic):
         if len(found) >= want:
             break
         more = discover(target_revenue, code, seen, pages=1, get=get, facts_get=facts_get,
-                        want=want - len(found))
+                        want=want - len(found), **band)
         for p in more:
             seen.add(p.cik)
             found.append(replace(p, matched_on="sic_group", rule=f"{p.rule} (SIC family {sic[:3]})"))

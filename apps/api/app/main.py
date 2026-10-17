@@ -1703,11 +1703,15 @@ def memo(entity: str, db: Db, who: Who, peers: str = "", period: str = "", legal
 class MemoTemplateIn(BaseModel):
     name: str = Field(min_length=2, max_length=64)
     sections: list[str] = Field(min_length=1, max_length=8)
+    headings: dict[str, str] = Field(default_factory=dict)  # firm heading text per section key
+    intro: str = Field(default="", max_length=mt_mod.INTRO_MAX)
 
 
 @app.get("/memo/templates")
 def memo_templates_list(db: Db, who: Who):
-    return {"items": [{"name": k, "sections": v, "built_in": k in TEMPLATES}
+    text = mt_mod.list_text(db, who.tenant)
+    return {"items": [{"name": k, "sections": v, "built_in": k in TEMPLATES,
+                       "headings": text.get(k, {}).get("headings", {}), "intro": text.get(k, {}).get("intro", "")}
                       for k, v in mt_mod.list_templates(db, who.tenant).items()]}
 
 
@@ -1720,6 +1724,7 @@ def memo_templates_save(body: MemoTemplateIn, db: Db, who: Writer):
         raise HTTPException(422, "name must be 2-64 lowercase letters, digits, - or _, and not a built-in name")
     try:
         keys = mt_mod.validate_sections(body.sections)
+        headings, intro = mt_mod.validate_text(body.headings, body.intro, keys)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     row = db.query(MemoTemplate).filter_by(tenant_id=who.tenant, name=body.name).one_or_none()
@@ -1727,9 +1732,11 @@ def memo_templates_save(body: MemoTemplateIn, db: Db, who: Writer):
         row = MemoTemplate(tenant_id=who.tenant, name=body.name, created_by=actor(who), created_at=_now_iso())
         db.add(row)
     row.sections = json.dumps(keys)
+    row.headings = json.dumps(headings)
+    row.intro = intro
     db.commit()
     log_event(db, who.tenant, actor(who), "memo.template_saved", {"name": body.name, "sections": keys})
-    return {"name": row.name, "sections": keys}
+    return {"name": row.name, "sections": keys, "headings": headings, "intro": intro}
 
 
 @app.get("/memo/sections")
@@ -3317,9 +3324,14 @@ def targets_sic_peers(target_id: int, db: Db, who: Who, pages: int = Query(1, ge
         return {"target_id": t.id, "sic": t.sic, "peers": [], "median": None,
                 "note": "needs a SIC code and a stated revenue"}
     exclude = {t.source_ref.zfill(10)} if t.source == "sec" else set()
-    found = peers_mod.discover_with_group(t.revenue, t.sic, exclude, pages=pages)
+    rule_row = fk.newest_accepted(db, who.tenant, "peer_rules")
+    rule = peers_mod.parse_rule(rule_row.value) if rule_row else peers_mod.PeerRule()
+    found = peers_mod.discover_with_group(t.revenue, t.sic, exclude, pages=pages, rule=rule)
     st = comps_mod.stats([p.revenue for p in found])
-    return {"target_id": t.id, "sic": t.sic, "target_revenue": str(t.revenue), "peers": len(found),
+    applied = {"low": str(rule.low), "high": str(rule.high), "min_year": rule.min_year,
+               "min_peers": rule.min_peers, "widen": rule.widen,
+               "rule_source": f"accepted peer_rules rule: {rule_row.value}" if rule_row else "default"}
+    return {"target_id": t.id, "sic": t.sic, "target_revenue": str(t.revenue), "peers": len(found), "applied": applied,
             "median": None if st.median is None else str(st.median),
             "items": [{"cik": p.cik, "name": p.name, "revenue": str(p.revenue), "period": p.period,
                        "source_url": p.source_url, "rule": p.rule, "matched_on": p.matched_on} for p in found]}

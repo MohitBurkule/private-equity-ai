@@ -41,6 +41,37 @@ def validate_sections(sections: list[str]) -> list[str]:
     return sections
 
 
+INTRO_MAX = 500
+HEADING_MAX = 80
+
+
+def validate_text(headings: dict[str, str], intro: str, sections: list[str]) -> tuple[dict[str, str], str]:
+    """Firm heading text is for sections the template carries; one line each, no markup. Empty means the built-in."""
+    bad = [k for k in headings if k not in SECTIONS or k not in sections]
+    if bad:
+        raise ValueError(f"headings for sections the template does not carry: {sorted(bad)}")
+    clean = {}
+    for k, v in headings.items():
+        v = v.strip()
+        if not v or len(v) > HEADING_MAX or "\n" in v or "#" in v:
+            raise ValueError(f"heading for {k} must be 1-{HEADING_MAX} characters, one line, no #")
+        clean[k] = v
+    intro = intro.strip()
+    if len(intro) > INTRO_MAX or "\n" in intro:
+        raise ValueError(f"intro must be one line of at most {INTRO_MAX} characters")
+    return clean, intro
+
+
+def firm_text(db: Session, tenant_id: str, template: str) -> tuple[dict[str, str], str]:
+    """Firm headings and intro for a template. Built-in templates have none, so they print the defaults."""
+    if template in TEMPLATES:
+        return {}, ""
+    row = db.query(MemoTemplate).filter_by(tenant_id=tenant_id, name=template).one_or_none()
+    if row is None:
+        return {}, ""
+    return json.loads(row.headings or "{}"), row.intro or ""
+
+
 def resolve(db: Session, tenant_id: str, template: str) -> tuple[str, ...]:
     """Section keys for a built-in or the firm's own template. Anything else is a KeyError."""
     if template in TEMPLATES:
@@ -58,9 +89,16 @@ def list_templates(db: Session, tenant_id: str) -> dict[str, list[str]]:
     return out
 
 
+def list_text(db: Session, tenant_id: str) -> dict[str, dict]:
+    """Firm headings and intro per saved template, for the listing."""
+    return {r.name: {"headings": json.loads(r.headings or "{}"), "intro": r.intro or ""}
+            for r in db.query(MemoTemplate).filter_by(tenant_id=tenant_id).all()}
+
+
 def build_memo_sections(db: Session, tenant_id: str, entity: str, template: str,
                         scope: set[str] | None = None) -> str:
     keys = resolve(db, tenant_id, template)
+    headings, intro = firm_text(db, tenant_id, template)
     m = build_memo_data(db, tenant_id, entity, scope)
     if m.empty and not m.rules:
         return f"# {entity}\n\nNo verified facts available. Nothing to report.\n"
@@ -71,7 +109,9 @@ def build_memo_sections(db: Session, tenant_id: str, entity: str, template: str,
         "rules": [f"- {r['label']}: {r['value']} [{r['source']['document_id'][:8]}]" for r in m.rules],
     }
     out = [f"# {entity}: {template} memo (draft, analyst review required)"]
+    if intro:
+        out += ["", intro]
     for key in keys:
         if items[key]:
-            out += ["", f"## {SECTIONS[key]}", *items[key]]
+            out += ["", f"## {headings.get(key, SECTIONS[key])}", *items[key]]
     return "\n".join([*out, "", "Sources:", *m.notes]) + "\n"
