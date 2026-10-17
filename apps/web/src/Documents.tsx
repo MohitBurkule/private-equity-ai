@@ -3,12 +3,14 @@ import { useState } from "react";
 import { api, DocumentInfo, Hit } from "./api";
 import { useLoad } from "./hooks";
 import { filterDocs } from "./libraryFilter";
+import { loadViews, saveViews, SavedView } from "./savedViews";
 import { SourceChip } from "./source";
 import { Button, Card, CardHead, Empty, ErrorLine, Input } from "./ui";
 
 export function Documents() {
   const docs = useLoad<DocumentInfo[]>(api.documents);
   const [libQ, setLibQ] = useState("");
+  const [views, setViews] = useState<SavedView[]>(() => loadViews());
   const [left, setLeft] = useState("");
   const [right, setRight] = useState("");
   const [q, setQ] = useState("");
@@ -34,6 +36,23 @@ export function Documents() {
         {docs.data && docs.data.length > 0 && (
           <div className="px-4 pt-3">
             <Input className="w-full" value={libQ} onChange={(e) => setLibQ(e.target.value)} placeholder="Filter by filename" aria-label="Filter documents" />
+          </div>
+        )}
+        {docs.data && docs.data.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 px-4 pt-2 text-sm">
+            <Button disabled={!libQ.trim()} onClick={() => {
+              const name = libQ.trim();
+              const next = [...views.filter((v) => v.name !== name), { name, query: name }];
+              setViews(next);
+              saveViews(next);
+            }}>Save this filter</Button>
+            {views.map((v) => (
+              <span key={v.name} className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5">
+                <button className="hover:underline" onClick={() => setLibQ(v.query)}>{v.name}</button>
+                <button aria-label={`Remove view ${v.name}`} className="text-mut hover:text-acc"
+                  onClick={() => { const next = views.filter((x) => x.name !== v.name); setViews(next); saveViews(next); }}>×</button>
+              </span>
+            ))}
           </div>
         )}
         {docs.data && docs.data.length > 0 && filterDocs(docs.data, libQ).length === 0 && <Empty>No document name matches "{libQ}".</Empty>}
