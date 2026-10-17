@@ -60,6 +60,7 @@ from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
 from app.facts import CitationError, add_verified_fact, review_fact
+from app.factsxlsx import build_facts_xlsx
 from app.fundmetrics import fund_metrics
 from app.holdings import parse_holdings
 from app.ingest import finalize_upload, ingest_any
@@ -791,6 +792,15 @@ async def uk_psc_extract(file: Annotated[UploadFile, File()], who: Who, companie
             found.append(asdict(rec))
     missing = sorted(want - {r["company_number"] for r in found})
     return {"records": found, "not_in_file": missing, "unreadable_lines": len(errors), "unreadable_sample": errors[:5]}
+
+
+@app.get("/facts.xlsx")
+def facts_xlsx(db: Db, who: Who, entity: str | None = None):
+    """Verified and reviewed facts as a workbook; each value cell's comment lists its sources."""
+    log_event(db, who.tenant, actor(who), "facts.export", {"entity": entity, "format": "xlsx"})
+    return Response(build_facts_xlsx(db, who.tenant, entity, visible_doc_ids(db, who)), headers={
+        "Content-Disposition": 'attachment; filename="facts.xlsx"'},
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @app.get("/memo.docx")
