@@ -115,6 +115,7 @@ from app.hybrid import default_index
 from app.ingest import finalize_upload, ingest_any
 from app.ixbrl_full import read_filing
 from app.kpi_workbook import ingest_kpi_pack as kpi_pack_ingest
+from app.lbo_workbook import named_inputs, tie
 from app.llm import LLM, NoLLMConfigured, get_llm
 from app.memo import build_memo, build_memo_docx, build_memo_pptx
 from app.memo_templates import TEMPLATES, build_memo_sections
@@ -1013,6 +1014,17 @@ def expert_call_review(body: ExpertCallIn, who: Who):
     return {"turns": len(turns), "speakers": sorted({t.speaker for t in turns}),
             "flags": [{"line": f.line, "speaker": f.speaker, "phrase": f.phrase, "quote": f.quote}
                       for f in flags(turns)]}
+
+
+@app.post("/lbo/workbook/ties")
+async def lbo_workbook_ties(file: Annotated[UploadFile, File()], db: Db, who: Who):
+    """Named inputs of an LBO workbook, each tied to verified facts with the same value. Untied inputs are
+    flagged for a person; the workbook's value is never changed. Also lists required LBO inputs it lacks."""
+    inputs = named_inputs(await file.read())
+    ties = tie(db, who.tenant, visible_doc_ids(db, who), inputs)
+    lbo_missing = sorted(k for k in lbo_mod.REQUIRED if k not in inputs)
+    return {"inputs": ties, "untied": sorted(k for k, v in ties.items() if v["tie"] == "untied"),
+            "lbo_missing": lbo_missing}
 
 
 @app.post("/models/audit")
