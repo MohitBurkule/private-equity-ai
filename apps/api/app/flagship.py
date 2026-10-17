@@ -206,8 +206,12 @@ def _peer_row(p, ev) -> dict:
            "source_url": p.source_url, "rule": p.rule}
     if ev is not None:
         row.update({"enterprise_value": str(ev.value), "ev_unit": ev.unit, "ev_fact_id": ev.id,
-                    "ev_revenue_multiple": str((ev.value / p.revenue).quantize(Decimal("0.01")))
-                    if p.revenue > 0 else None})
+                    "ev_revenue_multiple": None})
+        # filing revenue is USD; an EV in another unit would give a wrong multiple, so it is not divided
+        if ev.unit != "USD":
+            row["ev_note"] = f"EV is in {ev.unit}, not USD; no multiple"
+        elif p.revenue > 0:
+            row["ev_revenue_multiple"] = str((ev.value / p.revenue).quantize(Decimal("0.01")))
     return row
 
 
