@@ -36,3 +36,32 @@ def test_unverified_when_no_revenue_or_no_sec_link_or_network_error():
 def test_ebitda_margin_clause_is_read_not_screened():
     assert cv.ebitda_margin_clause("EBITDA margin is at least 15%, and") == Decimal(15)
     assert cv.ebitda_margin_clause("revenue is at least $20 million") is None
+
+
+CH_PNL = """<html><body>
+<xbrli:context id="y25"><xbrli:period><xbrli:startDate>2024-04-01</xbrli:startDate><xbrli:endDate>2025-03-31</xbrli:endDate></xbrli:period></xbrli:context>
+<ix:nonFraction name="core:Turnover" contextRef="y25" scale="3">2,500</ix:nonFraction>
+</body></html>"""
+
+
+def fake_ch(url, headers):
+    if "filing-history" in url:
+        return json.dumps({"items": [{"links": {"document_metadata": "https://document-api.x/document/abc"}}]}).encode()
+    if url.endswith("/content"):
+        return CH_PNL.encode()
+    raise OSError("unexpected " + url)
+
+
+def test_companies_house_candidate_verified_from_tagged_turnover():
+    c = cv.check_ch("01234567", "Widget", fake_ch)
+    assert c.status == "verified" and c.revenue == Decimal(2500000) and c.period == "2024-04-01 to 2025-03-31"
+    assert c.source_url.endswith("/company/01234567/filing-history")
+
+
+def test_companies_house_unverified_without_key_or_tagged_turnover():
+    assert "CH_API_KEY" in cv.check_ch("01234567", "W").note  # no key and no injected getter
+    empty = cv.check_ch("01234567", "W", lambda url, h: b'{"items": []}')
+    assert empty.status == "unverified" and "no accounts document" in empty.note
+    micro = cv.check_ch("01234567", "W", lambda url, h: (json.dumps({"items": [{"links": {"document_metadata": "d"}}]}).encode()
+                                                          if "filing-history" in url else b"<html></html>"))
+    assert micro.status == "unverified" and "no tagged turnover" in micro.note
