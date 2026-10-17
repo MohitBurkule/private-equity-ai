@@ -15,6 +15,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 from sqlalchemy.orm import Session
 
+from app.facts import CitationError, reject_unit_mix
 from app.ingest import ingest_xlsx
 from app.models import Fact, FactSource
 from app.portfolio import PortfolioCompany, record_observation
@@ -78,6 +79,11 @@ def ingest_kpi_pack(db: Session, tenant_id: str, company_id: int, data: bytes, f
                     out.skipped.append({"cell": where, "reason": f"unmapped or unreadable row: {label!r} {period!r}"})
                     continue
                 quote = f"{where}, row: {cells['metric']} | {period} | {cells['value']} {unit}"
+                try:
+                    reject_unit_mix(db, tenant_id, company.name, metric, period, "MGMT", unit)
+                except CitationError as e:
+                    out.skipped.append({"cell": where, "reason": str(e)})
+                    continue
                 fact = Fact(tenant_id=tenant_id, entity=company.name, metric=metric, period=period, value=value,
                             unit=unit, basis="MGMT", status="verified")
                 fact.sources = [FactSource(document_id=doc.id, page=sheet_no, quote=quote, kind="xlsx",

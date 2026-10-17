@@ -39,3 +39,9 @@ def test_same_unit_again_and_other_periods_are_fine():
     add_verified_fact(s, **_kw(doc, "USD"))
     add_verified_fact(s, **_kw(doc, "USD"))
     add_verified_fact(s, **{**_kw(doc, "GBP"), "period": "FY25"})
+
+
+def test_a_different_basis_is_a_different_key():
+    s, doc = _session()
+    add_verified_fact(s, **_kw(doc, "USD"))
+    add_verified_fact(s, **{**_kw(doc, "GBP"), "basis": "MGMT"})
