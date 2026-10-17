@@ -97,6 +97,7 @@ from app.db import make_engine, make_session_factory
 from app.dd import STATUSES, TEMPLATE
 from app.edgar import fetch_companyfacts
 from app.email_links import links_for
+from app.expert_calls import flags, parse
 from app.extract.rows import _ROWS as ROW_SCHEMAS
 from app.extract.rows import extract_rows
 from app.extract.run import extract_schema
@@ -994,6 +995,20 @@ def dd_question_update(qid: int, body: DDQuestionUpdate, db: Db, who: Writer):
         q.document_id = body.document_id
     db.commit()
     return _dd_question_out(q)
+
+
+class ExpertCallIn(BaseModel):
+    transcript: str
+
+
+@app.post("/dd/expert-calls/review")
+def expert_call_review(body: ExpertCallIn, who: Who):
+    """Turns of an expert-call transcript and the lines a compliance reviewer should read first. Stores nothing:
+    the transcript is the caller's, and the flags are a prompt for review, not a finding."""
+    turns = parse(body.transcript)
+    return {"turns": len(turns), "speakers": sorted({t.speaker for t in turns}),
+            "flags": [{"line": f.line, "speaker": f.speaker, "phrase": f.phrase, "quote": f.quote}
+                      for f in flags(turns)]}
 
 
 @app.get("/dd/summary")
