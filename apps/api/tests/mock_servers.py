@@ -72,8 +72,10 @@ def rewrite_http(prefixes: dict[str, str]):
         else:
             raise ValueError(f"no mock for {url.split('?')[0]}")
         body = headers.get("X-Post-Body")
-        hdrs = {k: v for k, v in headers.items() if k != "X-Post-Body"}
-        req = urllib.request.Request(target, headers=hdrs, data=body.encode() if body is not None else None)
+        method = headers.get("X-Method")
+        hdrs = {k: v for k, v in headers.items() if k not in ("X-Post-Body", "X-Method")}
+        req = urllib.request.Request(target, headers=hdrs, method=method,
+                                     data=body.encode() if body is not None else None)
         with urllib.request.urlopen(req, timeout=10) as r:
             return r.read()
 

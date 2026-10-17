@@ -296,6 +296,19 @@ class Alert(Base):
     emailed_at: Mapped[str | None] = mapped_column(String(40), default=None)
 
 
+class DealLink(Base):
+    """Links a deal to its CRM record, with the stage each side had at the last stage sync (deal vocabulary)."""
+    __tablename__ = "deal_link"
+    __table_args__ = (UniqueConstraint("tenant_id", "connector", "external_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    connector: Mapped[str] = mapped_column(String(32))
+    external_id: Mapped[str] = mapped_column(String(128))
+    deal: Mapped[str] = mapped_column(String(128))
+    last_local: Mapped[str] = mapped_column(String(16))
+    last_external: Mapped[str] = mapped_column(String(16))
+
+
 class CalendarEvent(Base):
     """A meeting from a connected calendar. starts_at is the date (YYYY-MM-DD); board marks board meetings."""
     __tablename__ = "calendar_event"
