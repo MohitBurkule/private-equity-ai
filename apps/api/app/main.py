@@ -201,6 +201,7 @@ from app.page_image import render_page
 from app.parse import chart_vlm
 from app.parse.sh01 import parse_capital_form
 from app.portfolio import (
+    MARK_METRIC,
     Covenant,
     KpiObservation,
     PortfolioCompany,
@@ -210,6 +211,7 @@ from app.portfolio import (
     evaluate_covenant,
     qoq_change,
     record_observation,
+    roll_forward,
 )
 from app.qoe import normalized_ebitda, nwc_peg, one_off_flags, revenue_trend
 from app.ratelimit import make_limiter
@@ -2639,7 +2641,7 @@ def create_company(body: CompanyIn, db: Db, who: Writer):
 
 @app.post("/portfolio/companies/{company_id}/observations", status_code=201)
 def add_observation(company_id: int, fact_id: int, db: Db, who: Writer,
-                    kind: Literal["actual", "budget"] = "actual"):
+                    kind: Literal["actual", "budget", "mark"] = "actual"):
     tenant = who.tenant
     f = db.get(Fact, fact_id)
     if f is not None and f.tenant_id == tenant and not fact_visible(f, visible_doc_ids(db, who)):
@@ -2688,6 +2690,32 @@ def budget_vs_actual(company_id: int, period: str, db: Db, who: Who):
             row["variance_pct"] = None if pct is None else str(round(pct, 2))
         rows.append(row)
     return {"period": period, "metrics": rows}
+
+
+@app.get("/portfolio/companies/{company_id}/roll-forward")
+def valuation_roll_forward(company_id: int, period: str, prior: str, db: Db, who: Who,
+                           mark_metric: str = Query(MARK_METRIC, max_length=128)):
+    """Opening mark (prior period end), closing mark, cash in and out over the period, and the change in value
+    that the cash flows leave unexplained. Every figure is cited. A figure the caller may not see reads as missing,
+    so the change is withheld rather than computed from a hidden number."""
+    scope = visible_doc_ids(db, who)
+
+    def figure(rows, metric: str, p: str):
+        o = next((o for o in rows if o.metric == metric and o.period == p), None)
+        if o is None or not fact_visible(db.get(Fact, o.fact_id), scope):
+            return None, None
+        return o.value, {"value": str(o.value), "fact_id": o.fact_id}
+
+    marks = current_kpis(db, who.tenant, company_id, "mark")
+    actuals = current_kpis(db, who.tenant, company_id)
+    open_v, open_c = figure(marks, mark_metric, prior)
+    close_v, close_c = figure(marks, mark_metric, period)
+    contrib_v, contrib_c = figure(actuals, "contributions", period)
+    dist_v, dist_c = figure(actuals, "distributions", period)
+    change = roll_forward(open_v, close_v, contrib_v, dist_v)
+    return {"period": period, "prior": prior, "opening": open_c, "closing": close_c,
+            "contributions": contrib_c, "distributions": dist_c,
+            "change_in_value": None if change is None else str(change)}
 
 
 @app.get("/portfolio/submissions")

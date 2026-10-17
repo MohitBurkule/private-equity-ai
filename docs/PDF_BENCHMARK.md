@@ -204,3 +204,4 @@ Still open: the larger text-only tables in the other decks are not labelled; the
 Scores on all labelled table rows (146 values, 49 rows incl. 6 KPI tiles):
 - Router alone: 58/146 values on the row line, 27/49 rows.
 - Router plus layout fallback: every table value (140/140) and every table row (43/43). Layout-only hits carry no bbox.
+
