@@ -296,6 +296,21 @@ class Alert(Base):
     emailed_at: Mapped[str | None] = mapped_column(String(40), default=None)
 
 
+class CalendarEvent(Base):
+    """A meeting from a connected calendar. starts_at is the date (YYYY-MM-DD); board marks board meetings."""
+    __tablename__ = "calendar_event"
+    __table_args__ = (UniqueConstraint("tenant_id", "source", "external_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    source: Mapped[str] = mapped_column(String(32))
+    external_id: Mapped[str] = mapped_column(String(512))
+    title: Mapped[str] = mapped_column(Text)
+    starts_at: Mapped[str] = mapped_column(String(10))
+    url: Mapped[str] = mapped_column(Text, default="")
+    company: Mapped[str | None] = mapped_column(String(256), default=None, index=True)
+    board: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+
+
 class Connection(Base):
     """A saved connector setup: options, deal wall, encrypted token and an optional sync interval."""
     __tablename__ = "connection"

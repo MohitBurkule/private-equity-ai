@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from app.connectors import oauth
 from app.connectors.base import Connector
+from app.connectors.calendar import GoogleCalendar, OutlookCalendar
 from app.connectors.crm import Affinity, DealCloud, HubSpot, Salesforce
 from app.connectors.dataroom import Datasite, Intralinks
 from app.connectors.files import Box, Dropbox, GoogleDrive
@@ -19,9 +20,11 @@ from app.connectors.sftp import SftpSource
 from app.connectors.slack import Slack
 
 IMPLEMENTED: dict[str, type[Connector]] = {c.name: c for c in (Gmail, Outlook, OneDriveSharePoint, GoogleDrive, Box, Dropbox, GoogleSheets, Imap, Mailpit,
-                                                                     Salesforce, HubSpot, Affinity, DealCloud, Slack, Intralinks, Datasite, S3Source, SftpSource)}
+                                                                     Salesforce, HubSpot, Affinity, DealCloud, Slack, Intralinks, Datasite, S3Source, SftpSource,
+                                                                     OutlookCalendar, GoogleCalendar)}
 
 CATALOG = [  # (name, label, category, auth)
+    ("outlook-calendar", "Outlook calendar", "calendar", "OAuth2 (Graph)"), ("google-calendar", "Google Calendar", "calendar", "OAuth2"),
     ("gmail", "Gmail", "email", "OAuth2"), ("mailpit", "Mailpit (dev inbox)", "email", "none, local only"), ("imap", "Any IMAP mailbox", "email", "password / app password"), ("outlook", "Outlook / Exchange", "email", "OAuth2 (Graph)"),
     ("gdrive", "Google Drive", "files", "OAuth2"), ("gsheets", "Google Sheets (two-way)", "files", "OAuth2"), ("sharepoint", "SharePoint / OneDrive", "files", "OAuth2 (Graph)"),
     ("box", "Box", "files", "OAuth2"), ("dropbox", "Dropbox", "files", "OAuth2"),
@@ -60,7 +63,7 @@ def status(connected: set[str]) -> list[dict]:
         elif n in IMPORTS or auth.startswith("none"):
             state, detail = "connected", "no key needed"
         elif auth.startswith("oauth") and not _oauth_ready(n):
-            state, detail = "needs_key", f"set OAUTH_{n.upper()}_CLIENT_ID, _CLIENT_SECRET, _AUTH_URL, _TOKEN_URL"
+            state, detail = "needs_key", f"set OAUTH_{n.upper().replace('-', '_')}_CLIENT_ID, _CLIENT_SECRET, _AUTH_URL, _TOKEN_URL"
         else:
             state, detail = "needs_key", "add a key when you import"
         out.append({**c, "state": state, "detail": detail})
