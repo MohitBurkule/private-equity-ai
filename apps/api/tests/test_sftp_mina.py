@@ -90,3 +90,27 @@ def test_bad_password_and_missing_options(sftp_server):
         list(SftpSource("wrong", host="127.0.0.1", port=str(sftp_server["port"]), username=USER, host_key=_server_host_key(sftp_server["port"])).items())
     with pytest.raises(ConnectorError, match="host and opts.username"):
         list(SftpSource("x").items())
+
+
+def test_drop_folder_syncs_through_the_api_and_a_repeat_is_unchanged(sftp_server):
+    """The SFTP drop as a sync run: every file lands as a document with its sftp:// source, and a second run
+    ingests nothing new. Runs against the same MINA server as the connector tests."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from tests.helpers import new_tenant
+
+    c = TestClient(app)
+    h = new_tenant(c, "sftp-sync")
+    body = {"token": PASSWORD, "deal": "atlas", "limit": 50,
+            "options": {"host": "127.0.0.1", "port": str(sftp_server["port"]), "username": USER, "path": "/deal",
+                        "host_key": _server_host_key(sftp_server["port"])}}
+    first = c.post("/connectors/sftp/sync", json=body, headers=h)
+    assert first.status_code == 200, first.text
+    out = first.json()
+    assert len(out["ingested"]) == 2
+    assert all(i["source_url"].startswith("sftp://127.0.0.1/deal/") for i in out["ingested"])
+    second = c.post("/connectors/sftp/sync", json=body, headers=h).json()
+    assert second["ingested"] == [] and second["unchanged"] == 2
+    runs = c.get("/sync-runs", headers=h).json()
+    assert [r["connector"] for r in runs] == ["sftp", "sftp"] and all(r["status"] == "ok" for r in runs)
