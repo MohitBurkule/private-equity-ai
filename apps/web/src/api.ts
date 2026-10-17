@@ -61,13 +61,14 @@ export interface EvalRunRow { id: number; suite: string; ran_at: string; note: s
 /** Cited input: a verified fact id, as /lbo/returns requires. Multiples are inputs too, so they must be cited. */
 export interface LboAssumption { value: string; set_by: string; set_on: string; reason: string }
 export interface LboRequest {
-  inputs: Record<string, { fact_id: number } | { value: string; assumption: Omit<LboAssumption, "value"> }>;
+  inputs: Record<string, { fact_id: number } | { derived: { formula: string; entity: string; period: string } } | { value: string; assumption: Omit<LboAssumption, "value"> }>;
   entry_multiples?: string[]; exit_multiples?: string[];
 }
 export interface LboResult {
   entry_ev: string; debt: string; fees: string; equity: string; exit_ev: string; exit_net_debt: string; exit_equity: string;
   moic: string; irr: string | null; dividends: string; sensitivity: [string, string, string | null, string | null][] | null;
   assumptions: { input: string; value: string; set_by: string; set_on: string; reason: string }[];
+  derived: { input: string; formula: string; components: number[] }[];
 }
 export interface CovenantTest { period: string; status: string; value: string; threshold: string; unit?: string }
 export interface CovenantStatus {
@@ -77,6 +78,7 @@ export interface CovenantStatus {
 /** A sourcing candidate from a live search. Not imported until someone adds it as a target. */
 export interface SearchCandidate { name: string; source_url: string | null; form?: string; file_date?: string; already_imported?: boolean }
 export interface SearchOut { total: number; items: SearchCandidate[] }
+export interface AlertRow { id: number; kind: string; severity: string; title: string; detail: string; fact_ids: number[]; status: string; created_at: string }
 export interface Breach { company: string; kpi_metric: string; period: string; status: string; value: string; threshold: string; unit?: string }
 export interface ConflictSource { fact_id: number; value: string; documents: { document_id: string; filename: string | null; page: number; quote: string }[] }
 export interface Conflict {
@@ -167,7 +169,9 @@ export const api2 = {
   legalTerms: (docId: string, docType: string) => call<LegalOut>(`/documents/${docId}/legal-terms?doc_type=${docType}`),
   conflicts: () => call<Conflict[]>("/facts/conflicts"),
   evals: () => call<EvalRunRow[]>("/evals?limit=200"),
-  searchEdgar: (body: { query: string; forms: string[]; since?: string; until?: string; limit?: number }) =>
+  alerts: (status?: string) => call<AlertRow[]>(`/alerts${status ? `?status=${status}` : ""}`),
+  setAlertStatus: (id: number, status: string) => call<AlertRow>(`/alerts/${id}/status`, "POST", { status }),
+  searchEdgar: (body: { query: string; forms: string[]; since: string; until: string; limit?: number }) =>
     call<SearchOut>("/targets/search/edgar", "POST", body),
   searchCompaniesHouse: (body: { query: string; limit?: number }) => call<SearchOut>("/targets/search/companies-house", "POST", body),
   lboReturns: (body: LboRequest) => call<LboResult>("/lbo/returns", "POST", body),

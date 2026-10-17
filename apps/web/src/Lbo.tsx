@@ -8,7 +8,10 @@ import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input, Page } from "./
 const REQUIRED = ["ebitda", "entry_multiple", "exit_multiple", "leverage", "interest_rate", "tax_rate", "cash_conversion", "fees_pct", "years"] as const;
 const AXIS = ["8", "9", "10", "11", "12"];
 
-type Pick = { mode: "fact"; factId: string } | { mode: "assumption"; value: string; set_by: string; set_on: string; reason: string };
+type Pick =
+  | { mode: "fact"; factId: string }
+  | { mode: "derived"; entity: string; period: string }
+  | { mode: "assumption"; value: string; set_by: string; set_on: string; reason: string };
 const EMPTY: Pick = { mode: "fact", factId: "" };
 
 /** Sponsor returns from cited inputs. Assumptions are listed on the output and never shown as sourced. */
@@ -23,7 +26,9 @@ export function Lbo() {
   const set = (k: string, p: Pick) => setPick({ ...pick, [k]: p });
   const ready = REQUIRED.every((k) => {
     const p = current(k);
-    return p.mode === "fact" ? p.factId !== "" : p.value !== "" && p.set_by !== "" && p.set_on !== "" && p.reason !== "";
+    if (p.mode === "fact") return p.factId !== "";
+    if (p.mode === "derived") return p.entity !== "" && p.period !== "";
+    return p.value !== "" && p.set_by !== "" && p.set_on !== "" && p.reason !== "";
   });
 
   const run = async () => {
@@ -31,9 +36,9 @@ export function Lbo() {
     const inputs: LboRequest["inputs"] = {};
     for (const k of REQUIRED) {
       const p = current(k);
-      inputs[k] = p.mode === "fact"
-        ? { fact_id: Number(p.factId) }
-        : { value: p.value, assumption: { set_by: p.set_by, set_on: p.set_on, reason: p.reason } };
+      if (p.mode === "fact") inputs[k] = { fact_id: Number(p.factId) };
+      else if (p.mode === "derived") inputs[k] = { derived: { formula: k, entity: p.entity, period: p.period } };
+      else inputs[k] = { value: p.value, assumption: { set_by: p.set_by, set_on: p.set_on, reason: p.reason } };
     }
     try {
       setResult(await api2.lboReturns({ inputs, entry_multiples: AXIS, exit_multiples: AXIS }));
@@ -57,10 +62,11 @@ export function Lbo() {
               <div key={k} className="text-sm">
                 <div className="mb-1 flex items-center justify-between">
                   <span className="text-xs uppercase tracking-wider text-mut">{k.replace(/_/g, " ")}</span>
-                  <button type="button" className="text-xs text-acc"
-                    onClick={() => set(k, p.mode === "fact" ? { mode: "assumption", value: "", set_by: "", set_on: "", reason: "" } : EMPTY)}>
-                    {p.mode === "fact" ? "Use an assumption" : "Use a verified fact"}
-                  </button>
+                  {p.mode === "fact" && k === "ebitda" && <button type="button" className="text-xs text-acc"
+                    onClick={() => set(k, { mode: "derived", entity: "", period: "" })}>Derive from components</button>}
+                  {p.mode !== "fact" && <button type="button" className="text-xs text-acc" onClick={() => set(k, EMPTY)}>Use a verified fact</button>}
+                  {p.mode === "fact" && <button type="button" className="ml-3 text-xs text-acc"
+                    onClick={() => set(k, { mode: "assumption", value: "", set_by: "", set_on: "", reason: "" })}>Use an assumption</button>}
                 </div>
                 {p.mode === "fact" ? (
                   <select value={p.factId} onChange={(e) => set(k, { mode: "fact", factId: e.target.value })}
@@ -68,6 +74,13 @@ export function Lbo() {
                     <option value="">Choose a verified fact</option>
                     {facts.data?.map((f) => <option key={f.id} value={f.id}>{label(f)}</option>)}
                   </select>
+                ) : p.mode === "derived" ? (
+                  <div className="grid grid-cols-2 gap-1.5 rounded-lg border border-line p-2.5">
+                    <Badge tone="acc">Derived: operating income + D&amp;A</Badge>
+                    <span />
+                    <Input placeholder="Entity, e.g. 3M Company" aria-label={`${k} entity`} value={p.entity} onChange={(e) => set(k, { ...p, entity: e.target.value })} />
+                    <Input placeholder="Period, e.g. FY2019" aria-label={`${k} period`} value={p.period} onChange={(e) => set(k, { ...p, period: e.target.value })} />
+                  </div>
                 ) : (
                   <div className="space-y-1.5 rounded-lg border border-dashed border-warn p-2.5">
                     <Badge tone="warn">Assumption</Badge>
@@ -97,6 +110,12 @@ export function Lbo() {
             <div><dt className="text-xs text-mut">IRR</dt><dd className="tnum font-medium">{result.irr === null ? "n/a" : `${(Number(result.irr) * 100).toFixed(1)}%`}</dd></div>
             <div><dt className="text-xs text-mut">Debt at entry</dt><dd className="tnum font-medium">{fmtAmount(result.debt, "")}</dd></div>
           </dl>
+          {result.derived.length > 0 && (
+            <div className="border-t border-line px-5 py-4 text-sm">
+              <p className="mb-2 text-xs uppercase tracking-wider text-mut">Derived in this result</p>
+              {result.derived.map((d) => <p key={d.input}>{d.input.replace(/_/g, " ")}: {d.formula} from {d.components.length} cited facts (fact ids {d.components.join(", ")})</p>)}
+            </div>
+          )}
           {result.assumptions.length > 0 && (
             <div className="border-t border-dashed border-warn px-5 py-4 text-sm">
               <p className="mb-2 text-xs uppercase tracking-wider text-warn">Assumptions in this result</p>

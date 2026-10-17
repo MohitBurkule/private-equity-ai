@@ -50,7 +50,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full list.
 make demo
 ```
 
-Starts the API on SQLite, seeds it with three real 10-K filings (3M, Hertz, Sotera) when `data/demo/edgar`
+Asks once for an SEC User-Agent (your name and contact) so live EDGAR search works. Leave it blank to skip; nothing
+is written to the repo. Starts the API on SQLite, seeds it with three real 10-K filings (3M, Hertz, Sotera) when `data/demo/edgar`
 or `DATA_DIR` holds them, builds the web UI, and prints the URL and API key. Open http://localhost:5173 and
 paste the key. Stop with Ctrl+C. Logs go to a temp folder, or to `DEMO_DIR` if you set it.
 

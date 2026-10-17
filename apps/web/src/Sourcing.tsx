@@ -3,6 +3,9 @@ import { api2, SearchCandidate } from "./api";
 import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input, Page } from "./ui";
 
 const FORMS = ["10-K", "10-Q", "8-K", "S-1", "424B4"];
+// The EDGAR search needs a date window. Default to the last year so the results are recent.
+const today = () => new Date().toISOString().slice(0, 10);
+const yearAgo = () => new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
 
 /** Sourcing search over live registers. Candidates are listed with the filing they came from; nothing is imported here. */
 export function Sourcing() {
@@ -18,7 +21,7 @@ export function Sourcing() {
     setBusy(true); setError("");
     try {
       const out = register === "edgar"
-        ? await api2.searchEdgar({ query, forms, limit: 50 })
+        ? await api2.searchEdgar({ query, forms: forms.length ? forms : ["10-K"], since: yearAgo(), until: today(), limit: 50 })
         : await api2.searchCompaniesHouse({ query, limit: 50 });
       setItems(out.items); setTotal(out.total);
     } catch (e) { setItems(null); setError(String(e)); }
