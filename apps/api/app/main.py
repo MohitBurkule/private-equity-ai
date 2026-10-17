@@ -847,6 +847,30 @@ def market_tev_sync(body: TevSyncIn, db: Db, who: Writer, fetch: Annotated[Calla
             "quote": f.sources[0].quote, "document_id": f.sources[0].document_id}
 
 
+class TevRefreshIn(BaseModel):
+    items: list[TevSyncIn]
+
+
+@app.post("/market/tev-refresh")
+def market_tev_refresh(body: TevRefreshIn, db: Db, who: Writer, fetch: Annotated[Callable, Depends(get_market_fetch)]):
+    """Re-pull enterprise value for many entities in one call. Each item stands alone: a failed feed is reported
+    on its own line and never stops the others or leaves a half-written fact."""
+    if len(body.items) > 50:
+        raise HTTPException(422, "too many items")
+    out = []
+    for it in body.items:
+        try:
+            f = marketfeed_facts_mod.sync_tev(db, who.tenant, entity=it.entity, period=it.period, source=it.source,
+                                              url=it.url, token=it.token, fetch=fetch)
+            db.commit()
+            out.append({"entity": it.entity, "ok": True, "fact_id": f.id, "value": str(f.value), "unit": f.unit,
+                        "as_of": f.as_of})
+        except (NoData, CitationError, ValueError) as e:
+            db.rollback()
+            out.append({"entity": it.entity, "ok": False, "error": str(e)})
+    return {"results": out}
+
+
 @app.post("/lbo/returns")
 def lbo_returns(body: dict, db: Db, who: Who, fetch: Annotated[Callable, Depends(get_market_fetch)],
                 xlsx: bool = False):
