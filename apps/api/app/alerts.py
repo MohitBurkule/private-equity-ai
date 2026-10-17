@@ -361,6 +361,15 @@ def screening_criteria(text: str) -> Criteria:
     return Criteria(sectors=sectors, countries=countries, min_revenue=min_revenue)
 
 
+_WEIGHT = re.compile(r"\b(sector|country|revenue)\s*(?:weight)?\s*[=:]\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
+
+
+def screening_weights(text: str) -> dict[str, float]:
+    """Read per-criterion weights a firm rule states, e.g. "sector: 2, country: 1, revenue: 0".
+    Criteria the rule does not weigh are left out, so they keep the default weight of 1."""
+    return {k.lower(): float(v) for k, v in _WEIGHT.findall(text)}
+
+
 def profile_criteria(db: Session, tenant_id: str) -> tuple[fk.FirmKnowledge | None, Criteria]:
     """The accepted firm screening rule and the criteria it states. No accepted rule: no criteria."""
     rule = fk.newest_accepted(db, tenant_id, "deal_screening_criteria")

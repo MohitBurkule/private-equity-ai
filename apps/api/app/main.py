@@ -2365,7 +2365,7 @@ class ChNumbersImport(BaseModel):
     numbers: list[str] = Field(min_length=1, max_length=200)
 
 
-SCREEN_PROFILE_KEYS = ("deal_screening_criteria", "target_ev_range", "target_ebitda_range")
+SCREEN_PROFILE_KEYS = ("deal_screening_criteria", "screening_weights", "target_ev_range", "target_ebitda_range")
 
 
 SCREEN_WEIGHT_KEYS = {"sector", "country", "revenue"}
@@ -2419,6 +2419,19 @@ def targets_import_sec(body: SecImport, db: Db, who: Writer):
         raise HTTPException(422, f"not a SEC submissions document: {e}") from e
     new, upd = tg_mod.upsert(db, who.tenant, [t])
     return {"new": new, "updated": upd, "revenue_found": t.revenue is not None}
+
+
+def _sec_fetch(cik: str) -> tuple[dict, dict]:
+    """Live SEC submissions and company facts for one CIK, as the SEC import expects them."""
+    from app.secfeed import default_fetch
+    subs = json.loads(default_fetch(f"https://data.sec.gov/submissions/CIK{cik.zfill(10)}.json"))
+    return subs, fetch_companyfacts(cik)
+
+
+@app.post("/targets/refresh")
+def targets_refresh(db: Db, who: Writer, limit: int = Query(200, ge=1, le=1000)):
+    """Re-pull stored SEC and Companies House targets from their sources. Each row keeps its source link."""
+    return tg_mod.refresh_universe(db, who.tenant, _sec_fetch, ch_mod.fetch_company, limit=limit)
 
 
 @app.post("/targets/import/companies-house", status_code=201)
@@ -2788,7 +2801,8 @@ def targets_screen(body: Screen, db: Db, who: Who):
             raise HTTPException(422, "give criteria, or accept a firm deal_screening_criteria rule first")
         source = {"key": rule.key, "value": rule.value, "document_id": rule.document_id, "page": rule.page,
                   "quote": rule.quote}
-    weights = _screen_weights(body.weights)
+    weight_rule = fk.newest_accepted(db, who.tenant, "screening_weights")
+    weights = _screen_weights(body.weights or (al.screening_weights(weight_rule.value) if weight_rule else {}))
     out = []
     for t in db.query(Target).filter_by(tenant_id=who.tenant).order_by(Target.id).all():
         e = tg_mod.evaluate(t, c)
@@ -2805,6 +2819,7 @@ def targets_screen(body: Screen, db: Db, who: Who):
     return {"matches": sum(r["verdict"] == "match" for r in out), "review": sum(r["verdict"] == "review" for r in out),
             "criteria_profile": profile, "criteria_source": source,
             "applied": {"sectors": c.sectors, "countries": c.countries, "weights": weights,
+                        "weights_source": None if body.weights or weight_rule is None else {"key": weight_rule.key, "value": weight_rule.value, "document_id": weight_rule.document_id, "page": weight_rule.page, "quote": weight_rule.quote},
                         "min_revenue": None if c.min_revenue is None else str(c.min_revenue),
                         "max_revenue": None if c.max_revenue is None else str(c.max_revenue)},
             "items": out[:min(max(body.limit, 1), 1000)]}
