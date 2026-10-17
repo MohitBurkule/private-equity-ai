@@ -63,4 +63,5 @@ def sync_tev(db: Session, tenant_id: str, *, entity: str, period: str, source: s
         return existing[0]
     return add_verified_fact(db, tenant_id=tenant_id, entity=entity, metric=EV_METRIC, period=period,
                              value=Decimal(str(rows[n]["tev"])), unit=str(rows[n]["currency"]).upper(),
-                             document_id=record.id, page=page.number, quote=line)
+                             document_id=record.id, page=page.number, quote=line,
+                             as_of=str(rows[n]["date"]))

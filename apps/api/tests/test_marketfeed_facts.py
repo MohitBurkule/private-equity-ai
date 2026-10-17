@@ -38,6 +38,9 @@ def test_latest_tev_becomes_cited_enterprise_value():
         assert out["metric"] == EV_METRIC and out["value"] == "1300" and out["unit"] == "USD"
         assert out["quote"].startswith("row 2: ") and "tev=1300" in out["quote"]
         assert seen[0][1]["Authorization"] == "Bearer tok"
+        with m.SessionLocal() as db:
+            bind_tenant(db, tid)
+            assert comps_mod._find(db, tid, "ACME", EV_METRIC, "LTM", None).as_of == "2026-10-16"  # the feed row's date
         again = c.post("/market/tev-sync", json=body, headers=h).json()
         assert again["fact_id"] == out["fact_id"]
         with m.SessionLocal() as db:

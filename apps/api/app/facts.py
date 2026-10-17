@@ -58,6 +58,7 @@ def _layout_text(db: Session, document_id: str, page: int) -> str | None:
 def add_verified_fact(
     db: Session, *, tenant_id: str, entity: str, metric: str, period: str, value: Decimal, unit: str,
     document_id: str, page: int, quote: str, scale: Decimal = Decimal(1), basis: str = "GAAP",
+    as_of: str | None = None,
 ) -> Fact:
     """value is in `unit` AFTER applying scale to the printed number(s) in the quote."""
     doc = db.get(Document, document_id)
@@ -75,7 +76,7 @@ def add_verified_fact(
     if not verify_number(value, quote, scale, outflow=is_outflow(metric)):
         raise CitationError("value does not match any number in the quote")
     fact = Fact(tenant_id=tenant_id, entity=entity, metric=metric, period=period, value=value, unit=unit,
-                basis=basis,
+                basis=basis, as_of=as_of,
                 status="ocr_unverified" if row.method == "ocr" or layout_only else "verified")
     fact.sources = [make_source(doc, page, quote, row)]
     db.add(fact)

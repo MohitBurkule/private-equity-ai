@@ -134,7 +134,7 @@ def build_rows(db: Session, tenant: str, entities: list[str], period: str, metri
 
 def _cell(db: Session, f: Fact) -> dict:
     # the period is the as-of the figure is stated for; the citation is the document locator it came from
-    return {"fact_id": f.id, "period": f.period, "unit": f.unit, "source": _cite(db, f.id)}
+    return {"fact_id": f.id, "period": f.period, "as_of": f.as_of, "unit": f.unit, "source": _cite(db, f.id)}
 
 
 def run(db: Session, tenant: str, target: str, entities: list[str], period: str, metrics: list[str],
