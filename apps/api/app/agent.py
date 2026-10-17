@@ -130,9 +130,11 @@ def _extract_fk(ctx: Ctx, document_id: str, keys: list[str] | None = None):
     return {"saved": [fk.row_dict(x) for x in r.saved], "rejected": r.rejected}
 
 
+# Agent answers may only cite facts a human or the citation gate has verified. OCR-read facts
+# wait in the review queue until someone accepts them.
 @register_tool("list_facts", "Verified facts, each with source. Filter by entity.", {"entity?": "text"})
 def _facts(ctx: Ctx, entity: str | None = None):
-    q = ctx.db.query(Fact).filter(Fact.tenant_id == ctx.tenant, Fact.status != "rejected")
+    q = ctx.db.query(Fact).filter(Fact.tenant_id == ctx.tenant, Fact.status == "verified")
     if entity:
         q = q.filter(Fact.entity == entity)
     return [{"id": f.id, "entity": f.entity, "metric": f.metric, "period": f.period, "value": str(f.value),
