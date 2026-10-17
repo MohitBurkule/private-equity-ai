@@ -7,7 +7,7 @@ compared with the numbers in the page's text layer. Two modes:
   degraded  150 dpi render, then skew (+/-0.8 deg), Gaussian noise and a JPEG round trip at quality 40,
             to stand in for a real office scan.
 
-Usage: python evals/ocr_scan_accuracy.py --mode clean|degraded|both [--pages 3] [--dump-misses NAME]
+Usage: python evals/ocr_scan_accuracy.py --mode clean|degraded|both [--pages 3] [--match NAME] [--dump-misses NAME]
 Run from apps/api (needs the pdf and ocr extras). Output is a JSON summary on stdout.
 """
 from __future__ import annotations
@@ -27,7 +27,7 @@ import pymupdf
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
-from app.parse import ocr as ocr_mod  # noqa: E402
+from app.parse import ocr as ocr_mod
 
 SEC = Path("/mnt/project-files/data/sec")
 NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
@@ -87,11 +87,13 @@ def page_ocr(path: Path, index0: int, mode: str) -> str:
     return ocr_image(img)
 
 
-def run(mode: str, pages_per_doc: int, dump: str | None) -> dict:
+def run(mode: str, pages_per_doc: int, dump: str | None, match: str = "") -> dict:
     per_doc = {}
     tot = {"text": 0, "ocr": 0, "hit": 0, "pages": 0, "pages_ok": 0}
     for f in sorted(glob.glob(str(SEC / "*.pdf"))):
         name = Path(f).name
+        if match not in name:
+            continue
         doc = pymupdf.open(f)
         d = {"text": 0, "ocr": 0, "hit": 0}
         for i in pick_pages(doc, pages_per_doc):
@@ -137,9 +139,10 @@ def main() -> None:
     ap.add_argument("--mode", choices=["clean", "degraded", "both"], default="both")
     ap.add_argument("--pages", type=int, default=3)
     ap.add_argument("--dump-misses", default=None, help="substring of a filename to print missed numbers for")
+    ap.add_argument("--match", default="", help="only run filenames containing this substring")
     args = ap.parse_args()
     modes = list(MODES) if args.mode == "both" else [args.mode]
-    print(json.dumps([run(m, args.pages, args.dump_misses) for m in modes], indent=2))
+    print(json.dumps([run(m, args.pages, args.dump_misses, args.match) for m in modes], indent=2))
 
 
 if __name__ == "__main__":

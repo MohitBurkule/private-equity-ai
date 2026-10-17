@@ -46,3 +46,29 @@ Run: `python evals/pdf_benchmark.py --data /mnt/project-files/data` (harness `ev
 
 ## Not yet benchmarked
 Marker, MinerU, Unstructured, Camelot (adapter added, not yet scored), VLM page parsing. Next runs add them with the same harness, plus CIM-deck and covenant-agreement pages.
+
+## Scanned-PDF OCR accuracy (data/sec)
+
+Harness: `evals/ocr_scan_accuracy.py`. Each filing in `data/sec` (10 digital PDFs, all with text layers) gets its 3 most numeric pages rasterised and OCR'd with RapidOCR. Numbers OCR reads are compared with the numbers in the same page's text layer (commas dropped; one-digit tokens skipped). 29 pages, 3,223 numbers.
+
+| Mode | Render | Degradation | Number recall | Number precision | Pages with recall >= 95% |
+|---|---|---|---|---|---|
+| clean | 200 dpi | none | 96.9% | 98.8% | 23 / 29 |
+| degraded | 150 dpi | skew +/-0.8 deg, Gaussian noise sigma 8, JPEG q40 | 83.1% | 85.9% | 4 / 29 |
+
+Clean recall by filing: Adobe 100%, Netflix 99.2%, 3M 98.9%, Apple 98.4%, Pfizer 98.3%, Best Buy 98.1%, AMD 96.9%, Amcor 95.6%, Boeing 90.0%, Costco 88.6%.
+
+Degraded recall by filing: Adobe 91.2%, AMD 90.3%, Best Buy 89.2%, 3M 88.9%, Amcor 88.9%, Pfizer 85.8%, Boeing 81.1%, Netflix 80.5%, Costco 64.1%, Apple 63.1%.
+
+**Why Costco and Boeing miss (clean mode)**
+
+- Costco: about half the misses are a metric artifact. Costco prints thousands with a period in some tables (`3.071`, `66.752`). The text layer and OCR both carry that form, but the normaliser strips only commas, so the two sides never match. Other misses are real OCR glyph errors: stray punctuation (`4,.117` for `4.117`) and dropped separators.
+- Boeing: most misses are small numbers in dense tables and running prose (years, `24`, `31`, `737`, `$1.0 billion`). Some of the prose cases look like repeated values where OCR count and text-layer count differ, not unread digits. Not confirmed line by line.
+
+**Fixes implied, not yet made**
+
+1. Normaliser: treat `d{1,3}([.,]ddd)+` as a thousands-grouped integer on both sides. This should lift the Costco number directly.
+2. Table cells: check for stray punctuation such as `,.`, and read it as a separator before comparing.
+3. Degraded scans lose about 15 points of recall, so a real scan path needs deskew and denoise before OCR, and any figure from it stays `ocr_unverified`.
+
+**Verification guarantee.** OCR-sourced figures are stored with status `ocr_unverified` (`apps/api/app/facts.py`). Only a human `review_fact` call promotes them to `verified`. This is pinned by `tests/test_unverified_citations.py`. No OCR figure is auto-verified by the text-layer comparison.
