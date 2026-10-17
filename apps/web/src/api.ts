@@ -64,6 +64,12 @@ export interface LboRequest {
   inputs: Record<string, { fact_id: number } | { derived: { formula: string; entity: string; period: string } } | { value: string; assumption: Omit<LboAssumption, "value"> }>;
   entry_multiples?: string[]; exit_multiples?: string[];
 }
+export interface LboRunRow {
+  id: number; name: string; created_at: string; created_by: string;
+  moic: string; irr: string | null; entry_ev: string; exit_equity: string;
+}
+export interface LboRunDetail extends LboRunRow { request: LboRequest; result: LboResult }
+
 export interface LboResult {
   entry_ev: string; debt: string; fees: string; equity: string; exit_ev: string; exit_net_debt: string; exit_equity: string;
   moic: string; irr: string | null; dividends: string; sensitivity: [string, string, string | null, string | null][] | null;
@@ -175,6 +181,9 @@ export const api2 = {
     call<SearchOut>("/targets/search/edgar", "POST", body),
   searchCompaniesHouse: (body: { query: string; limit?: number }) => call<SearchOut>("/targets/search/companies-house", "POST", body),
   lboReturns: (body: LboRequest) => call<LboResult>("/lbo/returns", "POST", body),
+  lboRuns: () => call<LboRunRow[]>("/lbo/runs"),
+  lboRun: (id: number) => call<LboRunDetail>(`/lbo/runs/${id}`),
+  lboSave: (name: string, request: LboRequest) => call<LboRunRow>("/lbo/runs", "POST", { name, request }),
   covenants: (companyId: number) => call<CovenantStatus>(`/portfolio/companies/${companyId}/covenants`),
 };
 

@@ -130,6 +130,7 @@ from app.models import (
     Holding,
     HtmlUnit,
     IngestJob,
+    LboRun,
     MemoComment,
     MemoVersion,
     PageRow,
@@ -707,6 +708,42 @@ def lbo_returns(body: dict, db: Db, who: Who, xlsx: bool = False):
             "assumptions": [{"input": k, "value": str(c.value), "set_by": c.source["set_by"],
                              "set_on": c.source["set_on"], "reason": c.source["reason"]}
                             for k, c in cited.items() if c.source.get("assumption")]}
+
+
+def _lbo_run_row(r: LboRun) -> dict:
+    res = json.loads(r.result)
+    return {"id": r.id, "name": r.name, "created_at": r.created_at, "created_by": r.created_by,
+            "moic": res["moic"], "irr": res["irr"], "entry_ev": res["entry_ev"], "exit_equity": res["exit_equity"]}
+
+
+@app.post("/lbo/runs")
+def lbo_save(body: dict, db: Db, who: Who):
+    """Save an LBO run. The request is re-run through /lbo/returns first, so a saved run passed the same
+    citation gate and its stored result is the one it produced now."""
+    name = str(body.get("name") or "").strip()[:128]
+    if not name:
+        raise HTTPException(422, "name is required")
+    request = body.get("request") or {}
+    result = lbo_returns(request, db, who)
+    row = LboRun(tenant_id=who.tenant, name=name, created_by=who.key_id, created_at=_now_iso(),
+                 request=json.dumps(request), result=json.dumps(result, default=str))
+    db.add(row)
+    db.commit()
+    return _lbo_run_row(row)
+
+
+@app.get("/lbo/runs")
+def lbo_list(db: Db, who: Who):
+    rows = db.query(LboRun).filter(LboRun.tenant_id == who.tenant).order_by(LboRun.id.desc()).all()
+    return [_lbo_run_row(r) for r in rows]
+
+
+@app.get("/lbo/runs/{run_id}")
+def lbo_get(run_id: int, db: Db, who: Who):
+    r = db.query(LboRun).filter(LboRun.id == run_id, LboRun.tenant_id == who.tenant).first()
+    if r is None:
+        raise HTTPException(404, "run not found")
+    return {**_lbo_run_row(r), "request": json.loads(r.request), "result": json.loads(r.result)}
 
 
 @app.get("/calc/ltm")

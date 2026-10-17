@@ -415,3 +415,16 @@ class Connection(Base):
     last_run: Mapped[str | None] = mapped_column(String(40), default=None)
     last_status: Mapped[str | None] = mapped_column(Text, default=None)
     created_by: Mapped[str] = mapped_column(String(64))
+
+
+class LboRun(Base):
+    """A saved LBO run: the cited request as sent, and the result it produced when saved. Kept so a run can be
+    reopened and compared later without re-deriving inputs that may have changed since."""
+    __tablename__ = "lbo_run"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+    request: Mapped[str] = mapped_column(Text)  # JSON: the /lbo/returns body
+    result: Mapped[str] = mapped_column(Text)  # JSON: the /lbo/returns response at save time
