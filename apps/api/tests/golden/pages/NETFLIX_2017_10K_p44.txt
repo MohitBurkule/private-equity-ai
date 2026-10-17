@@ -1,0 +1,55 @@
+Table of Contents
+
+                                                                                       NETFLIX, INC.
+
+                                                              CONSOLIDATED STATEMENTS OF CASH FLOWS
+                                                                                         (in thousands)
+
+                                                                                                                                                   Year Ended December 31,
+                                                                                                                                       2017                     2016                   2015
+Cash flows from operating activities:
+Net income                                                                                                                    $           558,929       $        186,678       $         122,641
+Adjustments to reconcile net income to net cash used in operating activities:
+      Additions to streaming content assets                                                                                            (9,805,763)            (8,653,286)            (5,771,652)
+      Change in streaming content liabilities                                                                                             900,006              1,772,650              1,162,413
+      Amortization of streaming content assets                                                                                          6,197,817              4,788,498              3,405,382
+      Amortization of DVD content assets                                                                                                    60,657                 78,952                 79,380
+      Depreciation and amortization of property, equipment and intangibles                                                                  71,911                 57,528                 62,283
+      Stock-based compensation expense                                                                                                    182,209                173,675                 124,725
+      Excess tax benefits from stock-based compensation                                                                                          —                (65,121)               (80,471)
+      Other non-cash items                                                                                                                  57,207                 40,909                 31,628
+      Foreign currency remeasurement loss on long-term debt                                                                               140,790                       —                      —
+      Deferred taxes                                                                                                                     (208,688)                (46,847)               (58,655)
+      Changes in operating assets and liabilities:
+           Other current assets                                                                                                          (234,090)                 46,970                 18,693
+           Accounts payable                                                                                                                 74,559                 32,247                 51,615
+           Accrued expenses                                                                                                               114,337                  68,706                 48,810
+           Deferred revenue                                                                                                               177,974                  96,751                 72,135
+           Other non-current assets and liabilities                                                                                        (73,803)               (52,294)               (18,366)
+                   Net cash used in operating activities                                                                               (1,785,948)            (1,473,984)               (749,439)
+Cash flows from investing activities:
+Acquisitions of DVD content assets                                                                                                         (53,720)               (77,177)               (77,958)
+Purchases of property and equipment                                                                                                      (173,302)              (107,653)                (91,248)
+Other assets                                                                                                                                (6,689)                   (941)                (1,912)
+Purchases of short-term investments                                                                                                        (74,819)             (187,193)               (371,915)
+Proceeds from sale of short-term investments                                                                                              320,154                282,484                 259,079
+Proceeds from maturities of short-term investments                                                                                          22,705               140,245                 104,762
+                   Net cash provided by (used in) investing activities                                                                      34,329                 49,765               (179,192)
+Cash flows from financing activities:
+Proceeds from issuance of debt                                                                                                          3,020,510              1,000,000              1,500,000
+Issuance costs                                                                                                                             (32,153)               (10,700)               (17,629)
+Proceeds from issuance of common stock                                                                                                      88,378                 36,979                 77,980
+Excess tax benefits from stock-based compensation                                                                                                —                 65,121                 80,471
+Other financing activities                                                                                                                     255                     230                   (545)
+                   Net cash provided by financing activities                                                                            3,076,990              1,091,630              1,640,277
+Effect of exchange rate changes on cash and cash equivalents                                                                                29,848                 (9,165)               (15,924)
+Net increase (decrease) in cash and cash equivalents                                                                                    1,355,219               (341,754)                695,722
+Cash and cash equivalents, beginning of year                                                                                            1,467,576              1,809,330              1,113,608
+Cash and cash equivalents, end of year                                                                                        $         2,822,795       $      1,467,576       $      1,809,330
+Supplemental disclosure:
+Income taxes paid                                                                                                             $           113,591       $          26,806      $          27,658
+Interest paid                                                                                                                             213,313                138,566                 111,761
+Increase (decrease) in investing activities included in liabilities                                                                        (32,643)                27,504                  (4,978)
+                                                             See accompanying notes to consolidated financial statements.
+
+                                                                                                42
