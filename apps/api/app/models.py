@@ -33,6 +33,7 @@ class ApiKey(Base):
     revoked: Mapped[bool] = mapped_column(default=False, server_default="false")
     role: Mapped[str] = mapped_column(String(16), default="analyst", server_default="analyst")
     deals: Mapped[str | None] = mapped_column(Text, default=None)  # comma list; None = unrestricted
+    deal_roles: Mapped[str | None] = mapped_column(Text, default=None)  # "deal:role,deal:role" overrides
 
 
 class Document(Base):

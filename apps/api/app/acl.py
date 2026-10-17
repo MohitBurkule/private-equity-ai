@@ -19,12 +19,15 @@ from app.models import Deal, Document, Fact
 
 # Why these roles: the associate/VP/partner split decides who may change a deal, and compliance must be
 # able to hold and purge deals without being able to edit analysis. "analyst" is the legacy name for
-# associate and stays valid so existing keys keep working. IR reads the tenant but writes nothing yet.
+# associate and stays valid so existing keys keep working. IR reads the tenant and may upload documents (LP
+# and fund material), but changes no deal state, facts or checklists.
 ROLES = ("admin", "partner", "vp", "associate", "analyst", "compliance", "ir", "viewer")
 
 CAPABILITIES: dict[str, frozenset[str]] = {
     # Upload, extract, create facts, edit deals and checklists.
     "write": frozenset({"admin", "partner", "vp", "associate", "analyst"}),
+    # Add documents to a deal. IR is here and nowhere else in "write".
+    "upload": frozenset({"admin", "partner", "vp", "associate", "analyst", "ir"}),
     # Legal hold, MNPI flag, deal delete, retention purges.
     "govern": frozenset({"admin", "partner", "vp", "compliance"}),
 }
@@ -36,9 +39,21 @@ class Principal:
     role: str = "associate"
     deals: frozenset[str] | None = None
     key_id: str = ""
+    # (deal, role) pairs that replace the key role on that one deal, e.g. a viewer key that is partner on Atlas.
+    deal_roles: tuple[tuple[str, str], ...] = ()
 
-    def can(self, capability: str) -> bool:
-        return self.role in CAPABILITIES[capability]
+    def role_on(self, deal: str | None) -> str:
+        for d, r in self.deal_roles:
+            if deal is not None and d == deal:
+                return r
+        return self.role
+
+    def can(self, capability: str, deal: str | None = None) -> bool:
+        return self.role_on(deal) in CAPABILITIES[capability]
+
+    def can_anywhere(self, capability: str) -> bool:
+        """True if the key may do this on some deal, so a route can load and check the deal itself."""
+        return self.can(capability) or any(r in CAPABILITIES[capability] for _, r in self.deal_roles)
 
     @property
     def can_write(self) -> bool:
@@ -59,6 +74,27 @@ def format_deals(deals: list[str] | None) -> str | None:
     if deals is None:
         return None
     return ",".join(sorted({d.strip() for d in deals if d.strip()}))
+
+
+def parse_deal_roles(raw: str | None) -> tuple[tuple[str, str], ...]:
+    if not raw:
+        return ()
+    return tuple(sorted(tuple(pair.split(":", 1)) for pair in raw.split(",") if pair.strip()))
+
+
+def format_deal_roles(deal_roles: dict[str, str] | None, deals: list[str] | None) -> str | None:
+    """Stored as "deal:role,deal:role". Names cannot contain ':' or ',', and an override may only name a deal
+    the key can already see, so it never widens the scope."""
+    if not deal_roles:
+        return None
+    for deal, role in deal_roles.items():
+        if ":" in deal or "," in deal or not deal.strip():
+            raise ValueError(f"deal name {deal!r} cannot contain ':' or ','")
+        if role not in ROLES:
+            raise ValueError(f"role {role!r} must be one of {ROLES}")
+        if deals is not None and deal not in deals:
+            raise ValueError(f"deal {deal!r} is outside the key's deal scope")
+    return ",".join(f"{d}:{r}" for d, r in sorted(deal_roles.items()))
 
 
 def visible_doc_ids(db: Session, p: Principal) -> set[str] | None:
