@@ -1,0 +1,29 @@
+{
+  "mappings": [
+    {
+      "name": "datasite-room-files",
+      "request": {
+        "method": "GET",
+        "urlPath": "/synthetic/datasite/v1/rooms/R-42/files"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "jsonBody": {
+          "items": [
+            {
+              "id": "DS-5501",
+              "path": "/Financials/FY2025_audit_pack.xlsx",
+              "size": 183250
+            }
+          ]
+        }
+      },
+      "metadata": {
+        "note": "SYNTHETIC mock: response shape is invented for tests, not copied from a vendor's API docs."
+      }
+    }
+  ]
+}

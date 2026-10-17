@@ -1,0 +1,61 @@
+{
+  "realm": "firm-synthetic",
+  "enabled": true,
+  "clients": [
+    {
+      "clientId": "pe-platform",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "dev-only-secret",
+      "redirectUris": [
+        "http://localhost:8000/*",
+        "http://localhost:5173/*"
+      ],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false
+    }
+  ],
+  "groups": [
+    {
+      "name": "pe-ic-members"
+    },
+    {
+      "name": "pe-deal-team"
+    }
+  ],
+  "users": [
+    {
+      "username": "ic@firm.test",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "ic@firm.test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "app-pass",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "pe-ic-members"
+      ]
+    },
+    {
+      "username": "deal@firm.test",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "deal@firm.test",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "app-pass",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "pe-deal-team"
+      ]
+    }
+  ],
+  "_note": "SYNTHETIC dev realm. Passwords are fixed test values and must never be used for a real account."
+}

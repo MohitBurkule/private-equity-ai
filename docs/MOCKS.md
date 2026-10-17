@@ -62,3 +62,18 @@ java -Dgreenmail.setup.test.imap -Dgreenmail.setup.test.smtp -Dgreenmail.hostnam
 ```
 
 Mock credentials are fixed test values. They must never be used for a real account.
+
+## Synthetic firm-system mocks (`make demo-mocks`)
+
+All SYNTHETIC: response shapes are invented for tests, not copied from any vendor's API.
+
+| System | Mock | Where | Flow today |
+|---|---|---|---|
+| DealCloud (companies, deals) | WireMock stubs | `deploy/mocks/wiremock/mappings/dealcloud.json` | stub smoke test only; no connector |
+| iManage (folder documents) | WireMock stubs | `deploy/mocks/wiremock/mappings/imanage.json` | stub smoke test only; no connector |
+| Datasite (room files) | WireMock stubs | `deploy/mocks/wiremock/mappings/datasite.json` | stub smoke test only; no connector |
+| Fund admin (capital calls, NAV) | WireMock stubs | `deploy/mocks/wiremock/mappings/fund-admin.json` | stub smoke test only; no connector |
+| SSO roles | Keycloak 26.0.7, realm `firm-synthetic` | compose `keycloak` on 8081 | not yet tested against the app |
+| Fund-admin file drop | atmoz/sftp | compose `sftp` on 2222 (user `fundadmin`) | connector covered by `tests/test_sftp_mina.py` with MINA, not against this image |
+
+`make demo-mocks` starts the WireMock, Keycloak and SFTP services and runs `tests/test_firm_mocks_smoke.py` and `tests/test_wiremock_adapters.py`. The stub smoke test uses an in-process WireMock jar when `WIREMOCK_JAR` is set, or the compose service when `WIREMOCK_URL` is set.
