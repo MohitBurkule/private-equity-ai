@@ -1,0 +1,163 @@
+{
+ "_about": "Fresh lease and employment set (GAPS #13 follow-up). Labels written from keyword-sentence dumps BEFORE the rules were run on these exhibits. null = not stated in the exhibit's own text. Amendments that reduce a non-compete are labelled null, consistent with the earlier Fidelity call. Corrected after reading the rule quotes: 12 values were fixed because the keyword dump missed sentences (for example uppercase or 'construed and enforced' wording). Blind scores are reported separately.",
+ "lease/0000950170-24-035373": {
+  "doc_type": "lease",
+  "governing_law": null,
+  "assignment": false,
+  "change_of_control": false,
+  "termination_notice_days": null
+ },
+ "lease/0001104659-24-032710": {
+  "doc_type": "lease",
+  "governing_law": "Colorado",
+  "assignment": true,
+  "change_of_control": false,
+  "termination_notice_days": null
+ },
+ "lease/0001104659-24-055921": {
+  "doc_type": "lease",
+  "governing_law": "Colorado",
+  "assignment": true,
+  "change_of_control": false,
+  "termination_notice_days": null
+ },
+ "lease/0001193125-26-102393": {
+  "doc_type": "lease",
+  "governing_law": null,
+  "assignment": true,
+  "change_of_control": false,
+  "termination_notice_days": null
+ },
+ "lease/0001213900-24-040154": {
+  "doc_type": "lease",
+  "governing_law": "Michigan",
+  "assignment": false,
+  "change_of_control": false,
+  "termination_notice_days": null
+ },
+ "lease/0001213900-26-001100": {
+  "doc_type": "lease",
+  "governing_law": "Arizona",
+  "assignment": false,
+  "change_of_control": false,
+  "termination_notice_days": null
+ },
+ "lease/0001214659-26-004335": {
+  "doc_type": "lease",
+  "governing_law": "New York",
+  "assignment": false,
+  "change_of_control": false,
+  "termination_notice_days": null
+ },
+ "lease/0001437749-25-036079": {
+  "doc_type": "lease",
+  "governing_law": null,
+  "assignment": true,
+  "change_of_control": false,
+  "termination_notice_days": null
+ },
+ "lease/0001558370-25-000154": {
+  "doc_type": "lease",
+  "governing_law": null,
+  "assignment": true,
+  "change_of_control": true,
+  "termination_notice_days": null
+ },
+ "lease/0001640334-25-001639": {
+  "doc_type": "lease",
+  "governing_law": "New Jersey",
+  "assignment": true,
+  "change_of_control": false,
+  "termination_notice_days": null
+ },
+ "employment/0000730464-24-000004": {
+  "doc_type": "employment",
+  "governing_law": null,
+  "assignment": true,
+  "change_of_control": false,
+  "termination_notice_days": null,
+  "non_compete_months": null,
+  "severance": true
+ },
+ "employment/0000950142-25-002328": {
+  "doc_type": "employment",
+  "governing_law": "Colorado",
+  "assignment": false,
+  "change_of_control": false,
+  "termination_notice_days": null,
+  "non_compete_months": null,
+  "severance": true
+ },
+ "employment/0001018399-24-000086": {
+  "doc_type": "employment",
+  "governing_law": null,
+  "assignment": false,
+  "change_of_control": true,
+  "termination_notice_days": null,
+  "non_compete_months": null,
+  "severance": true
+ },
+ "employment/0001104659-24-004277": {
+  "doc_type": "employment",
+  "governing_law": "Delaware",
+  "assignment": true,
+  "change_of_control": true,
+  "termination_notice_days": null,
+  "non_compete_months": null,
+  "severance": true
+ },
+ "employment/0001185185-24-000133": {
+  "doc_type": "employment",
+  "governing_law": null,
+  "assignment": true,
+  "change_of_control": true,
+  "termination_notice_days": null,
+  "non_compete_months": null,
+  "severance": true
+ },
+ "employment/0001185185-24-000634": {
+  "doc_type": "employment",
+  "governing_law": null,
+  "assignment": false,
+  "change_of_control": true,
+  "termination_notice_days": null,
+  "non_compete_months": null,
+  "severance": true
+ },
+ "employment/0001193125-24-188988": {
+  "doc_type": "employment",
+  "governing_law": "Delaware",
+  "assignment": false,
+  "change_of_control": true,
+  "termination_notice_days": null,
+  "non_compete_months": null,
+  "severance": true
+ },
+ "employment/0001437749-24-037955": {
+  "doc_type": "employment",
+  "governing_law": "Michigan",
+  "assignment": true,
+  "change_of_control": true,
+  "termination_notice_days": 30,
+  "non_compete_months": null,
+  "severance": true
+ },
+ "employment/0001437749-25-038783": {
+  "doc_type": "employment",
+  "governing_law": "Pennsylvania",
+  "assignment": false,
+  "change_of_control": false,
+  "termination_notice_days": null,
+  "non_compete_months": null,
+  "severance": true
+ },
+ "employment/0001474903-25-000076": {
+  "doc_type": "employment",
+  "governing_law": "Texas",
+  "assignment": false,
+  "change_of_control": false,
+  "termination_notice_days": null,
+  "non_compete_months": null,
+  "severance": true
+ }
+}

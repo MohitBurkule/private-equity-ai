@@ -57,11 +57,11 @@ TERMS: dict[str, dict] = {
     },
     "assignment": {
         "doc": ("lease", "employment"),
-        "re": r"((?:may not|shall not|not be entitled to|no party may)(?! be deemed)[^.]{0,60}?\bassign\w*|\bassign\w*[^.]{0,120}?without the (?:prior )?(?:written )?consent)",
+        "re": r"((?:may not|shall not|not be entitled to|no party may)(?! be deemed| be required)[^.]{0,60}?\bassign\w*|\bassign\w*[^.]{0,120}?without the (?:prior )?(?:written )?consent|\bnot (?:be )?assignable\b)",
     },
     "termination_notice_days": {
         "doc": ("lease", "employment"),
-        "re": r"(?:terminat|resign)\w*[^.]{0,80}?\(?(\d{1,3})\)?\s*days(?:['’]|’s)?\s*(?:(?:prior|advance|written) )*notice|\(?(\d{1,3})\)?\s*days(?:['’]|’s)?\s*(?:(?:prior|advance|written) )*notice[^.]{0,80}?(?:terminat|resign)\w*|notice of termination[^.]{0,60}?\(?(\d{1,3})\)?\s*days",
+        "re": r"(?:terminat|resign)\w*(?![^.]{0,80}\b(?:service|within)\b)[^.]{0,80}?\(?(\d{1,3})\)?\s*days(?:['’]|’s)?\s*(?:(?:prior|advance|written) )*notice|\(?(\d{1,3})\)?\s*days(?:['’]|’s)?\s*(?:(?:prior|advance|written) )*notice(?![^.]*\bservice\b)[^.]{0,80}?(?:terminat|resign)\w*|notice of termination[^.]{0,60}?\(?(\d{1,3})\)?\s*days",
     },
     "severance": {
         "doc": ("employment",),
@@ -162,13 +162,17 @@ def extract(pages: list[tuple[int, str]], doc_type: str) -> dict:
                     value = next(g for g in m.groups() if g).strip()
                     if term in ("non_solicit_months", "non_compete_months"):
                         value = _months(value, m.group(0))
+                    if term == "non_compete_months" and re.search(r"\b(?:reduc|modif|waiv)\w*", sent, re.IGNORECASE):
+                        continue  # an amendment changing the covenant, not the covenant itself
+                    review = bool(_NEG.search(sent)) or (term == "termination_fee" and bool(
+                        re.search(r"\binstead of\b|\bthereafter\b", sent, re.IGNORECASE)))  # conditional fee change
                     found.append(
                         Finding(
                             term,
                             value,
                             num,
                             sent.strip(),
-                            bool(_NEG.search(sent)),
+                            review,
                         )
                     )
         if not hits:

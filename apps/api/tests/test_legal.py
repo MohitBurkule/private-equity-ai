@@ -100,3 +100,20 @@ def test_employment_non_compete_over_12_months_fires_the_playbook_rule():
 def test_lease_and_employment_are_valid_doc_types():
     assert extract([(1, "This Lease shall be governed by the laws of the State of Florida.")], "lease")["doc_type"] == "lease"
     assert extract([(1, "This Agreement shall be governed by the laws of the State of Texas.")], "employment")["doc_type"] == "employment"
+
+
+def test_not_assignable_is_a_restriction_and_required_consent_is_not_an_assignment_ban():
+    out = extract([(2, "Employee’s rights are not assignable without the prior written consent of the Company."),
+                   (3, "Landlord shall not be required to bear any expenses under this Lease.")], "employment")
+    assert [f["page"] for f in out["findings"] if f["term"] == "assignment"] == [2]
+
+
+def test_non_compete_amendment_is_not_read_as_the_covenant():
+    out = extract([(4, "The Company will reduce the Non-Compete period of 24 months for the Employee.")], "employment")
+    assert [f for f in out["findings"] if f["term"] == "non_compete_months"] == []
+
+
+def test_conditional_termination_fee_change_is_flagged_for_review():
+    out = extract([(778, "(a) the amount of the Reverse Termination Fee shall thereafter be equal to $15,000,000 (instead of $10,000,000).")], "spa")
+    fee = [f for f in out["findings"] if f["term"] == "termination_fee"]
+    assert fee and fee[0]["value"] == "$15,000,000" and fee[0]["needs_review"] is True
