@@ -23,6 +23,7 @@ from app import agent as ag
 from app import alerts as al
 from app import companies_house as ch_mod
 from app import comps as comps_mod
+from app import covenant_parse as covparse_mod
 from app import (
     enrich,
     notify,
@@ -1241,6 +1242,14 @@ def precedents_scan(who: Who, since: str, until: str, limit: int = 25, form: str
         raise HTTPException(503, str(e)) from e
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
+
+
+@app.get("/documents/{doc_id}/covenant-tests")
+def covenant_tests(doc_id: str, db: Db, who: Who):
+    """Financial covenant tests in a credit agreement, each with its section, page and quote."""
+    _own_doc(db, who, doc_id)
+    pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc_id).order_by(PageRow.number)]
+    return {"document_id": doc_id, "tests": covparse_mod.extract(pages)}
 
 
 class WorkflowIn(BaseModel):
