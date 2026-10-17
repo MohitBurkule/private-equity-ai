@@ -149,3 +149,16 @@ def test_cohort_rows_keep_each_measure_and_reject_empty_rows():
     assert [r["status"] for r in out["rows"]] == ["accepted", "rejected"]
     metrics = sorted(f["metric"] for f in c.get("/facts", headers=h).json() if f["metric"].startswith("cohort_"))
     assert metrics == ["cohort_arr"]
+
+
+def test_debt_schedule_rows_cite_principal_and_rate():
+    h = new_tenant(c, "rows9")
+    doc = upload(h, {"A1": "Term Loan A Lenders", "B1": 500000000, "C1": "5.25%"})
+    good = {"page": 1, "quote": "Sheet!B1: 500,000,000 | row: Term Loan A Lenders",
+            "fields": {"lender": "Agent Bank", "instrument": "term_loan", "principal": 500000000}}
+    bad = {"page": 1, "quote": "Sheet!B1: 500,000,000 | row: Term Loan A Lenders",
+           "fields": {"lender": "Agent Bank", "instrument": "bonds", "principal": 500000000}}
+    out = run(h, doc, "debt_schedule", [good, bad])
+    assert [r["status"] for r in out["rows"]] == ["accepted", "rejected"]
+    metrics = sorted(f["metric"] for f in c.get("/facts", headers=h).json() if f["metric"] in ("principal", "rate_pct"))
+    assert metrics == ["principal"]

@@ -22,6 +22,7 @@ from app.extraction_schema import (
     CohortRow,
     ContractTerms,
     CustomerShare,
+    DebtTranche,
     EbitdaBridgeRow,
 )
 from app.facts import make_source
@@ -44,6 +45,7 @@ _ROWS = {
     "customer_concentration": CustomerShare,
     "ebitda_bridge": EbitdaBridgeRow,
     "cohort": CohortRow,
+    "debt_schedule": DebtTranche,
 }
 _NUMERIC_UNITS = {"shares", "%", "days", "USD", "count"}
 
@@ -63,6 +65,12 @@ def _facts_for(schema: str, row: BaseModel) -> list[tuple[str, str, str, Decimal
     run's, since one customer table carries several periods."""
     data = row.model_dump()
     out = []
+    if schema == "debt_schedule":
+        ent = f"{data['lender']} {data['instrument']}"
+        out.append((ent, None, "principal", Decimal(data["principal"]), "USD"))
+        if data.get("rate_pct") is not None:
+            out.append((ent, None, "rate_pct", Decimal(data["rate_pct"]), "%"))
+        return out
     if schema == "cohort":
         for field_name, metric, unit in (("arr", "cohort_arr", "USD"), ("customers", "cohort_customers", "count"),
                                          ("nrr_pct", "cohort_nrr_pct", "%"), ("churn_pct", "cohort_churn_pct", "%")):
