@@ -166,3 +166,19 @@ Why the table path misses: on these decks the text layer comes out one cell per 
 
 Gaps: 5 decks, not 10; 26 labelled items, not 50. Charts: one vector waterfall only. Lands' End and PGT PDFs were downloaded but not labelled. Hand labels are read from images, not double-checked.
 
+
+## Table engines on real decks (99 table values, 19 labelled rows)
+
+`evals/real_deck_table_engines.py`, same hand labels, table rows only (the 6 KPI tiles are excluded).
+
+| Engine | Values on the labelled row line | Whole rows | Bbox |
+|---|---|---|---|
+| router (current) | 16/99 | 2/19 | yes |
+| pymupdf words, y-overlap grouping | 16/99 | 2/19 | yes |
+| pdfplumber | 58/99 | 3/19 | yes |
+| pdftotext -layout | 99/99 | 19/19 | no |
+| router + layout fallback | 99/99 (83 via layout) | 19/19 | 16 with bbox, 83 text-only |
+
+Existing golden sets, same run (`pdf_benchmark.py`): pdftotext_layout is worse than router on sh01 (4/18 page vs 16/18) and has no bbox. So it is not a router replacement. Using it only as a fallback keeps the existing sets as they are.
+
+Open: a layout-only hit has no bbox, so it cannot cite a location. It must not auto-verify. OCR chart fallback and the other 5 decks are not done.
