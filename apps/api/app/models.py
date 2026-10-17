@@ -259,6 +259,20 @@ class DealChecklistItem(Base):
     updated_at: Mapped[str] = mapped_column(String(40), default="")
 
 
+class ValuationRound(Base):
+    """One round or valuation mark from a user-supplied export, tied to the file and CSV line it came from."""
+    __tablename__ = "valuation_round"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    company: Mapped[str] = mapped_column(String(256))
+    round_date: Mapped[str] = mapped_column(String(10))
+    round_type: Mapped[str] = mapped_column(String(64))
+    post_money: Mapped[Decimal] = mapped_column(Numeric(24, 6))
+    currency: Mapped[str] = mapped_column(String(3))
+    document_id: Mapped[str] = mapped_column(ForeignKey("document.id"))
+    line: Mapped[int] = mapped_column(Integer)
+
+
 class Holding(Base):
     """One row of a user-supplied secondary-market holdings export, tied to the file it came from."""
     __tablename__ = "holding"

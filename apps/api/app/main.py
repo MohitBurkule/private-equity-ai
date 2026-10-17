@@ -197,6 +197,7 @@ from app.models import (
     Target,
     TargetContact,
     TargetNote,
+    ValuationRound,
     WorkflowSchedule,
 )
 from app.models import Tenant as TenantRow
@@ -227,6 +228,7 @@ from app.shareledger import reconcile as reconcile_shares
 from app.stage_sync import stage_sync as run_stage_sync
 from app.sumcheck import sum_check
 from app.tracing import render_metrics, tracing_middleware
+from app.valuation_rounds import parse_rounds
 from app.versions import superseded
 from app.waterfall import PrefClass, waterfall
 from app.xbrl import candidates, crosscheck, load_companyfacts
@@ -2947,6 +2949,52 @@ async def holdings_import(file: Annotated[UploadFile, File()], db: Db, who: Writ
     log_event(db, who.tenant, actor(who), "holdings.import",
               {"document_id": doc.id, "platform": platform, "imported": len(rows), "rejected": len(errors)})
     return {"document_id": doc.id, "imported": len(rows), "rejected": len(errors), "errors": errors[:50]}
+
+
+@app.post("/valuation-rounds/import", status_code=201)
+async def valuation_rounds_import(file: Annotated[UploadFile, File()], db: Db, who: Writer):
+    """Import a round/valuation export. Columns: company, round_date, round_type, post_money, currency."""
+    if who.deals is not None:
+        raise HTTPException(403, "walled keys cannot import valuations")
+    data = await file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError as e:
+        raise HTTPException(422, "file must be UTF-8 text") from e
+    rows, errors, missing = parse_rounds(text)
+    if missing:
+        raise HTTPException(422, f"missing columns: {missing}")
+    if not rows:
+        raise HTTPException(422, {"detail": "no valid rows", "errors": errors[:50]})
+    res = ingest_any(db, who.tenant, data, file.filename or "rounds.csv")
+    if not res.documents:
+        reason = res.skipped[0]["reason"] if res.skipped else "cannot store file"
+        raise HTTPException(409 if "already stored" in reason else 422, reason)
+    doc = res.documents[0]
+    if db.query(ValuationRound).filter_by(tenant_id=who.tenant, document_id=doc.id).first():
+        raise HTTPException(409, "this file was already imported")
+    for r in rows:
+        db.add(ValuationRound(tenant_id=who.tenant, company=r.company, round_date=r.round_date,
+                              round_type=r.round_type, post_money=r.post_money, currency=r.currency,
+                              document_id=doc.id, line=r.line))
+    db.commit()
+    return {"document_id": doc.id, "accepted": len(rows), "rejected": errors}
+
+
+@app.get("/valuation-rounds")
+def valuation_rounds_list(db: Db, who: Who, company: str | None = None):
+    """Round history, oldest first. Rows whose source document the caller cannot see are not returned."""
+    if who.deals is not None:
+        return []
+    scope = visible_doc_ids(db, who)
+    q = db.query(ValuationRound).filter_by(tenant_id=who.tenant)
+    if company:
+        q = q.filter_by(company=company)
+    return [{"id": v.id, "company": v.company, "round_date": v.round_date, "round_type": v.round_type,
+             "post_money": str(v.post_money), "currency": v.currency, "document_id": v.document_id, "line": v.line}
+            for v in q.order_by(ValuationRound.round_date, ValuationRound.id) if scope is None or v.document_id in scope]
 
 
 @app.get("/holdings")
