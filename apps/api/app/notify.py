@@ -12,6 +12,7 @@ from email.message import EmailMessage
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from app import outbound
 from app.alerts import scan
 from app.models import Alert, Tenant
 from app.rls import bind_tenant
@@ -67,7 +68,7 @@ def send_digest(db: Session, tenant_id: str, to: list[str]) -> int:
     if not pending:
         return 0
     subject, body = render_digest(pending)
-    send_email(to, subject, body)  # raises before anything is marked
+    send_email(to, subject, outbound.text(outbound.pii_on(db, tenant_id), body))  # raises before anything is marked
     now = datetime.now(UTC).isoformat(timespec="seconds")
     for a in pending:
         a.emailed_at = now
@@ -137,7 +138,7 @@ def send_personal_digest(db: Session, tenant_id: str, pref, deals: set[str] | No
     if not pending:
         return 0
     subject, body = render_digest(pending)
-    send_email(valid_recipients([pref.email]), subject, body)  # raises before the watermark moves
+    send_email(valid_recipients([pref.email]), subject, outbound.text(outbound.pii_on(db, tenant_id), body))  # raises before the watermark moves
     pref.last_alert_id = max(a.id for a in db.query(Alert).filter(Alert.tenant_id == tenant_id,
                                                                   Alert.id.in_([x.id for x in pending])))
     db.commit()

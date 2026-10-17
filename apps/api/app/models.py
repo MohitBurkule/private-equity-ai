@@ -25,6 +25,9 @@ class Tenant(Base):
     __tablename__ = "tenant"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(256))
+    # When on, personal identifiers are stripped from anything that leaves the system: digests, chat posts,
+    # and workbook and LP exports. Figures are never changed.
+    pii_redaction: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class ApiKey(Base):
