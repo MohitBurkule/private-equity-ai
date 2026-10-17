@@ -8,7 +8,6 @@ returned unverified with no bbox, so a reader can see it came from the model alo
 from __future__ import annotations
 
 import base64
-import json
 import os
 import re
 from dataclasses import dataclass
@@ -28,7 +27,7 @@ PROMPT = (
     "Reply with only a JSON array of strings, each exactly as printed. Do not estimate values."
 )
 PAGE_NUM = re.compile(r"\(?-?\$?£?€?\d[\d,]*(?:\.\d+)?%?\)?")
-JSON_ARRAY = re.compile(r"\[.*\]", re.DOTALL)
+QUOTED = re.compile(r'"([^"\n]{1,40})"')
 
 _llm = None
 
@@ -84,12 +83,13 @@ def ask_vlm(png: bytes) -> list[str]:
         temperature=0,
         max_tokens=200,
     )
-    m = JSON_ARRAY.search(out["choices"][0]["message"]["content"] or "")
-    try:
-        vals = json.loads(m.group(0)) if m else []
-    except json.JSONDecodeError:
-        return []
-    return [str(v) for v in vals if isinstance(v, (str, int, float))]
+    return parse_labels(out["choices"][0]["message"]["content"] or "")
+
+
+def parse_labels(text: str) -> list[str]:
+    """Quoted strings in the model's reply, in order, without repeats. Works on a reply cut off mid-array,
+    which the model produces when it repeats a label until the token cap."""
+    return list(dict.fromkeys(QUOTED.findall(text)))
 
 
 def page_text_numbers(path: Path, page: int) -> set[float]:
