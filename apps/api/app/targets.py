@@ -27,6 +27,23 @@ _SECTIONS = [(1, 3, "Agriculture"), (5, 9, "Mining"), (10, 33, "Manufacturing"),
              (86, 88, "Health and social care"), (90, 93, "Arts and recreation"), (94, 96, "Other services")]
 
 
+# Approximate geographic centre of each US state, used only to place SEC targets on the map.
+# It is a placement aid, not a location claim: the list shows the real state code beside every dot.
+US_STATE_CENTROIDS = {
+    "AL": (32.8, -86.8), "AK": (64.0, -152.0), "AZ": (34.3, -111.7), "AR": (34.9, -92.4), "CA": (37.2, -119.5),
+    "CO": (39.0, -105.5), "CT": (41.6, -72.7), "DE": (39.0, -75.5), "FL": (28.6, -82.4), "GA": (32.7, -83.4),
+    "HI": (20.9, -157.5), "ID": (44.4, -114.6), "IL": (40.0, -89.2), "IN": (39.9, -86.3), "IA": (42.1, -93.5),
+    "KS": (38.5, -98.4), "KY": (37.5, -85.3), "LA": (31.1, -92.0), "ME": (45.4, -69.2), "MD": (39.0, -76.8),
+    "MA": (42.3, -71.8), "MI": (44.3, -85.4), "MN": (46.3, -94.3), "MS": (32.7, -89.7), "MO": (38.4, -92.5),
+    "MT": (47.0, -109.6), "NE": (41.5, -99.8), "NV": (39.3, -116.6), "NH": (43.7, -71.6), "NJ": (40.2, -74.7),
+    "NM": (34.4, -106.1), "NY": (42.9, -75.5), "NC": (35.5, -79.4), "ND": (47.4, -100.5), "OH": (40.3, -82.8),
+    "OK": (35.6, -97.5), "OR": (43.9, -120.6), "PA": (40.9, -77.8), "RI": (41.7, -71.6), "SC": (33.9, -80.9),
+    "SD": (44.4, -100.2), "TN": (35.9, -86.4), "TX": (31.5, -99.3), "UT": (39.3, -111.7), "VT": (44.1, -72.7),
+    "VA": (37.5, -78.9), "WA": (47.4, -120.5), "WV": (38.6, -80.6), "WI": (44.6, -89.9), "WY": (43.0, -107.6),
+    "DC": (38.9, -77.0),
+}
+
+
 def uk_sector(sic: str | None) -> str | None:
     if not sic or not sic[:2].isdigit():
         return None
@@ -64,6 +81,8 @@ def sec_target(submissions: dict, facts: dict | None) -> TargetIn:
                  submissions.get("sicDescription") or None, submissions.get("sic") or None,
                  "United States" if not biz.get("isForeignLocation") else (biz.get("stateOrCountryDescription") or None),
                  biz.get("stateOrCountry") if not biz.get("isForeignLocation") else None)
+    if not biz.get("isForeignLocation") and biz.get("stateOrCountry") in US_STATE_CENTROIDS:
+        t.lat, t.lng = (Decimal(str(v)) for v in US_STATE_CENTROIDS[biz["stateOrCountry"]])
     best = None
     for tag in _REV_TAGS:
         for e in ((facts or {}).get("facts", {}).get("us-gaap", {}).get(tag, {}).get("units", {}).get("USD", [])):
