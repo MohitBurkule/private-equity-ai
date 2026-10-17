@@ -1,5 +1,5 @@
 import { FileUp, Search } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, DocumentInfo, Hit } from "./api";
 import { useLoad } from "./hooks";
 import { filterDocs } from "./libraryFilter";
@@ -10,6 +10,17 @@ import { Button, Card, CardHead, Empty, ErrorLine, Input } from "./ui";
 export function Documents() {
   const docs = useLoad<DocumentInfo[]>(api.documents);
   const [libQ, setLibQ] = useState("");
+  // "/" jumps to the library filter, the usual search key, but never steals a key typed into another field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const el = document.getElementById("library-filter");
+      if (el) { e.preventDefault(); el.focus(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [views, setViews] = useState<SavedView[]>(() => loadViews());
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [targetDeal, setTargetDeal] = useState("");
@@ -38,7 +49,7 @@ export function Documents() {
         {docs.data?.length === 0 && <Empty>No documents yet. Upload a CIM, a 10-K or a spreadsheet to begin.</Empty>}
         {docs.data && docs.data.length > 0 && (
           <div className="px-4 pt-3">
-            <Input className="w-full" value={libQ} onChange={(e) => setLibQ(e.target.value)} placeholder="Filter by filename" aria-label="Filter documents" />
+            <Input id="library-filter" className="w-full" value={libQ} onChange={(e) => setLibQ(e.target.value)} placeholder="Filter by filename (press /)" aria-label="Filter documents" />
           </div>
         )}
         {docs.data && docs.data.length > 0 && (
