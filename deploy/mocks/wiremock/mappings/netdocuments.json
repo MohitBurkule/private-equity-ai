@@ -1,0 +1,46 @@
+{
+  "mappings": [
+    {
+      "name": "netdocuments-workspace-docs",
+      "request": {
+        "method": "GET",
+        "urlPath": "/synthetic/netdocuments/v1/workspaces/WS-41/documents"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "jsonBody": {
+          "items": [
+            {
+              "id": "ND-5501",
+              "name": "Atlas Credit Memo (SYNTHETIC).csv",
+              "version": 2
+            }
+          ]
+        }
+      },
+      "metadata": {
+        "note": "SYNTHETIC mock: response shape is invented for tests, not copied from a vendor's API docs."
+      }
+    },
+    {
+      "name": "netdocuments-document-content",
+      "request": {
+        "method": "GET",
+        "urlPath": "/synthetic/netdocuments/v1/documents/ND-5501/content"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "text/csv"
+        },
+        "body": "metric,value\nSYNTHETIC leverage,4.1\n"
+      },
+      "metadata": {
+        "note": "SYNTHETIC mock: response shape is invented for tests, not copied from a vendor's API docs."
+      }
+    }
+  ]
+}
