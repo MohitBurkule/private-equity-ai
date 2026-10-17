@@ -2305,11 +2305,35 @@ class ChNumbersImport(BaseModel):
 SCREEN_PROFILE_KEYS = ("deal_screening_criteria", "target_ev_range", "target_ebitda_range")
 
 
+SCREEN_WEIGHT_KEYS = {"sector", "country", "revenue"}
+
+
+def _screen_weights(raw: dict[str, float]) -> dict[str, float]:
+    """Firm-set weight per criterion. Unlisted criteria weigh 1, so no weights means the plain share of tests passing."""
+    bad = set(raw) - SCREEN_WEIGHT_KEYS
+    if bad:
+        raise HTTPException(422, f"unknown weight keys: {sorted(bad)}; use {sorted(SCREEN_WEIGHT_KEYS)}")
+    if any(not 0 <= w <= 10 for w in raw.values()):
+        raise HTTPException(422, "weights must be between 0 and 10")
+    return {k: float(v) for k, v in raw.items()}
+
+
+def _weighted_score(criteria: dict[str, str], weights: dict[str, float]) -> float | None:
+    """Weighted share of the tests that pass. An unknown test counts as not passed, never as passed."""
+    if not criteria:
+        return None
+    total = sum(weights.get(k, 1.0) for k in criteria)
+    if total == 0:
+        return None
+    return round(sum(weights.get(k, 1.0) for k, v in criteria.items() if v == "pass") / total, 2)
+
+
 class Screen(BaseModel):
     sectors: list[str] = []
     countries: list[str] = []
     min_revenue: Decimal | None = None
     max_revenue: Decimal | None = None
+    weights: dict[str, float] = {}
     limit: int = 200
 
 
@@ -2647,6 +2671,7 @@ class SavedScreenIn(BaseModel):
     countries: list[str] = []
     min_revenue: Decimal | None = None
     max_revenue: Decimal | None = None
+    weights: dict[str, float] = {}
 
 
 @app.post("/targets/screens", status_code=201)
@@ -2656,7 +2681,8 @@ def saved_screen_save(body: SavedScreenIn, db: Db, who: Writer):
         raise HTTPException(422, "a saved screen needs at least one criterion")
     criteria = {"sectors": body.sectors, "countries": body.countries,
                 "min_revenue": None if body.min_revenue is None else str(body.min_revenue),
-                "max_revenue": None if body.max_revenue is None else str(body.max_revenue)}
+                "max_revenue": None if body.max_revenue is None else str(body.max_revenue),
+                "weights": _screen_weights(body.weights)}
     row = db.query(SavedScreen).filter_by(tenant_id=who.tenant, name=body.name).one_or_none()
     if row is None:
         row = SavedScreen(tenant_id=who.tenant, name=body.name, created_by=actor(who),
@@ -2682,7 +2708,8 @@ def saved_screen_run(screen_id: int, db: Db, who: Who, limit: int = Query(200, g
     c = json.loads(row.criteria)
     body = Screen(sectors=c["sectors"], countries=c["countries"],
                   min_revenue=None if c["min_revenue"] is None else Decimal(c["min_revenue"]),
-                  max_revenue=None if c["max_revenue"] is None else Decimal(c["max_revenue"]), limit=limit)
+                  max_revenue=None if c["max_revenue"] is None else Decimal(c["max_revenue"]),
+                  weights=c.get("weights", {}), limit=limit)
     return {"screen": row.name, **targets_screen(body, db, who)}
 
 
@@ -2698,6 +2725,7 @@ def targets_screen(body: Screen, db: Db, who: Who):
             raise HTTPException(422, "give criteria, or accept a firm deal_screening_criteria rule first")
         source = {"key": rule.key, "value": rule.value, "document_id": rule.document_id, "page": rule.page,
                   "quote": rule.quote}
+    weights = _screen_weights(body.weights)
     out = []
     for t in db.query(Target).filter_by(tenant_id=who.tenant).order_by(Target.id).all():
         e = tg_mod.evaluate(t, c)
@@ -2706,15 +2734,14 @@ def targets_screen(body: Screen, db: Db, who: Who):
             sources = [{"label": lbl, "url": u} for lbl, u in
                        (("company record", d["source_url"]), ("revenue", d["revenue_url"])) if u]
             # score: share of the criteria that pass; an unknown criterion counts as not passed, never as passed
-            tests = list(e["criteria"].values())
-            score = round(sum(v == "pass" for v in tests) / len(tests), 2) if tests else None
+            score = _weighted_score(e["criteria"], weights)
             out.append({**d, **e, "sources": sources, "score": score})
     out.sort(key=lambda r: (r["verdict"] != "match", -(r["score"] or 0)))
     profile = [fk.row_dict(r) for r in (fk.newest_accepted(db, who.tenant, k)
                                         for k in SCREEN_PROFILE_KEYS) if r is not None]
     return {"matches": sum(r["verdict"] == "match" for r in out), "review": sum(r["verdict"] == "review" for r in out),
             "criteria_profile": profile, "criteria_source": source,
-            "applied": {"sectors": c.sectors, "countries": c.countries,
+            "applied": {"sectors": c.sectors, "countries": c.countries, "weights": weights,
                         "min_revenue": None if c.min_revenue is None else str(c.min_revenue),
                         "max_revenue": None if c.max_revenue is None else str(c.max_revenue)},
             "items": out[:min(max(body.limit, 1), 1000)]}
