@@ -100,3 +100,12 @@ def fx_rate(provider: EcbFxProvider, frm: str, to: str) -> tuple[Decimal, str, s
         return 1 / q.price, q.as_of, provider.name
     a, b = provider.quote(frm), provider.quote(to)
     return a.price / b.price, min(a.as_of, b.as_of), provider.name
+
+
+def rate_with_margin(provider: FredProvider, series: str, margin_pct: str) -> tuple[Decimal, dict]:
+    """A floating base rate plus a margin, both in percent. The citation names the series, its date and value."""
+    q = provider.quote(series)
+    margin = _dec(str(margin_pct), "margin")
+    src = {"macro": True, "series": q.symbol, "as_of": q.as_of, "base_value": str(q.price),
+           "source": q.source, "quote": f"{q.symbol} {q.as_of} = {q.price}%"}
+    return q.price + margin, src

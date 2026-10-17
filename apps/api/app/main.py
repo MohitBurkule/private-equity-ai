@@ -644,15 +644,33 @@ def fact_conflicts(db: Db, who: Who, entity: str | None = None, cross_document_o
             if c.cross_document or not cross_document_only]
 
 
+def get_market_fetch():
+    from app.marketfeeds import default_fetch
+    return default_fetch
+
+
 @app.post("/lbo/returns")
-def lbo_returns(body: dict, db: Db, who: Who, xlsx: bool = False):
+def lbo_returns(body: dict, db: Db, who: Who, fetch: Annotated[Callable, Depends(get_market_fetch)],
+                xlsx: bool = False):
     """Sponsor returns from cited inputs. Each input is {"value", "source": {document_id, page, quote}}
-    or {"fact_id"}; an uncited input is refused."""
+    or {"fact_id"}; an uncited input is refused. {"rate_series": {"series", "margin_pct"}} takes the newest
+    published value of a macro series (e.g. SOFR) plus a margin, cited to the series and its date."""
     raw = body.get("inputs") or {}
     scope = visible_doc_ids(db, who)
     cited: dict[str, lbo_mod.Cited] = {}
     for name, spec in raw.items():
-        if "fact_id" in spec:
+        if "rate_series" in spec:
+            from app.macrodata import FredProvider, rate_with_margin
+            from app.marketdata import NoData
+            rs = spec["rate_series"] or {}
+            try:
+                value, src = rate_with_margin(FredProvider(fetch=fetch), rs.get("series", ""), rs.get("margin_pct", "0"))
+            except NoData as e:
+                raise HTTPException(422, f"{name}: {e}") from e
+            except OSError as e:
+                raise HTTPException(502, f"{name}: rate source unreachable: {e}") from e
+            cited[name] = lbo_mod.Cited(value, src)
+        elif "fact_id" in spec:
             f = db.query(Fact).filter(Fact.id == spec["fact_id"], Fact.tenant_id == who.tenant).first()
             if f is None or not fact_visible(f, scope) or not f.sources or f.status != "verified":
                 raise HTTPException(422, f"{name}: fact not found, not verified, or has no source")
@@ -711,7 +729,9 @@ def lbo_returns(body: dict, db: Db, who: Who, xlsx: bool = False):
                         for k, c in cited.items() if c.source.get("derived")],
             "assumptions": [{"input": k, "value": str(c.value), "set_by": c.source["set_by"],
                              "set_on": c.source["set_on"], "reason": c.source["reason"]}
-                            for k, c in cited.items() if c.source.get("assumption")]}
+                            for k, c in cited.items() if c.source.get("assumption")],
+            "base_rates": [{"input": k, "value": str(c.value), **{f: c.source[f] for f in ("series", "as_of", "base_value", "source", "quote")}}
+                           for k, c in cited.items() if c.source.get("macro")]}
 
 
 def _lbo_run_row(r: LboRun) -> dict:
@@ -721,14 +741,14 @@ def _lbo_run_row(r: LboRun) -> dict:
 
 
 @app.post("/lbo/runs")
-def lbo_save(body: dict, db: Db, who: Who):
+def lbo_save(body: dict, db: Db, who: Who, fetch: Annotated[Callable, Depends(get_market_fetch)]):
     """Save an LBO run. The request is re-run through /lbo/returns first, so a saved run passed the same
     citation gate and its stored result is the one it produced now."""
     name = str(body.get("name") or "").strip()[:128]
     if not name:
         raise HTTPException(422, "name is required")
     request = body.get("request") or {}
-    result = lbo_returns(request, db, who)
+    result = lbo_returns(request, db, who, fetch)
     row = LboRun(tenant_id=who.tenant, name=name, created_by=who.key_id, created_at=_now_iso(),
                  request=json.dumps(request), result=json.dumps(result, default=str))
     db.add(row)
@@ -1238,11 +1258,6 @@ def get_ch_fetch():
     return default_fetch
 
 
-def get_market_fetch():
-    from app.marketfeeds import default_fetch
-    return default_fetch
-
-
 @app.get("/market/quote")
 def market_quote(symbol: str, provider: str, who: Who, fetch: Annotated[Callable, Depends(get_market_fetch)],
                  currency: str | None = None):
@@ -1677,7 +1692,11 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
         steps.append(flagship_mod.precedents_step(body.precedents, pfetch_mod.build))
     except (OSError, ValueError, RuntimeError) as e:
         steps.append(flagship_mod.Step("precedents", "failed", f"{type(e).__name__}: {e}"))
-    steps.append(flagship_mod.legal_step(pages, doc.id, body.legal_doc_type, legal_mod))
+    try:
+        reader = get_llm() if body.legal_doc_type else None
+    except NoLLMConfigured:
+        reader = None
+    steps.append(flagship_mod.legal_step(pages, doc.id, body.legal_doc_type, legal_mod, reader))
     ext_step = next((s for s in steps if s.name == "extraction"), None)
     steps.append(flagship_mod.crosscheck_step(ext_step, body.cik, None) if body.extract
                  else flagship_mod.Step("crosscheck", "skipped", "set extract=true to cross-check its figures"))

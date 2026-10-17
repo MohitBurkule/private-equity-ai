@@ -146,3 +146,14 @@ def test_proxy_fallback_when_8k_states_no_value():
     assert beta[0]["terms_from"].startswith("merger proxy")
     assert beta[0]["terms"]["ev_musd"]["source_url"].endswith("proxy.htm")
     assert not [d for d in r["deals"] if d["name"].startswith("Acme") and "terms_from" in d]
+
+
+def test_blank_check_company_is_skipped_not_a_deal():
+    spac = (b'{"hits":{"hits":[{"_id":"0004-26-000004:ex.htm","_source":{"ciks":["0000777777"],'
+            b'"display_names":["Bleichroeder Acquisition Corp. II"],"file_date":"2026-08-27","form":"8-K"}}]}}')
+
+    def f(url):
+        return spac if "efts" in url and "ciks=" not in url else DOC_A
+    r = build("2026-01-01", "2026-12-31", fetch=f)
+    assert r["deals"] == []
+    assert r["skipped"][0]["reason"].startswith("blank-check company")

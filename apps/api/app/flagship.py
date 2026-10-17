@@ -103,7 +103,8 @@ def crosscheck_step(extraction: Step | None, cik: str | None, fetch) -> Step:
     for c in extraction.result.get("created", []):
         metric = c["metric"]
         sec = None
-        for concept in CONCEPTS[metric]:
+        # the concept the extraction read, so the check compares like with like
+        for concept in ([c["concept"]] if c.get("concept") else CONCEPTS[metric]):
             for entry in us_gaap.get(concept, {}).get("units", {}).get("USD", []):
                 durational = "start" in entry
                 if entry.get("end") == period_end and entry.get("form") == "10-K" and durational == (metric not in BALANCE):
@@ -123,7 +124,8 @@ def crosscheck_step(extraction: Step | None, cik: str | None, fetch) -> Step:
     return Step("crosscheck", "ok", result={"matched": matched, "conflicts": [], "unchecked": unchecked})
 
 
-def legal_step(pages: list[tuple[int, str]], doc_id: str, doc_type: str | None, legal_mod) -> Step:
+def legal_step(pages: list[tuple[int, str]], doc_id: str, doc_type: str | None, legal_mod, llm=None) -> Step:
+    """Rules-based red flags. With a local model, it also reads the terms the rules did not find (cited, else dropped)."""
     if not doc_type:
         return Step("legal", "skipped", "no document type given (nda, spa or credit)")
     try:
@@ -133,7 +135,17 @@ def legal_step(pages: list[tuple[int, str]], doc_id: str, doc_type: str | None, 
     flags = legal_mod.red_flags(out)
     for f in flags:
         f.setdefault("document_id", doc_id)
-    return Step("legal", "ok", result={"red_flags": flags, "absent": out.get("absent", [])})
+    result = {"red_flags": flags, "absent": out.get("absent", [])}
+    if llm is None:
+        result["model_reader"] = "skipped: no local model configured (LLM_PROVIDER=llamacpp)"
+    else:
+        from app import legal_reader
+        read = legal_reader.read(pages, doc_type, out.get("absent", []), llm)
+        for f in read["findings"]:
+            f["document_id"] = doc_id
+        result["model_findings"] = read["findings"]
+        result["model_dropped"] = read["dropped"]
+    return Step("legal", "ok", result=result)
 
 
 def extraction_step(db, tenant: str, doc_id: str, entity: str, data: bytes) -> Step:
@@ -150,11 +162,21 @@ def extraction_step(db, tenant: str, doc_id: str, entity: str, data: bytes) -> S
     return Step("extraction", status, reason, result=res)
 
 
+COMPS_MIN_PEERS = 5
+COMPS_BAND = (Decimal("0.5"), Decimal(2))
+COMPS_WIDE_BAND = (Decimal("0.33"), Decimal(3))
+
+
 def comps_step(revenue: Decimal | None, sic: str | None, exclude: set[str], pages: int, discover) -> Step:
-    """SIC peers by size (0.5x to 2x the entity's revenue), each with its rule and filing link."""
+    """SIC peers by size (0.5x to 2x the entity's revenue). When fewer than five are found, the band widens to
+    0.33x to 3x for the rest. Each peer keeps its rule, which names the band it was selected in, and its filing link."""
     if revenue is None or not sic:
         return Step("comps", "skipped", "needs the entity's revenue (extraction) and a SIC code")
-    found = discover(revenue, sic, exclude, pages=pages)
+    found = discover(revenue, sic, exclude, pages=pages, low=COMPS_BAND[0], high=COMPS_BAND[1])
+    if len(found) < COMPS_MIN_PEERS:
+        seen = exclude | {p.cik for p in found}
+        found += discover(revenue, sic, seen, pages=pages, low=COMPS_WIDE_BAND[0], high=COMPS_WIDE_BAND[1],
+                          want=10 - len(found))
     return Step("comps", "ok", result={"sic": sic, "target_revenue": str(revenue), "peers": [
         {"cik": p.cik, "name": p.name, "revenue": str(p.revenue), "period": p.period,
          "source_url": p.source_url, "rule": p.rule} for p in found]})
