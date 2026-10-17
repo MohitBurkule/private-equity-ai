@@ -259,11 +259,18 @@ export const api2 = {
   covenants: (companyId: number) => call<CovenantStatus>(`/portfolio/companies/${companyId}/covenants`),
   emailReview: () => call<{ emails: UnattachedEmail[] }>("/email/review"),
   dealMeetings: (deal: string) => call<{ meetings: DealMeeting[] }>(`/deals/${encodeURIComponent(deal)}/meetings`),
+  peerSets: (deal: string) => call<PeerSet[]>(`/deals/${encodeURIComponent(deal)}/peer-sets`),
+  savePeerSet: (deal: string, targetId: number, name: string) => call<PeerSet>(`/deals/${encodeURIComponent(deal)}/peer-sets`, "POST", { target_id: targetId, name }),
+  refreshPeerSet: (deal: string, id: number) => call<PeerSet>(`/deals/${encodeURIComponent(deal)}/peer-sets/${id}/refresh`, "POST"),
   emailAttach: (docId: string, deal: string) => call<{ document_id: string; deal: string }>(`/email/review/${encodeURIComponent(docId)}/attach`, "POST", { deal }),
 };
 
 export interface UnattachedEmail { document_id: string; filename: string; source_url: string | null }
 
 export interface DealMeeting { title: string; starts_at: string; url: string | null; board: string | null; source: string }
+
+export interface PeerItem { cik: string; name: string; revenue?: string; [key: string]: unknown }
+export interface PeerDropped { cik: string; name: string; reason: string }
+export interface PeerSet { id: number; deal: string; name: string; target_id: number; items: PeerItem[]; dropped: PeerDropped[]; refreshed_at: string | null }
 
 export const STAGES = ["sourcing", "screening", "dd", "ic", "signed", "closed", "passed"];
