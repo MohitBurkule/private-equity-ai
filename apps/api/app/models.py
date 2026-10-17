@@ -134,6 +134,8 @@ class Deal(Base):
     note: Mapped[str | None] = mapped_column(Text, default=None)
     # Set by compliance: a held deal cannot be deleted until the hold is lifted.
     legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Material non-public information: visible only to keys scoped to this deal by name.
+    mnpi: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     updated_at: Mapped[str] = mapped_column(String(40), default="")
 
 

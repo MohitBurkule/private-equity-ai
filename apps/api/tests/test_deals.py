@@ -60,3 +60,19 @@ def test_delete_refuses_while_documents_linked_and_is_tenant_isolated():
     assert c.post("/documents", files={"file": ("l.xlsx", buf.getvalue(), "x")}, data={"deal": "Linked"},
                   headers=a).status_code in (200, 201)
     assert c.delete("/deals/Linked", headers=a).status_code == 409
+
+
+def test_mnpi_deal_hidden_from_unscoped_key_and_visible_to_scoped_key():
+    t = c.post("/admin/tenants", json={"name": "mnpi1"}, headers={"X-Admin-Token": "test-admin"}).json()
+    admin = {"Authorization": f"Bearer {t['api_key']}"}
+    c.post("/deals", headers=admin, json={"name": "Quiet", "mnpi": True})
+    c.post("/deals", headers=admin, json={"name": "Open"})
+    assert [d["name"] for d in c.get("/deals", headers=admin).json()] == ["Open"]
+    assert c.patch("/deals/Quiet", headers=admin, json={"note": "x"}).status_code == 404
+    assert c.delete("/deals/Quiet", headers=admin).status_code == 404
+    scoped = c.post(f"/admin/tenants/{t['tenant_id']}/keys", json={"role": "analyst", "deals": ["Quiet"]},
+                    headers={"X-Admin-Token": "test-admin"}).json()
+    sh = {"Authorization": f"Bearer {scoped['api_key']}"}
+    assert [d["name"] for d in c.get("/deals", headers=sh).json()] == ["Quiet"]
+    assert c.patch("/deals/Quiet", headers=sh, json={"mnpi": False}).json()["mnpi"] is False
+    assert sorted(d["name"] for d in c.get("/deals", headers=admin).json()) == ["Open", "Quiet"]
