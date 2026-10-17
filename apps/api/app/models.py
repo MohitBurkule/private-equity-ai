@@ -175,6 +175,10 @@ class DealNote(Base):
     author: Mapped[str] = mapped_column(String(64))
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(String(40), default="")
+    # A note made from a calendar meeting: the event it came from, and the link that cites it
+    calendar_event_id: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
+    source_url: Mapped[str | None] = mapped_column(Text, default=None)
+    edited_at: Mapped[str] = mapped_column(String(40), default="")  # set on each edit; empty when never edited
 
 
 class DDQuestion(Base):
@@ -531,6 +535,7 @@ class Alert(Base):
     status: Mapped[str] = mapped_column(String(16), default="new", server_default="new")
     created_at: Mapped[str] = mapped_column(String(40), default="")
     emailed_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    deal: Mapped[str | None] = mapped_column(String(128), default=None, index=True)  # set when the alert is about a deal
 
 
 class DealLink(Base):
@@ -559,6 +564,9 @@ class CalendarEvent(Base):
     url: Mapped[str] = mapped_column(Text, default="")
     company: Mapped[str | None] = mapped_column(String(256), default=None, index=True)
     board: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # The deal whose name or alias the title names, when exactly one does (app/calendar_events.py)
+    deal: Mapped[str | None] = mapped_column(String(128), default=None, index=True)
+    body: Mapped[str] = mapped_column(Text, default="", server_default="")  # the meeting's text, capped by the connector
 
 
 class Connection(Base):

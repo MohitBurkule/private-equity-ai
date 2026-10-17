@@ -12,6 +12,7 @@ from app.connectors.crm import to_csv
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 GCAL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+MAX_BODY = 4000  # characters of meeting text kept per event
 
 
 def _window(opts: dict[str, str]) -> tuple[str, str]:
@@ -28,7 +29,7 @@ class CalendarConnector(Connector):
     last_events: list[dict]
 
     def fetch_events(self, limit: int) -> list[dict]:
-        """Each event: external_id, title, starts_at (ISO string), url."""
+        """Each event: external_id, title, starts_at (ISO string), url, body (text, may be empty)."""
         raise NotImplementedError
 
     def items(self, limit: int = 50):
@@ -47,9 +48,10 @@ class OutlookCalendar(CalendarConnector):
     def fetch_events(self, limit):
         start, end = _window(self.opts)
         page = self._get_json(f"{GRAPH}/me/calendarView?startDateTime={start}&endDateTime={end}"
-                              f"&$top={min(limit, 100)}&$select=id,subject,start,webLink")
+                              f"&$top={min(limit, 100)}&$select=id,subject,start,webLink,bodyPreview")
         return [{"external_id": e["id"], "title": e.get("subject", ""),
-                 "starts_at": e.get("start", {}).get("dateTime", ""), "url": e.get("webLink", "")}
+                 "starts_at": e.get("start", {}).get("dateTime", ""), "url": e.get("webLink", ""),
+                 "body": (e.get("bodyPreview") or "")[:MAX_BODY]}
                 for e in page.get("value", [])][:limit]
 
 
@@ -65,5 +67,6 @@ class GoogleCalendar(CalendarConnector):
         for e in page.get("items", [])[:limit]:
             when = e.get("start", {})
             out.append({"external_id": e["id"], "title": e.get("summary", ""),
-                        "starts_at": when.get("dateTime") or when.get("date", ""), "url": e.get("htmlLink", "")})
+                        "starts_at": when.get("dateTime") or when.get("date", ""), "url": e.get("htmlLink", ""),
+                        "body": (e.get("description") or "")[:MAX_BODY]})
         return out

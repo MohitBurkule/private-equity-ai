@@ -39,7 +39,7 @@ def check_room(db: Session, tenant_id: str, deal: str | None, required: list[str
     a = Alert(tenant_id=tenant_id, kind="dd", severity="warning",
               title=f"{deal}: {len(missing)} required data-room document(s) missing",
               detail="\n".join(f"- {p}" for p in missing), dedupe_key=key, fact_ids="[]", status="new",
-              created_at=datetime.now(UTC).isoformat(timespec="seconds"))
+              created_at=datetime.now(UTC).isoformat(timespec="seconds"), deal=deal)
     db.add(a)
     db.commit()
     return a

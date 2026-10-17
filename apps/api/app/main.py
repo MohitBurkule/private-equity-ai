@@ -97,6 +97,7 @@ from app.auth import (
     revoke_key,
 )
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
+from app.calendar_events import retag_deals
 from app.chat_alerts import chat_poster
 from app.citations import quote_in_page
 from app.comps import EV_METRIC
@@ -149,6 +150,7 @@ from app.models import (
     AgentRun,
     Alert,
     ApiKey,
+    CalendarEvent,
     Connection,
     DDQuestion,
     DDRequest,
@@ -1415,6 +1417,7 @@ def deal_create(body: DealIn, db: Db, who: Writer):
              created_by=who.key_id if body.mnpi else None, updated_at=_now_iso())
     db.add(d)
     db.commit()
+    retag_deals(db, who.tenant)  # meetings already stored may name the new deal
     log_event(db, who.tenant, actor(who), "deal.create", {"name": name, "stage": d.stage})
     return _deal_out(db, who, d)
 
@@ -1456,7 +1459,8 @@ class DealNoteIn(BaseModel):
 
 
 def _note_out(n: DealNote) -> dict:
-    return {"id": n.id, "deal": n.deal, "author": n.author, "body": n.body, "created_at": n.created_at}
+    return {"id": n.id, "deal": n.deal, "author": n.author, "body": n.body, "created_at": n.created_at,
+            "source_url": n.source_url, "edited_at": n.edited_at or None}
 
 
 @app.get("/deals/{name}/notes")
@@ -1518,6 +1522,25 @@ def peer_sets_refresh(name: str, sid: int, db: Db, who: Writer):
     return peer_sets_mod.out(row)
 
 
+@app.patch("/deals/{name}/notes/{nid}")
+def deal_note_edit(name: str, nid: int, body: DealNoteIn, db: Db, who: Writer):
+    """Edit a deal note. Its author edits their own; a whole-tenant key may edit any note on the deal. The old
+    text is kept in the audit chain (`deal.note_edit`), so an edit never silently replaces the record."""
+    _visible_deal_or_404(db, who, name)
+    _require(who, "write", "edit a note", deal=name)
+    n = db.get(DealNote, nid)
+    if n is None or n.tenant_id != who.tenant or n.deal != name:
+        raise HTTPException(404, "note not found")
+    if n.author != actor(who) and who.restricted:
+        raise HTTPException(403, "only the note's author or a whole-tenant key can edit it")
+    old = n.body
+    n.body = body.body.strip()
+    n.edited_at = _now_iso()
+    db.commit()
+    log_event(db, who.tenant, actor(who), "deal.note_edit", {"deal": name, "id": nid, "before": old, "after": n.body})
+    return _note_out(n)
+
+
 @app.get("/deals/{name}/checklist")
 def checklist_list(name: str, db: Db, who: Who):
     _visible_deal_or_404(db, who, name)
@@ -1565,6 +1588,7 @@ def checklist_delete(name: str, item_id: int, db: Db, who: Who):
 
 @app.patch("/deals/{name}")
 def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
+    retag_after_alias = False
     d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
     if d is None or not _dd_scope_ok(who, name) or deal_hidden(d, who):
         raise HTTPException(404, "deal not found")
@@ -1585,6 +1609,7 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
         _require(who, "write", "edit deal identifiers", deal=name)
         if body.aliases is not None:
             d.aliases = _aliases_text(body.aliases)
+            retag_after_alias = True
         if body.cik is not None:
             d.cik = _cik(body.cik)
         if body.lei is not None:
@@ -1599,6 +1624,8 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
         d.legal_hold = body.legal_hold
     d.updated_at = _now_iso()
     db.commit()
+    if retag_after_alias:
+        retag_deals(db, who.tenant)  # a new alias can claim meetings already stored
     log_event(db, who.tenant, actor(who), "deal.update", {"name": name, "stage": d.stage, "legal_hold": d.legal_hold})
     return _deal_out(db, who, d)
 
@@ -1618,6 +1645,7 @@ def deal_delete(name: str, db: Db, who: Writer):
     removed = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=name).delete()
     db.delete(d)
     db.commit()
+    retag_deals(db, who.tenant)  # meetings tagged to the deal lose the tag and their note
     log_event(db, who.tenant, actor(who), "deal.delete", {"name": name, "dd_requests_removed": removed})
     return {"deleted": name, "dd_requests_removed": removed}
 
@@ -2055,6 +2083,18 @@ def email_links(db: Db, who: Who):
 
 class EmailAttachIn(BaseModel):
     deal: str = Field(min_length=1, max_length=128)
+
+
+@app.get("/deals/{name}/meetings")
+def deal_meetings(name: str, db: Db, who: Who):
+    """Calendar meetings whose title names this deal or one of its aliases, soonest first. A deal the key cannot
+    see, or an MNPI deal the key is not cleared for, answers 404 as if it did not exist."""
+    d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
+    if d is None or deal_hidden(d, who) or (who.deals is not None and name not in who.deals):
+        raise HTTPException(404, "no such deal")
+    rows = db.query(CalendarEvent).filter_by(tenant_id=who.tenant, deal=name).order_by(CalendarEvent.starts_at).all()
+    return {"meetings": [{"title": r.title, "starts_at": r.starts_at, "url": r.url, "board": r.board,
+                          "source": r.source} for r in rows]}
 
 
 @app.get("/email/review")
@@ -3305,26 +3345,34 @@ def outreach_queue_send(item_id: int, body: OutreachQueueSend, db: Db, who: Writ
     return {"sent": len(to), "attached": [f[0] for f in files]}
 
 
+def _research_text(db: Session, tenant: str, template: str | None) -> dict:
+    """Firm heading text and intro for the research note, from a saved template. Empty when none is named."""
+    if not template:
+        return {"headings": {}, "intro": ""}
+    headings, intro = mt_mod.firm_text(db, tenant, template)
+    return {"headings": {k: v for k, v in headings.items() if k in research_mod.RESEARCH_KEYS}, "intro": intro}
+
+
 @app.get("/targets/{tid}/research.docx")
-def target_research(tid: int, db: Db, who: Who):
+def target_research(tid: int, db: Db, who: Who, template: str | None = Query(None, max_length=64)):
     """Research note for one target: identity, revenue with filing link, sector benchmark, prior mentions, sources."""
     t = db.get(Target, tid)
     if t is None or t.tenant_id != who.tenant:
         raise HTTPException(404, "target not found")
     log_event(db, who.tenant, actor(who), "target.research_export", {"id": tid})
-    return Response(research_mod.build_docx(db, who.tenant, t, deal_scope(db, who)),
+    return Response(research_mod.build_docx(db, who.tenant, t, deal_scope(db, who), **_research_text(db, who.tenant, template)),
                     headers={"Content-Disposition": f'attachment; filename="research-{tid}.docx"'},
                     media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 @app.get("/targets/{tid}/research.pptx")
-def target_research_deck(tid: int, db: Db, who: Who):
+def target_research_deck(tid: int, db: Db, who: Who, template: str | None = Query(None, max_length=64)):
     """Same research note as slides: one slide per section, built from the same records."""
     t = db.get(Target, tid)
     if t is None or t.tenant_id != who.tenant:
         raise HTTPException(404, "target not found")
     log_event(db, who.tenant, actor(who), "target.research_export", {"id": tid, "format": "pptx"})
-    return Response(research_mod.build_pptx(db, who.tenant, t, deal_scope(db, who)),
+    return Response(research_mod.build_pptx(db, who.tenant, t, deal_scope(db, who), **_research_text(db, who.tenant, template)),
                     headers={"Content-Disposition": f'attachment; filename="research-{tid}.pptx"'},
                     media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 

@@ -292,6 +292,8 @@ def _persist(db: Session, tenant_id: str, drafts: list[AlertDraft]) -> list[Aler
             continue
         a = Alert(tenant_id=tenant_id, kind=d.kind, severity=d.severity, title=d.title, detail=d.detail,
                   dedupe_key=d.dedupe_key, fact_ids=json.dumps(d.fact_ids), status="new", created_at=_now())
+        if d.kind in ("deal", "dd") and ": " in d.title:  # the deal's name is stored, not only read from the title
+            a.deal = d.title.split(": ", 1)[0]
         db.add(a)
         created.append(a)
     db.commit()

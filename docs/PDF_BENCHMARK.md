@@ -165,3 +165,4 @@ Decks used: MIMEDX Oct 2025 investor deck p12; Ampco-Pittsburgh Aug 2023 investo
 Why the table path misses: on these decks the text layer comes out one cell per line. The router's line grouping then splits rows across lines, so "row label + all values on one line" fails. This is the main gap for real decks, not the number parsing.
 
 Gaps: 5 decks, not 10; 26 labelled items, not 50. Charts: one vector waterfall only. Lands' End and PGT PDFs were downloaded but not labelled. Hand labels are read from images, not double-checked.
+
