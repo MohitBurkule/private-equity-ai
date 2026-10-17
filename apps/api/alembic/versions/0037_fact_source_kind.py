@@ -4,8 +4,8 @@ A workbook page used to be a whole sheet and was cited as "p.N". Those pages are
 migration keeps them and rewrites each citation as Sheet!Cell, row: label, taken from its quote. HTML
 citations (page 0) become kind html.
 
-Revision ID: 0036
-Revises: 0035
+Revision ID: 0037
+Revises: 0036
 """
 import re
 
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = '0036'
-down_revision = '0035'
+revision = '0037'
+down_revision = '0036'
 branch_labels = None
 depends_on = None
 
