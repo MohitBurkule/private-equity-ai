@@ -40,6 +40,10 @@ curl -sf "localhost:$API_PORT/health" >/dev/null || { echo "API did not start, s
 if [ -d "$DATA_DIR" ]; then
   SEED=$(python3 scripts/seed_ixbrl_facts.py "http://localhost:$API_PORT" "$ADMIN_TOKEN" "$DATA_DIR")
   KEY=$(awk '/API key/{print $3}' <<<"$SEED")
+  # Term Loan A terms, a labelled-assumption LBO run, and one candidate watch over the dated cache.
+  python3 scripts/demo_extras.py "http://localhost:$API_PORT" "$KEY" "$DATABASE_URL" "$DATA_DIR" "$DEMO_DIR" \
+    | sed 's/^/extras: /'
+  echo "Dated EDGAR cache: data/demo/cache (captured 2026-10-17). Firm rule is synthetic demo text."
 else
   echo "No seed data at $DATA_DIR; the UI starts empty. Add a tenant with POST /admin/tenants."
   KEY=$(curl -s -X POST "localhost:$API_PORT/admin/tenants" -H "X-Admin-Token: $ADMIN_TOKEN" \

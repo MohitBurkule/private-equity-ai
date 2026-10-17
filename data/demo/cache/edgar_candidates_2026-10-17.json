@@ -1,0 +1,61 @@
+{
+ "captured_on": "2026-10-17",
+ "source": "SEC EDGAR full-text search via /targets/search/edgar, forms 10-K, window 2025-10-17 to 2026-10-17",
+ "terms": {
+  "software": [
+   {
+    "name": "OPEN TEXT CORP",
+    "url": "https://www.sec.gov/Archives/edgar/data/1002638/000100263826000068/",
+    "label": "EDGAR 10-K 2026-08-06"
+   },
+   {
+    "name": "PROGRESS SOFTWARE CORP /MA",
+    "url": "https://www.sec.gov/Archives/edgar/data/876167/000087616726000008/",
+    "label": "EDGAR 10-K 2026-01-20"
+   },
+   {
+    "name": "Unity Software Inc.",
+    "url": "https://www.sec.gov/Archives/edgar/data/1810806/000181080626000011/",
+    "label": "EDGAR 10-K 2026-02-11"
+   },
+   {
+    "name": "INTELLINETICS, INC.",
+    "url": "https://www.sec.gov/Archives/edgar/data/1081745/000149315226013568/",
+    "label": "EDGAR 10-K 2026-03-30"
+   },
+   {
+    "name": "AWARE INC /MA/",
+    "url": "https://www.sec.gov/Archives/edgar/data/1015739/000119312526096448/",
+    "label": "EDGAR 10-K 2026-03-06"
+   },
+   {
+    "name": "C3.ai, Inc.",
+    "url": "https://www.sec.gov/Archives/edgar/data/1577526/000157752626000078/",
+    "label": "EDGAR 10-K 2026-06-24"
+   },
+   {
+    "name": "Guidewire Software, Inc.",
+    "url": "https://www.sec.gov/Archives/edgar/data/1528396/000152839626000046/",
+    "label": "EDGAR 10-K 2026-09-11"
+   },
+   {
+    "name": "Castellum, Inc.",
+    "url": "https://www.sec.gov/Archives/edgar/data/1877939/000187793926000016/",
+    "label": "EDGAR 10-K 2026-03-09"
+   },
+   {
+    "name": "TYLER TECHNOLOGIES INC",
+    "url": "https://www.sec.gov/Archives/edgar/data/860731/000086073126000016/",
+    "label": "EDGAR 10-K 2026-02-18"
+   }
+  ],
+  "business services": [
+   {
+    "name": "CONDUENT Inc",
+    "url": "https://www.sec.gov/Archives/edgar/data/1677703/000167770326000024/",
+    "label": "EDGAR 10-K 2026-02-19"
+   }
+  ]
+ },
+ "filter": "Removed asset-backed trusts, funding vehicles, and lenders or investment companies (BDCs, banks); they are not operating companies in the screened sectors."
+}
