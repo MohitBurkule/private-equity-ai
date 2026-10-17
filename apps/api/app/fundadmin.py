@@ -62,3 +62,21 @@ def extract(pages: list[tuple[int, str]]) -> list[Found]:
                 continue  # not a plain number: leave it for a person, do not guess
             out.append(Found(metric, date[0], digits, page, quote))
     return out
+
+
+# A capital-call notice (PDF, ILPA-style labels). Each label is read from its own line of the page text, and the
+# fact cites that line. The period is the due date printed on the same page; without both, nothing is stored.
+_NOTICE_AMOUNT = re.compile(r"Call amount:\s*USD\s*(\d{1,3}(?:,\d{3})*(?:\.\d+)?)")
+_NOTICE_DUE = re.compile(r"Due date:\s*(\d{4}-\d{2}-\d{2})")
+
+
+def extract_notice(pages: list[tuple[int, str]]) -> list[Found]:
+    out: list[Found] = []
+    for num, text in pages:
+        flat = re.sub(r"[ \t]+", " ", text)
+        amount = _NOTICE_AMOUNT.search(flat)
+        due = _NOTICE_DUE.search(flat)
+        if amount is None or due is None:
+            continue
+        out.append(Found("capital_call_usd", due.group(1), amount.group(1).replace(",", ""), num, amount.group(0)))
+    return out

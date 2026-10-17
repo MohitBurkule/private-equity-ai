@@ -440,12 +440,14 @@ def capital_form_facts(doc_id: str, db: Db, who: Writer):
 
 @app.post("/documents/{doc_id}/fund-admin/facts", status_code=201)
 def fund_admin_facts(doc_id: str, entity: str, db: Db, who: Writer):
-    """Capital calls and NAV read from a fund-admin workbook (template in app/fundadmin.py) as facts. Each one is
+    """Capital calls and NAV read from a fund-admin workbook or a capital-call notice (templates in app/fundadmin.py)
+    as facts. Each one is
     cited to its cell through the same citation gate as /facts. Rows that do not match the template are skipped."""
     doc = _own_doc(db, who, doc_id)
     pages = db.query(PageRow).filter_by(document_id=doc.id).order_by(PageRow.number).all()
     created, skipped = [], []
-    for f in fundadmin_mod.extract([(p.number, p.text) for p in pages]):
+    text_pages = [(p.number, p.text) for p in pages]
+    for f in fundadmin_mod.extract(text_pages) + fundadmin_mod.extract_notice(text_pages):
         same = [x for x in db.query(Fact).filter_by(tenant_id=who.tenant, entity=entity, metric=f.metric,
                                                      period=f.period, status="verified")
                 if any(s.document_id == doc.id and s.page == f.page and s.quote == f.quote for s in x.sources)]
