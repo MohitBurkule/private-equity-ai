@@ -55,6 +55,7 @@ from app import legal as legal_mod
 from app import lp_docs as lp_mod
 from app import lp_tone as lp_tone_mod
 from app import lp_waterfall as wf_lp_mod
+from app import marketfeed_facts as marketfeed_facts_mod
 from app import memo_diff as memo_diff_mod
 from app import notify as notify_mod
 from app import outreach as outreach_mod
@@ -123,6 +124,7 @@ from app.ixbrl_full import read_filing
 from app.kpi_workbook import ingest_kpi_pack as kpi_pack_ingest
 from app.lbo_workbook import named_inputs, tie
 from app.llm import LLM, NoLLMConfigured, get_llm
+from app.marketdata import NoData
 from app.memo import build_memo, build_memo_docx, build_memo_pptx
 from app.memo_templates import TEMPLATES, build_memo_sections
 from app.migrate import migrate
@@ -685,6 +687,27 @@ def fact_conflicts(db: Db, who: Who, entity: str | None = None, cross_document_o
 def get_market_fetch():
     from app.marketfeeds import default_fetch
     return default_fetch
+
+
+class TevSyncIn(BaseModel):
+    entity: str
+    period: str
+    source: str
+    url: str
+    token: str
+
+
+@app.post("/market/tev-sync")
+def market_tev_sync(body: TevSyncIn, db: Db, who: Writer, fetch: Annotated[Callable, Depends(get_market_fetch)]):
+    """Enterprise value from a market-data feed, saved as a cited fact that trading comps read."""
+    try:
+        f = marketfeed_facts_mod.sync_tev(db, who.tenant, entity=body.entity, period=body.period, source=body.source,
+                                          url=body.url, token=body.token, fetch=fetch)
+    except (NoData, CitationError, ValueError) as e:
+        raise HTTPException(422, str(e)) from e
+    db.commit()
+    return {"fact_id": f.id, "metric": f.metric, "value": str(f.value), "unit": f.unit,
+            "quote": f.sources[0].quote, "document_id": f.sources[0].document_id}
 
 
 @app.post("/lbo/returns")
