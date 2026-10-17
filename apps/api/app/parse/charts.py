@@ -44,7 +44,7 @@ def parse_number(text: str) -> float | None:
     t = text.strip()
     if not NUM.match(t):
         return None
-    neg = t.startswith("(") or t.startswith("-")
+    neg = t.startswith(("(", "-"))
     digits = re.sub(r"[^\d.]", "", t)
     if not digits or digits == ".":
         return None

@@ -1,4 +1,5 @@
 import pytest
+
 from app.parse import charts
 
 pytest.importorskip("pymupdf")
