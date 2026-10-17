@@ -152,6 +152,14 @@ PLAYBOOK: list[dict] = [
         "text": "Non-solicit longer than the playbook limit of 24 months.",
     },
     {
+        "id": "survival_long",
+        "term": "confidentiality_survival_years",
+        "check": "max",
+        "limit": 5,
+        "severity": "medium",
+        "text": "Confidentiality survival longer than the playbook limit of 5 years.",
+    },
+    {
         "id": "leverage_loose",
         "term": "max_leverage",
         "check": "max",
@@ -168,6 +176,36 @@ PLAYBOOK: list[dict] = [
         "text": "Minimum interest cover tighter than the playbook floor of 2.00x.",
     },
 ]
+
+
+_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "twelve": 12,
+    "eighteen": 18,
+    "twenty": 20,
+    "thirty": 30,
+    "thirty-six": 36,
+}
+
+
+def _number(value: str) -> float | None:
+    """'five (5)' -> 5, '12' -> 12, 'five' -> 5. Anything else -> None, so the rule abstains."""
+    m = re.search(r"\((\d+(?:\.\d+)?)\)", value)
+    if m:
+        return float(m.group(1))
+    try:
+        return float(value)
+    except ValueError:
+        return float(_WORDS[value.lower()]) if value.lower() in _WORDS else None
 
 
 def red_flags(result: dict) -> list[dict]:
@@ -208,9 +246,8 @@ def red_flags(result: dict) -> list[dict]:
                 )
             continue
         for f in hits:
-            try:
-                num = float(f["value"])
-            except ValueError:
+            num = _number(f["value"])
+            if num is None:
                 continue
             breached = (
                 num > rule["limit"] if rule["check"] == "max" else num < rule["limit"]
