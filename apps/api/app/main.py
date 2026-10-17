@@ -41,6 +41,7 @@ from app import lbo as lbo_mod
 from app import legal as legal_mod
 from app import notify as notify_mod
 from app import outreach as outreach_mod
+from app import peers as peers_mod
 from app import precedent_fetch as pfetch_mod
 from app import precedents as prec_mod
 from app import research as research_mod
@@ -1884,6 +1885,25 @@ def targets_benchmark(db: Db, who: Who, sector: str | None = None, target_id: in
         if t is None or t.tenant_id != who.tenant:
             raise HTTPException(404, "target not found")
     return tg_mod.benchmark(db, who.tenant, sector, t)
+
+
+@app.get("/targets/{target_id}/sic-peers")
+def targets_sic_peers(target_id: int, db: Db, who: Who, pages: int = Query(1, ge=1, le=3)):
+    """SEC peers picked by the target's SIC code and revenue band (0.5x to 2x), each with its rule and filing link.
+    Median of the peers' revenue is shown next to the target. Empty when the target has no SIC or no revenue."""
+    t = db.get(Target, target_id)
+    if t is None or t.tenant_id != who.tenant:
+        raise HTTPException(404, "target not found")
+    if not t.sic or t.revenue is None:
+        return {"target_id": t.id, "sic": t.sic, "peers": [], "median": None,
+                "note": "needs a SIC code and a stated revenue"}
+    exclude = {t.source_ref.zfill(10)} if t.source == "sec" else set()
+    found = peers_mod.discover(t.revenue, t.sic, exclude, pages=pages)
+    st = comps_mod.stats([p.revenue for p in found])
+    return {"target_id": t.id, "sic": t.sic, "target_revenue": str(t.revenue), "peers": len(found),
+            "median": None if st.median is None else str(st.median),
+            "items": [{"cik": p.cik, "name": p.name, "revenue": str(p.revenue), "period": p.period,
+                       "source_url": p.source_url, "rule": p.rule} for p in found]}
 
 
 @app.post("/targets/screen")

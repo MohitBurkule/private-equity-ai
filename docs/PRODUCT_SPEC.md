@@ -48,7 +48,7 @@ Target modules: `firm_knowledge.py` (profile), `agent.py` (tool registry, workfl
 | 12 | Integrations (FactSet, PitchBook, DealCloud, SharePoint, Outlook, Gmail, Drive, LinkedIn, Cap IQ) | PARTIAL | Cap IQ and PitchBook price adapters, unverified shape, env-configured (#116); LinkedIn export (#109); Intralinks/Datasite (#106).  FactSet quote, PitchBook export, Yahoo/Stooq, SEC, CH. Missing: OAuth connectors, DealCloud, SharePoint, Outlook, Drive | integrations |
 | 13 | PDF processing | PARTIAL | Marker adapter, Camelot benchmark, golden accuracy floor (#113, #114, #115).  pdf text, OCR fallback, statement rows, SH01, iXBRL. Missing: layout/table models, chart reading | PDF |
 | 14 | Data-conflict flags | BUILT (core) | `/facts/conflicts`, tie-out, sumcheck. Missing: CIM vs DD report vs annual report doc-level pairing UI | workflows |
-| 15 | Benchmarking vs live data | PARTIAL | XBRL cross-check, quotes. Missing: peer sets, sector benchmark tables | comps |
+| 15 | Benchmarking vs live data | PARTIAL | XBRL cross-check, quotes. Sector benchmark table with every peer and source (`/targets/benchmark`). SEC peers auto-picked by SIC and 0.5x to 2x revenue band, median shown (`GET /targets/{id}/sic-peers`). Missing: peers beyond SIC and size, live refresh of peer revenue | comps |
 | 16 | Workspaces (multi-deal, team) | PARTIAL | Deals, API-key roles, per-deal ACL. Missing: user identities/SSO, shared notes | UI |
 | 17 | Firm memory / firm knowledge | BUILT (v1) | Cited profile of firm rules and preferences, extract from docs and emails | agent core |
 | 18 | Agent + workflow orchestration | BUILT (v1) | Tool registry, workflow runner, bounded agent loop, run log | agent core |
