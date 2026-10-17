@@ -1,4 +1,4 @@
-import { BarChart3, Building2, Calculator, Workflow, FileText, Plug, FlaskConical, LayoutGrid, LogOut, MessageSquare, ShieldCheck, Briefcase, Map } from "lucide-react";
+import { Mail, BarChart3, Building2, Calculator, Workflow, FileText, Plug, FlaskConical, LayoutGrid, LogOut, MessageSquare, ShieldCheck, Briefcase, Map } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { api, api2, DealRow, getApiKey, setApiKey } from "./api";
@@ -23,6 +23,7 @@ import { Flagship } from "./Flagship";
 import { Covenants } from "./Covenants";
 import { Sourcing } from "./Sourcing";
 import { CandidateWatch } from "./CandidateWatch";
+import { EmailReview } from "./EmailReview";
 import { SourceProvider } from "./source";
 import { Button, Card } from "./ui";
 import clsx from "clsx";
@@ -40,6 +41,7 @@ const NAV: { id: string; icon: ReactNode }[] = [
   { id: "LBO ties", icon: <Calculator size={16} /> },
   { id: "MNPI wall", icon: <ShieldCheck size={16} /> },
   { id: "IC review", icon: <Briefcase size={16} /> },
+  { id: "Email review", icon: <Mail size={16} /> },
   { id: "Sourcing", icon: <Map size={16} /> },
   { id: "Candidates", icon: <Briefcase size={16} /> },
   { id: "Dashboards", icon: <BarChart3 size={16} /> },
@@ -136,6 +138,7 @@ export function App() {
         {tab === "QoE" && <Qoe />}
         {tab === "DD Q&A" && <DDQa />}
         {tab === "LBO ties" && <LboTies />}
+        {tab === "Email review" && <EmailReview />}
         {tab === "MNPI wall" && <MnpiWall />}
         {tab === "IC review" && <IcReview />}
         {tab === "Sourcing" && <Sourcing />}
