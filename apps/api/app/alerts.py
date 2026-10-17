@@ -83,6 +83,22 @@ def _latest_fact(db: Session, tenant_id: str, entity: str, metric: str) -> Fact 
             .order_by(Fact.id.desc()).first())
 
 
+def _ebitda(db: Session, tenant_id: str, entity: str, period: str) -> tuple[list[int], Decimal, str] | None:
+    """EBITDA as a stored fact, else derived from its cited components (operating income + D&A). Returns the
+    fact ids behind it, the value and the unit; None when neither is available."""
+    from app.calc import _find
+    from app.derived import derive
+
+    f = _find(db, tenant_id, entity, "ebitda", period, None)
+    if f is not None:
+        return [f.id], f.value, f.unit
+    try:
+        d = derive(db, tenant_id, None, "ebitda", entity, period)
+    except ValueError:
+        return None
+    return [c.fact_id for c in d.components], d.value, d.unit
+
+
 @register_watcher("rate_move")
 def rate_move_watch(db: Session, tenant_id: str) -> list[AlertDraft]:
     """A scenario, not a forecast: a parallel move on floating-rate debt. Where interest cover is tested with
@@ -98,20 +114,21 @@ def rate_move_watch(db: Session, tenant_id: str) -> list[AlertDraft]:
         intr = _latest_fact(db, tenant_id, company.name, "interest_expense") if company else None
         if company is None or thr is None or intr is None or intr.value <= 0:
             continue
-        ebitda = _find(db, tenant_id, company.name, "ebitda", intr.period, None)
+        earnings = _ebitda(db, tenant_id, company.name, intr.period)
         floating = _find(db, tenant_id, company.name, "floating_rate_debt", intr.period, None)
-        if ebitda is None or floating is None or len({intr.unit, ebitda.unit, floating.unit}) != 1:
+        if earnings is None or floating is None or len({intr.unit, earnings[2], floating.unit}) != 1:
             continue
-        now = ebitda.value / intr.value
-        stressed = ebitda.value / (intr.value + floating.value * Decimal(shock) / 10000)
+        ebitda_ids, ebitda_value, ebitda_unit = earnings
+        now = ebitda_value / intr.value
+        stressed = ebitda_value / (intr.value + floating.value * Decimal(shock) / 10000)
         if now >= thr.value > stressed:
             title = (f"{company.name}: +{shock}bp on floating debt takes interest cover to {stressed:.2f}x, "
                      f"below the {thr.value}x covenant")
-            detail = (f"{intr.period} scenario, not a forecast: interest cover {now:.2f}x today. EBITDA {ebitda.value}, "
+            detail = (f"{intr.period} scenario, not a forecast: interest cover {now:.2f}x today. EBITDA {ebitda_value}, "
                       f"interest {intr.value}, floating-rate debt {floating.value} ({intr.unit}).")
             out.append(AlertDraft("covenant_scenario", "warning", title, detail,
                                   f"rate_move:{cov.id}:{intr.period}:{shock}",
-                                  [ebitda.id, intr.id, floating.id, thr.id]))
+                                  [*ebitda_ids, intr.id, floating.id, thr.id]))
     return out
 
 

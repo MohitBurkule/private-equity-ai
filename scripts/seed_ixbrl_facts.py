@@ -41,6 +41,11 @@ FILINGS = [
         ("total_assets", "FY2025", ["us-gaap:Assets"], "@2025-12-31", "Total assets"),
         ("cash", "FY2025", ["us-gaap:CashAndCashEquivalentsAtCarryingValue"], "@2025-12-31", "Cash and cash equivalents"),
     ]),
+    ("filings/XPO_10-K_FY2025.htm", "XPO", [
+        ("operating_income", "FY2025", ["us-gaap:OperatingIncomeLoss"], FY25, "Operating income"),
+        ("depreciation_and_amortization", "FY2025", ["us-gaap:DepreciationAndAmortization"], FY25, "Depreciation and amortization"),
+        ("interest_expense", "FY2025", ["us-gaap:InterestExpenseNonoperating"], FY25, "Interest expense"),
+    ]),
 ]
 
 
@@ -85,7 +90,8 @@ tenant = must(
 h = {"Authorization": "Bearer " + tenant["api_key"]}
 must(call("POST", "/deals", h, {"name": "Project Orchard"}), (201,), "deal")
 
-SECTORS = {"3M Company": "Industrials", "Hertz Global Holdings": "Consumer", "Sotera Health Company": "Healthcare"}
+SECTORS = {"3M Company": "Industrials", "Hertz Global Holdings": "Consumer", "Sotera Health Company": "Healthcare",
+           "XPO": "Industrials"}
 seeded = {}  # entity -> fact ids, so each entity gets a portfolio holding with its KPIs as observations
 
 for name, entity, wanted in FILINGS:
