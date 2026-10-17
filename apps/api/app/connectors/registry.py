@@ -16,6 +16,7 @@ from app.connectors.fundadmin import FundAdminApi
 from app.connectors.gmail import Gmail
 from app.connectors.graph import OneDriveSharePoint, Outlook
 from app.connectors.gsheets import GoogleSheets
+from app.connectors.imanage import IManage
 from app.connectors.imap import Imap
 from app.connectors.mailpit import Mailpit
 from app.connectors.oauth import OAuthError
@@ -25,7 +26,7 @@ from app.connectors.slack import Slack
 
 IMPLEMENTED: dict[str, type[Connector]] = {c.name: c for c in (Gmail, Outlook, OneDriveSharePoint, GoogleDrive, Box, Dropbox, GoogleSheets, Imap, Mailpit,
                                                                      Salesforce, HubSpot, Affinity, DealCloud, Slack, Intralinks, Datasite, S3Source, SftpSource,
-                                                                     OutlookCalendar, GoogleCalendar, FundAdminApi, PortcoAccounting, Carta, DocuSign)}
+                                                                     OutlookCalendar, GoogleCalendar, FundAdminApi, PortcoAccounting, Carta, DocuSign, IManage)}
 
 CATALOG = [  # (name, label, category, auth)
     ("outlook-calendar", "Outlook calendar", "calendar", "OAuth2 (Graph)"), ("google-calendar", "Google Calendar", "calendar", "OAuth2"),
@@ -40,6 +41,7 @@ CATALOG = [  # (name, label, category, auth)
     ("accounting", "Portfolio-company accounting (ledger API)", "accounting", "bearer token"),
     ("carta", "Carta cap table", "cap table", "bearer token"),
     ("docusign", "DocuSign envelopes", "signature", "bearer token"),
+    ("imanage", "iManage Work", "dms", "bearer token"),
     ("capiq", "S&P Capital IQ", "market data", "licensed API"), ("factset", "FactSet", "market data", "licensed API"),
     ("pitchbook", "PitchBook", "market data", "licensed API / export"),
     ("linkedin", "LinkedIn", "people", "member data export (upload)"),

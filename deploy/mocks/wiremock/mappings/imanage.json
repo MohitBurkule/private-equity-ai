@@ -15,11 +15,28 @@
           "items": [
             {
               "id": "IM-9001",
-              "name": "Acme CIM (SYNTHETIC).pdf",
+              "name": "Acme CIM (SYNTHETIC).csv",
               "version": 3
             }
           ]
         }
+      },
+      "metadata": {
+        "note": "SYNTHETIC mock: response shape is invented for tests, not copied from a vendor's API docs."
+      }
+    },
+    {
+      "name": "imanage-document-content",
+      "request": {
+        "method": "GET",
+        "urlPath": "/synthetic/imanage/v1/documents/IM-9001/content"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "text/csv"
+        },
+        "body": "metric,value\nSYNTHETIC revenue,1\n"
       },
       "metadata": {
         "note": "SYNTHETIC mock: response shape is invented for tests, not copied from a vendor's API docs."
