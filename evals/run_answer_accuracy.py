@@ -10,7 +10,7 @@ Reports:
   abstain              share the system declined to answer (not_found); model errors are counted separately
   abstain_when_unsure  of the questions it did not get right, the share it abstained on
 
-Usage: python evals/run_answer_accuracy.py DATA_DIR [--n 50] [--chunk 10] [--checkpoint PATH]
+Usage: python evals/run_answer_accuracy.py DATA_DIR [--n 50] [--chunk 10] [--checkpoint PATH] [--k 2]
 """
 import json
 import re
@@ -64,17 +64,17 @@ def _read(path: Path) -> dict[str, dict]:
     return {r["id"]: r for r in (json.loads(line) for line in path.read_text().splitlines() if line.strip())}
 
 
-def run(data: Path, n: int, chunk: int, checkpoint: Path) -> dict:
+def run(data: Path, n: int, chunk: int, checkpoint: Path, k: int = 2) -> dict:
     items = _load_items(data, n)
     done = _read(checkpoint)
     todo = [g for g in items if g["financebench_id"] not in done][:chunk]
     if todo:
         db = _db(data, todo, checkpoint.with_suffix(".pages"))  # only this chunk's filings
-        llm = LlamaCppLLM(max_tokens=256, n_ctx=4096)  # short answers; prompt is the top-k pages only
+        llm = LlamaCppLLM(max_tokens=256, n_ctx=8192 if k > 2 else 4096)  # short answers; prompt is the top-k pages only
         with checkpoint.open("a") as out:
             for g in todo:
                 want = float(g["answer"].replace("$", "").replace(",", ""))
-                a = answer_question(db, "t", llm, g["question"], doc_id=_id(g["doc_name"]), k=2)
+                a = answer_question(db, "t", llm, g["question"], doc_id=_id(g["doc_name"]), k=k)
                 nums = {abs(float(x.value)) for c in a.claims for x in numbers_in(c.text)}
                 row = {"id": g["financebench_id"], "status": a.status,
                        "correct": a.status == "answered" and want in nums,
@@ -103,5 +103,6 @@ if __name__ == "__main__":
     ap.add_argument("--n", type=int, default=30)
     ap.add_argument("--chunk", type=int, default=10)
     ap.add_argument("--checkpoint", type=Path, default=Path("answer_accuracy.checkpoint.jsonl"))
+    ap.add_argument("--k", type=int, default=2, help="pages retrieved per question")
     a = ap.parse_args()
-    print(json.dumps(run(a.data, a.n, a.chunk, a.checkpoint), indent=1))
+    print(json.dumps(run(a.data, a.n, a.chunk, a.checkpoint, a.k), indent=1))
