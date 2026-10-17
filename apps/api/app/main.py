@@ -26,6 +26,7 @@ from fastapi import (
     Response,
     UploadFile,
 )
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -156,7 +157,7 @@ from app.ingest import finalize_upload, ingest_any
 from app.ixbrl_full import read_filing
 from app.kpi_workbook import ingest_kpi_pack as kpi_pack_ingest
 from app.lbo_workbook import named_inputs, tie
-from app.llm import LLM, NoLLMConfigured, get_llm
+from app.llm import LLM, LLMCapExceeded, NoLLMConfigured, get_llm
 from app.marketdata import NoData
 from app.memo import build_memo, build_memo_docx, build_memo_pptx
 from app.memo_templates import TEMPLATES, build_memo_sections
@@ -2471,7 +2472,7 @@ def ddq_answer(body: DdqIn, who: Who, db: Db):
                 for k, rows in fk.profile(db, who.tenant).items()}
     qs = [ddq_mod.Question(q.id, q.section, q.text) for q in body.questions]
     try:  # retrieval plus the configured local model; word overlap when no model is set up
-        out = ddq_llm_mod.answer(qs, accepted, get_llm())
+        out = ddq_llm_mod.answer(qs, accepted, get_llm(db, who.tenant))
     except NoLLMConfigured:
         out = ddq_mod.answer(qs, accepted)
     log_event(db, who.tenant, actor(who), "ddq.answer", {"questions": len(qs),
@@ -2592,7 +2593,7 @@ def lp_letter(body: LpLetterIn, who: Writer, db: Db, format: str = "json", style
             outcome = {"status": "not_requested", "reason": "no accepted LP tone rule"}
         else:
             try:
-                model, st = lp_tone_mod.rewrite(model, body.tone.value, get_llm())
+                model, st = lp_tone_mod.rewrite(model, body.tone.value, get_llm(db, who.tenant))
                 outcome = {"status": st.status, "reason": st.reason}
             except NoLLMConfigured:
                 outcome = {"status": "not_requested", "reason": "no local model configured"}
@@ -2689,7 +2690,7 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
             steps.append(flagship_mod.Step("precedents", "failed", f"{type(e).__name__}: {e}"))
     legal_type = body.legal_doc_type or flagship_mod.detect_doc_type(pages)
     try:
-        reader = get_llm() if legal_type else None
+        reader = get_llm(db, who.tenant) if legal_type else None
     except NoLLMConfigured:
         reader = None
     steps.append(flagship_mod.legal_step(pages, doc.id, legal_type, legal_mod, reader))
@@ -4081,11 +4082,16 @@ def xbrl_check(cik: int, concept: str, end: str, value: Decimal, tenant: Tenant,
             "filings": sorted({f"{f.accn} ({f.form}, filed {f.filed})" for f in res.matched})}
 
 
-def llm_dependency() -> LLM:
+def llm_dependency(db: Db, who: Who) -> LLM:
     try:
-        return get_llm()
+        return get_llm(db, who.tenant)
     except NoLLMConfigured as e:
         raise HTTPException(503, str(e)) from e
+
+
+@app.exception_handler(LLMCapExceeded)
+def llm_cap_handler(request, exc: LLMCapExceeded):
+    return JSONResponse(status_code=429, content={"detail": str(exc)})
 
 
 class AskIn(BaseModel):
@@ -4219,7 +4225,7 @@ async def chat_inbound(kind: str, request: Request, db: Db):
     if who is None:
         return reply(NOT_LINKED)
     bind_tenant(db, who.tenant)
-    a = answer_question(db, who.tenant, llm_dependency(), question, scope=visible_doc_ids(db, who))
+    a = answer_question(db, who.tenant, llm_dependency(db, who), question, scope=visible_doc_ids(db, who))
     filenames = {d.id: d.filename for d in db.query(Document).filter(
         Document.tenant_id == who.tenant, Document.id.in_([c.doc_id for c in a.claims] or [""]))}
     log_event(db, who.tenant, who.identity or f"chat:{kind}", "chat.ask", {"question": question, "status": a.status,
@@ -4302,9 +4308,9 @@ def agent_run(body: AgentIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_d
     return ag.run_dict(r)
 
 
-def optional_llm_dependency():
+def optional_llm_dependency(db: Db, who: Who):
     try:
-        return get_llm()
+        return get_llm(db, who.tenant)
     except NoLLMConfigured:
         return None
 
