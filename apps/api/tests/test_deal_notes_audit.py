@@ -44,3 +44,19 @@ def test_audit_trail_is_whole_tenant_only_and_filters_by_action(monkeypatch):
         assert verify_chain(db, tid)[0] is True
     finally:
         db.close()
+
+
+def test_note_search_matches_only_deals_the_person_can_see(monkeypatch):
+    _sso(monkeypatch)
+    tid, creator = _tenant("notes-search")
+    assert c.post("/deals", headers=creator, json={"name": "Atlas"}).status_code == 201
+    assert c.post("/deals", headers=creator, json={"name": "Hidden", "mnpi": True}).status_code == 201
+    c.post("/deals/Atlas/notes", headers=creator, json={"body": "Pricing call with CFO"})
+    c.post("/deals/Hidden/notes", headers=creator, json={"body": "Pricing leak candidate"})
+    assert [n["deal"] for n in c.get("/search/notes?q=pricing", headers=creator).json()["items"]] == ["Hidden", "Atlas"]
+    scoped = {"Authorization": f"Bearer {_token(tenant=tid, role='analyst', sub='sam', deals=['Atlas'])}"}
+    got = c.get("/search/notes?q=pricing CFO", headers=scoped).json()["items"]
+    assert [n["deal"] for n in got] == ["Atlas"]
+    outsider = {"Authorization": f"Bearer {_token(tenant=tid, role='partner', sub='pia')}"}
+    assert [n["deal"] for n in c.get("/search/notes?q=pricing", headers=outsider).json()["items"]] == ["Atlas"]
+    assert c.get("/search/notes?q=%20", headers=creator).status_code == 422
