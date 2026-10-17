@@ -1943,6 +1943,16 @@ def calc_comps_pptx(body: CompsIn, db: Db, who: Who):
                     media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
 
+@app.get("/legal/clause-library")
+def legal_clause_library(who: Who):
+    """What the legal review checks: each key term, the document types it applies to, and the playbook
+    positions that flag a clause for a human. Pure catalogue, same rules as the extractor."""
+    terms = [{"term": k, "documents": list(v["doc"])} for k, v in legal_mod.TERMS.items()]
+    playbook = [{"id": r["id"], "term": r["term"], "check": r["check"], "severity": r["severity"], "text": r["text"]}
+                for r in legal_mod.PLAYBOOK]
+    return {"terms": terms, "playbook": playbook}
+
+
 @app.get("/documents/{doc_id}/legal-terms")
 def legal_terms(doc_id: str, doc_type: str, db: Db, who: Who):
     """Key terms (governing law, term, caps, covenants...) as cited sentences. doc_type: nda | spa | credit."""
