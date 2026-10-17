@@ -1,0 +1,55 @@
+{
+  "mappings": [
+    {
+      "name": "dealcloud-companies",
+      "request": {
+        "method": "GET",
+        "urlPath": "/synthetic/dealcloud/v1/companies"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "jsonBody": {
+          "items": [
+            {
+              "id": "DC-1001",
+              "name": "Acme Holdings (SYNTHETIC)",
+              "sector": "Industrials"
+            }
+          ]
+        }
+      },
+      "metadata": {
+        "note": "SYNTHETIC mock: response shape is invented for tests, not copied from a vendor's API docs."
+      }
+    },
+    {
+      "name": "dealcloud-deal-pipeline",
+      "request": {
+        "method": "GET",
+        "urlPath": "/synthetic/dealcloud/v1/deals"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "jsonBody": {
+          "items": [
+            {
+              "id": "DL-2001",
+              "company_id": "DC-1001",
+              "stage": "IC review",
+              "ev_usd_m": 480
+            }
+          ]
+        }
+      },
+      "metadata": {
+        "note": "SYNTHETIC mock: response shape is invented for tests, not copied from a vendor's API docs."
+      }
+    }
+  ]
+}
