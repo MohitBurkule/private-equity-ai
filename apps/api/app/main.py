@@ -30,6 +30,7 @@ from app import (
 )
 from app import firm_knowledge as fk
 from app import jobs as jobs_mod
+from app import lbo as lbo_mod
 from app import legal as legal_mod
 from app import outreach as outreach_mod
 from app import precedent_fetch as pfetch_mod
@@ -437,6 +438,45 @@ def fact_conflicts(db: Db, who: Who, entity: str | None = None):
              "severity": c.severity, "cross_document": c.cross_document, "sources": c.sources,
              "values": [{"value": str(v), "fact_id": fid} for v, fid in c.values]}
             for c in find_conflicts(db, who.tenant, visible_doc_ids(db, who), entity)]
+
+
+@app.post("/lbo/returns")
+def lbo_returns(body: dict, db: Db, who: Who, xlsx: bool = False):
+    """Sponsor returns from cited inputs. Each input is {"value", "source": {document_id, page, quote}}
+    or {"fact_id"}; an uncited input is refused."""
+    raw = body.get("inputs") or {}
+    scope = visible_doc_ids(db, who)
+    cited: dict[str, lbo_mod.Cited] = {}
+    for name, spec in raw.items():
+        if "fact_id" in spec:
+            f = db.query(Fact).filter(Fact.id == spec["fact_id"], Fact.tenant_id == who.tenant).first()
+            if f is None or not fact_visible(f, scope) or not f.sources:
+                raise HTTPException(422, f"{name}: fact not found or has no source")
+            names = {d.id: d.filename for d in db.query(Document).filter(
+                Document.id.in_({s.document_id for s in f.sources}))}
+            src = {"document_id": f.sources[0].document_id, "filename": names.get(f.sources[0].document_id),
+                   "page": f.sources[0].page, "quote": f.sources[0].quote}
+            cited[name] = lbo_mod.Cited(f.value, src)
+        else:
+            src = spec.get("source") or {}
+            if not src.get("document_id") or not src.get("quote") or not src.get("page"):
+                raise HTTPException(422, f"{name}: citation needs document_id, page and quote")
+            cited[name] = lbo_mod.Cited(Decimal(str(spec["value"])), src)
+    if lbo_mod.missing(cited):
+        raise HTTPException(422, f"missing inputs: {', '.join(lbo_mod.missing(cited))}")
+    try:
+        res = lbo_mod.run(cited)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    if xlsx:
+        return Response(lbo_mod.build_xlsx(cited, res), headers={
+            "Content-Disposition": 'attachment; filename="lbo_returns.xlsx"'},
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    return {"entry_ev": str(res.entry_ev), "debt": str(res.debt), "fees": str(res.fees),
+            "equity": str(res.equity), "exit_ev": str(res.exit_ev), "exit_net_debt": str(res.exit_net_debt),
+            "exit_equity": str(res.exit_equity), "moic": str(res.moic.quantize(Decimal("0.01"))),
+            "irr": None if res.irr is None else str(res.irr.quantize(Decimal("0.0001"))),
+            "schedule": res.schedule}
 
 
 @app.get("/calc/ltm")
