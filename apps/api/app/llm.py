@@ -98,13 +98,35 @@ class CappedLLM:
         return out
 
 
+class FallbackLLM:
+    """Uses the primary provider; if it raises (outage, timeout, bad credentials), asks the secondary instead.
+    The secondary is built on first use, so a fallback that is never needed is never set up."""
+
+    def __init__(self, primary: LLM, secondary_factory):
+        self.primary, self.secondary_factory = primary, secondary_factory
+
+    def complete(self, system: str, prompt: str) -> str:
+        try:
+            return self.primary.complete(system, prompt)
+        except LLMCapExceeded:
+            raise  # the tenant is over its allowance; a second provider would only spend it again
+        except Exception:  # noqa: BLE001 - any provider failure is a reason to try the secondary
+            return self.secondary_factory().complete(system, prompt)
+
+
+def _provider(name: str) -> LLM:
+    if name == "anthropic":
+        return RedactingLLM(AnthropicLLM())
+    if name == "llamacpp":
+        return LlamaCppLLM()
+    raise NoLLMConfigured("set LLM_PROVIDER (supported: anthropic, llamacpp) and its credentials")
+
+
 def get_llm(db: Session | None = None, tenant_id: str | None = None) -> LLM:
     provider = os.environ.get("LLM_PROVIDER", "none")
-    if provider == "anthropic":
-        llm: LLM = RedactingLLM(AnthropicLLM())
-    elif provider == "llamacpp":
-        llm = LlamaCppLLM()
-    else:
-        raise NoLLMConfigured("set LLM_PROVIDER (supported: anthropic, llamacpp) and its credentials")
+    fallback = os.environ.get("LLM_FALLBACK_PROVIDER", "")
+    llm: LLM = _provider(provider)
+    if fallback and fallback != provider:
+        llm = FallbackLLM(llm, lambda: _provider(fallback))
     # Local models are metered too, so the cap counts every call the tenant makes.
     return CappedLLM(llm, db, tenant_id) if db is not None and tenant_id is not None else llm

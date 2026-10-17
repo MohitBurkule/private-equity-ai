@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from app import (
     add_on,
+    answer_cache,
     audit_archive,
     chfeed,
     enrich,
@@ -4191,13 +4192,20 @@ def ask(body: AskIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_dependenc
     tenant = who.tenant
     if body.doc_id:
         _own_doc(db, who, body.doc_id)
-    a = answer_question(db, tenant, llm, body.question, body.doc_id, scope=visible_doc_ids(db, who))
+    scope = visible_doc_ids(db, who)
+    k = answer_cache.key(body.question, body.doc_id, answer_cache.visible_docs(db, tenant, scope))
+    a = answer_cache.get(db, tenant, k)
+    cached = a is not None
+    if a is None:
+        a = answer_question(db, tenant, llm, body.question, body.doc_id, scope=scope)
+        answer_cache.put(db, tenant, k, a)
     log_event(db, tenant, actor(who), "ask", {"question": body.question, "status": a.status,
-                                         "claims": len(a.claims), "rejected": len(a.rejected)})
+                                         "claims": len(a.claims), "rejected": len(a.rejected), "cached": cached})
     cite = lambda c: {"text": c.text, "document_id": c.doc_id, "page": c.page, "quote": c.quote,
                       "paragraphs": c.paragraphs}
     return {"status": a.status, "detail": a.detail, "claims": [cite(c) for c in a.claims],
-            "rejected": [{**cite(c), "reason": c.reason} for c in a.rejected]}
+            "rejected": [{**cite(c), "reason": c.reason} for c in a.rejected],
+            "prompt_version": a.prompt_version, "cached": cached}
 
 
 @app.post("/chat/{kind}/inbound")

@@ -505,6 +505,17 @@ class LlmUsage(Base):
     chars: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class AnswerCache(Base):
+    """A previous /ask answer, keyed on question, visible documents with their hashes, and prompt version."""
+    __tablename__ = "answer_cache"
+    __table_args__ = (UniqueConstraint("tenant_id", "key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    key: Mapped[str] = mapped_column(String(64))
+    payload: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String(40))
+
+
 class PeerSet(Base):
     """A saved comps peer set for one deal: the SEC peers picked for a target, kept with their sources and
     refreshed on schedule (workflow kind `peer_refresh`). A peer that loses its revenue is dropped, never guessed."""

@@ -33,6 +33,9 @@ _YEAR = re.compile(r"^(19|20)\d{2}$")
 MIN_LABEL_OVERLAP = 2
 
 
+PROMPT_VERSION = "answer.v1"  # bump when SYSTEM changes; cached answers from older versions are not served
+
+
 @dataclass
 class Claim:
     text: str
@@ -50,6 +53,7 @@ class Answer:
     claims: list[Claim] = field(default_factory=list)  # verified only
     rejected: list[Claim] = field(default_factory=list)
     detail: str = ""
+    prompt_version: str = PROMPT_VERSION
 
 
 def _numbers_supported(claim_text: str, quote: str) -> bool:
