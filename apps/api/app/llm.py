@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 from typing import Protocol
 
+from app.redact import redact
+
 
 class LLM(Protocol):
     def complete(self, system: str, prompt: str) -> str: ...
@@ -47,10 +49,21 @@ class LlamaCppLLM:
         return r["choices"][0]["message"]["content"] or ""
 
 
+class RedactingLLM:
+    """Wraps an external provider so personal identifiers in document text never leave the host.
+    Local models never leave the host, so they are not wrapped."""
+
+    def __init__(self, inner: LLM):
+        self.inner = inner
+
+    def complete(self, system: str, prompt: str) -> str:
+        return self.inner.complete(system, redact(prompt))
+
+
 def get_llm() -> LLM:
     provider = os.environ.get("LLM_PROVIDER", "none")
     if provider == "anthropic":
-        return AnthropicLLM()
+        return RedactingLLM(AnthropicLLM())
     if provider == "llamacpp":
         return LlamaCppLLM()
     raise NoLLMConfigured("set LLM_PROVIDER (supported: anthropic, llamacpp) and its credentials")
