@@ -366,3 +366,14 @@ def brief(db: Session, tenant_id: str, since: str) -> dict:
     top = sorted(rows, key=lambda a: (rank.get(a.severity, 9), -a.id))[:10]
     return {"since": since, "total": len(rows), "by_kind": by_kind, "by_severity": by_severity,
             "top": [alert_dict(a) for a in top]}
+
+
+def brief_text(b: dict) -> str:
+    """Plain-text brief for mail: one headline, then each urgent item with its fact ids."""
+    if not b["total"]:
+        return f"No alerts since {b['since']}."
+    sev = ", ".join(f"{n} {s}" for s, n in sorted(b["by_severity"].items(), key=lambda x: SEVERITIES.index(x[0])))
+    lines = [f"{b['total']} alert(s) since {b['since']}: {sev}."]
+    lines += [f"[{a['severity'].upper()}] {a['title']}\n    {a['detail']}\n    sources: fact ids {a['fact_ids']}"
+              for a in b["top"]]
+    return "\n\n".join(lines)
