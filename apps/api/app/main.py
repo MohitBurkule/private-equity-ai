@@ -138,6 +138,7 @@ from app.models import (
     MemoVersion,
     OutreachItem,
     PageRow,
+    SavedScreen,
     SyncRun,
     Target,
     TargetContact,
@@ -2607,6 +2608,51 @@ def targets_sic_peers(target_id: int, db: Db, who: Who, pages: int = Query(1, ge
                        "source_url": p.source_url, "rule": p.rule} for p in found]}
 
 
+class SavedScreenIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    sectors: list[str] = []
+    countries: list[str] = []
+    min_revenue: Decimal | None = None
+    max_revenue: Decimal | None = None
+
+
+@app.post("/targets/screens", status_code=201)
+def saved_screen_save(body: SavedScreenIn, db: Db, who: Writer):
+    """Save a named screen. Saving under an existing name replaces its criteria."""
+    if not (body.sectors or body.countries or body.min_revenue is not None or body.max_revenue is not None):
+        raise HTTPException(422, "a saved screen needs at least one criterion")
+    criteria = {"sectors": body.sectors, "countries": body.countries,
+                "min_revenue": None if body.min_revenue is None else str(body.min_revenue),
+                "max_revenue": None if body.max_revenue is None else str(body.max_revenue)}
+    row = db.query(SavedScreen).filter_by(tenant_id=who.tenant, name=body.name).one_or_none()
+    if row is None:
+        row = SavedScreen(tenant_id=who.tenant, name=body.name, created_by=actor(who),
+                          created_at=datetime.now(UTC).isoformat(timespec="seconds"))
+        db.add(row)
+    row.criteria = json.dumps(criteria)
+    db.commit()
+    return {"id": row.id, "name": row.name, "criteria": criteria}
+
+
+@app.get("/targets/screens")
+def saved_screen_list(db: Db, who: Who):
+    rows = db.query(SavedScreen).filter_by(tenant_id=who.tenant).order_by(SavedScreen.name).all()
+    return {"items": [{"id": r.id, "name": r.name, "criteria": json.loads(r.criteria)} for r in rows]}
+
+
+@app.post("/targets/screens/{screen_id}/run")
+def saved_screen_run(screen_id: int, db: Db, who: Who, limit: int = Query(200, ge=1, le=1000)):
+    """Rerun a saved screen against the current target list, with the same screen logic as /targets/screen."""
+    row = db.get(SavedScreen, screen_id)
+    if row is None or row.tenant_id != who.tenant:
+        raise HTTPException(404, "screen not found")
+    c = json.loads(row.criteria)
+    body = Screen(sectors=c["sectors"], countries=c["countries"],
+                  min_revenue=None if c["min_revenue"] is None else Decimal(c["min_revenue"]),
+                  max_revenue=None if c["max_revenue"] is None else Decimal(c["max_revenue"]), limit=limit)
+    return {"screen": row.name, **targets_screen(body, db, who)}
+
+
 @app.post("/targets/screen")
 def targets_screen(body: Screen, db: Db, who: Who):
     """Apply strategy criteria. verdict: match | review (some criterion unknown) | fail. Failures are omitted."""
@@ -2626,8 +2672,11 @@ def targets_screen(body: Screen, db: Db, who: Who):
             d = tg_mod.to_dict(t)
             sources = [{"label": lbl, "url": u} for lbl, u in
                        (("company record", d["source_url"]), ("revenue", d["revenue_url"])) if u]
-            out.append({**d, **e, "sources": sources})
-    out.sort(key=lambda r: r["verdict"] != "match")
+            # score: share of the criteria that pass; an unknown criterion counts as not passed, never as passed
+            tests = list(e["criteria"].values())
+            score = round(sum(v == "pass" for v in tests) / len(tests), 2) if tests else None
+            out.append({**d, **e, "sources": sources, "score": score})
+    out.sort(key=lambda r: (r["verdict"] != "match", -(r["score"] or 0)))
     profile = [fk.row_dict(r) for r in (fk.newest_accepted(db, who.tenant, k)
                                         for k in SCREEN_PROFILE_KEYS) if r is not None]
     return {"matches": sum(r["verdict"] == "match" for r in out), "review": sum(r["verdict"] == "review" for r in out),
