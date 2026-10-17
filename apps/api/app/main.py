@@ -3400,7 +3400,8 @@ def send_my_digest(db: Db, who: Who):
         raise HTTPException(404, "set your digest first with PUT /me/digest")
     try:
         # A deal-scoped sign-in gets only the deal alerts for its own deals; a whole-tenant sign-in gets all.
-        n = notify.send_personal_digest(db, who.tenant, row, None if who.deals is None else set(who.deals))
+        n = notify.send_personal_digest(db, who.tenant, row, None if who.deals is None else set(who.deals),
+                                        hidden=hidden_deal_names(db, who))
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     except notify.MailNotConfigured as e:
