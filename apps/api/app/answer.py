@@ -61,9 +61,11 @@ def _numbers_supported(claim_text: str, quote: str) -> bool:
     return True
 
 
-def _quote_matches_question(question: str, quote: str) -> bool:
+def _quote_matches_question(question: str, quote: str, page_text: str) -> bool:
+    # The quote may be just the figure; its row label sits on the same page line.
+    lines = [ln for ln in page_text.splitlines() if quote in ln] or [quote]
     asked = set(expand_query(question))
-    return len(asked & set(tokenize(quote))) >= MIN_LABEL_OVERLAP
+    return any(len(asked & set(tokenize(ln))) >= MIN_LABEL_OVERLAP for ln in lines)
 
 
 def verify_claim(db: Session, tenant_id: str, c: Claim, scope: set[str] | None = None,
@@ -78,7 +80,7 @@ def verify_claim(db: Session, tenant_id: str, c: Claim, scope: set[str] | None =
         c.reason = "quote not found on cited page"
     elif not _numbers_supported(c.text, c.quote):
         c.reason = "claim contains a number that is not in the quote"
-    elif question is not None and not _quote_matches_question(question, c.quote):
+    elif question is not None and not _quote_matches_question(question, c.quote, row.text):
         c.reason = "quote does not name the line item the question asks for"
     else:
         c.verified = True
