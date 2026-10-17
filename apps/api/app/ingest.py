@@ -12,6 +12,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.ixbrl import read_ixbrl
+from app.ixbrl_full import read_filing
 from app.models import Document, PageRow
 from app.parse.eml import parse_eml
 from app.parse.office import RawPage, extract_docx, extract_pptx
@@ -84,6 +85,15 @@ def ingest_ixbrl(db: Session, tenant_id: str, data: bytes, filename: str) -> Doc
     return doc
 
 
+def ingest_ixbrl_filing(db: Session, tenant_id: str, data: bytes, filename: str) -> Document:
+    """Full inline-XBRL 10-K/10-Q as filed: every page of visible text, so a figure can be quoted
+    from the page a reader turns to. Small UK accounts keep the headline-only path above."""
+    pages, _ = read_filing(data.decode("utf-8", errors="replace"))
+    if not pages:
+        raise ValueError("iXBRL filing has no visible text")
+    return _store_pages(db, tenant_id, data, filename, "ixbrl", pages)
+
+
 ROWS_PER_PAGE = 50
 MAX_CSV_ROWS = 200_000
 
@@ -136,6 +146,9 @@ def ingest_upload(db: Session, tenant_id: str, data: bytes, filename: str) -> Do
             p.write_bytes(data)
             return ingest_xlsx(db, tenant_id, p, filename)
     if b"ix:nonfraction" in data[:2_000_000].lower():
+        # Filings carry page-break styles; small UK accounts do not.
+        if b"page-break" in data.lower():
+            return ingest_ixbrl_filing(db, tenant_id, data, filename)
         return ingest_ixbrl(db, tenant_id, data, filename)
     if filename.lower().endswith((".csv", ".tsv")):
         return ingest_csv(db, tenant_id, data, filename)
