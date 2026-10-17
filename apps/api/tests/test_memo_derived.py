@@ -30,3 +30,26 @@ def test_risks_only_from_cited_negatives_and_declines():
     assert "net income negative in FY2024 (-6.00) [3]" in r
     assert "revenue fell in FY2025 vs FY2024 [2, 1]" in r
     assert "free cash flow negative in FY2025 [4, 5]" in r
+
+
+def test_net_debt_is_debt_less_cash_and_cites_both_components():
+    from app.derived import net_debt_points
+    from app.memo import ratio_series
+
+    facts = {
+        ("long_term_debt", "FY2025"): (Decimal(3253), "USD", 7), ("cash", "FY2025"): (Decimal(310), "USD", 8),
+        ("long_term_debt", "FY2024"): (Decimal(3325), "USD", 9),  # no FY2024 cash: no net debt for that year
+        ("ebitda", "FY2025"): (Decimal(1142), "USD", 10),
+    }
+    nd = net_debt_points(facts)
+    assert nd == {"FY2025": (Decimal(2943), "USD", (7, 8))}
+    ratios = ratio_series({**facts, **{("net_debt", p): x for p, x in nd.items()}})
+    (period, _, notes), = ratios["net debt / EBITDA"]
+    assert period == "FY2025" and notes == (7, 8, 10)
+
+
+def test_net_debt_not_formed_across_units():
+    from app.derived import net_debt_points
+
+    facts = {("long_term_debt", "FY2025"): (Decimal(3), "USD", 1), ("cash", "FY2025"): (Decimal(1), "EUR", 2)}
+    assert net_debt_points(facts) == {}

@@ -19,6 +19,24 @@ from app.models import Fact
 SUMS = {"ebitda": ("operating_income", "depreciation_and_amortization")}
 
 
+def net_debt_points(facts: dict[tuple[str, str], tuple[Decimal, str, int | tuple[int, ...]]]
+                    ) -> dict[str, tuple[Decimal, str, tuple[int, ...]]]:
+    """Net debt per period = long-term debt less cash, from cited facts in one unit. The note numbers of both
+    components are kept, so the derived value cites the same sources a reader would check by hand. Only the
+    noncurrent debt fact is used, so a period without it gets no net debt rather than an understated one."""
+    out: dict[str, tuple[Decimal, str, tuple[int, ...]]] = {}
+    for (metric, period), (dv, du, dn) in facts.items():
+        cash = facts.get(("cash", period))
+        if metric == "long_term_debt" and cash is not None and cash[1] == du:
+            out[period] = (dv - cash[0], du, (*note_numbers(dn), *note_numbers(cash[2])))
+    return out
+
+
+def note_numbers(n: int | tuple[int, ...]) -> tuple[int, ...]:
+    """A plain fact carries one note number; a derived fact carries the numbers of all its components."""
+    return n if isinstance(n, tuple) else (n,)
+
+
 @dataclass
 class Component:
     fact_id: int
