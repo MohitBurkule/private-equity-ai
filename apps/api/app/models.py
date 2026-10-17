@@ -98,6 +98,7 @@ class FactSource(Base):
     page: Mapped[int] = mapped_column(Integer, nullable=False)
     quote: Mapped[str] = mapped_column(Text, nullable=False)
     section: Mapped[str | None] = mapped_column(String(32), default=None)
+    heading: Mapped[str | None] = mapped_column(String(256), default=None)
     anchor: Mapped[str | None] = mapped_column(String(128), default=None)
     offset: Mapped[int | None] = mapped_column(Integer, default=None)
     fact: Mapped[Fact] = relationship(back_populates="sources")
@@ -313,6 +314,19 @@ class Alert(Base):
     status: Mapped[str] = mapped_column(String(16), default="new", server_default="new")
     created_at: Mapped[str] = mapped_column(String(40), default="")
     emailed_at: Mapped[str | None] = mapped_column(String(40), default=None)
+
+
+class DealLink(Base):
+    """Links a deal to its CRM record, with the stage each side had at the last stage sync (deal vocabulary)."""
+    __tablename__ = "deal_link"
+    __table_args__ = (UniqueConstraint("tenant_id", "connector", "external_id"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    connector: Mapped[str] = mapped_column(String(32))
+    external_id: Mapped[str] = mapped_column(String(128))
+    deal: Mapped[str] = mapped_column(String(128))
+    last_local: Mapped[str] = mapped_column(String(16))
+    last_external: Mapped[str] = mapped_column(String(16))
 
 
 class CalendarEvent(Base):

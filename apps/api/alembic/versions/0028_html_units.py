@@ -1,7 +1,7 @@
 """HTML filing text blocks and locator columns on fact sources
 
-Revision ID: 0027
-Revises: 0026
+Revision ID: 0028
+Revises: 0027
 """
 import sqlalchemy as sa
 
