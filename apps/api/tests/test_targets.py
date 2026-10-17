@@ -91,3 +91,12 @@ def test_sector_benchmark_excludes_unknown_and_places_target():
     assert Decimal(b["median"]) == 20 and Decimal(b["min"]) == 10 and Decimal(b["max"]) == 40
     assert b["target"]["percentile"] == 67  # 30 is above 10 and 20 of 3 peers
     assert c.get("/targets/benchmark?target_id=999999", headers=h).status_code == 404
+
+
+def test_sec_target_placed_by_state_centroid_only_when_us_state_known():
+    t = sec_target(SUB, None)
+    assert t.lat is not None and t.lng is not None  # CA is in the centroid table
+    foreign = {**SUB, "addresses": {"business": {"stateOrCountry": "G7", "isForeignLocation": 1}}}
+    assert sec_target(foreign, None).lat is None  # never placed without a known state
+    unknown = {**SUB, "addresses": {"business": {"stateOrCountry": "ZZ", "isForeignLocation": 0}}}
+    assert sec_target(unknown, None).lat is None

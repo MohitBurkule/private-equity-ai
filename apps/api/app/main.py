@@ -34,7 +34,15 @@ from app import research as research_mod
 from app import seen_before as seen_mod
 from app import targets as tg_mod
 from app import workflows as wf_mod
-from app.acl import Principal, doc_visible, fact_visible, visible_doc_ids
+from app.acl import (
+    Principal,
+    deal_hidden,
+    doc_visible,
+    fact_visible,
+    hidden_deal_names,
+    visible_doc_ids,
+    visible_mnpi_deal_names,
+)
 from app.answer import answer_question
 from app.audit import log_event, verify_chain
 from app.auth import (
@@ -60,6 +68,7 @@ from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
 from app.facts import CitationError, add_verified_fact, review_fact
+from app.factsxlsx import build_facts_xlsx
 from app.fundmetrics import fund_metrics
 from app.holdings import parse_holdings
 from app.ingest import finalize_upload, ingest_any
@@ -290,8 +299,11 @@ def admin_requeue(x_admin_token: Annotated[str | None, Header()] = None):
 
 def _own_doc(db: Session, who: Principal, doc_id: str) -> Document:
     doc = db.get(Document, doc_id)
-    if not doc_visible(doc, who):  # same 404 for "missing", "other tenant" and "behind a wall"
+    if not doc_visible(doc, who, hidden_deal_names(db, who)):  # same 404 for "missing", "other tenant", "behind a wall"
         raise HTTPException(404, "document not found")
+    if doc.deal and doc.deal in visible_mnpi_deal_names(db, who):
+        log_event(db, who.tenant, actor(who), "document.mnpi_access", {"doc_id": doc.id, "deal": doc.deal})
+        db.commit()
     return doc
 
 
@@ -329,8 +341,9 @@ def get_page(doc_id: str, number: int, db: Db, who: Who):
 
 @app.get("/documents")
 def list_documents(db: Db, who: Who):
+    hidden = hidden_deal_names(db, who)
     return [{"id": d.id, "filename": d.filename, "n_pages": d.n_pages, "deal": d.deal}
-            for d in db.query(Document).filter_by(tenant_id=who.tenant).all() if doc_visible(d, who)]
+            for d in db.query(Document).filter_by(tenant_id=who.tenant).all() if doc_visible(d, who, hidden)]
 
 
 class FactIn(BaseModel):
@@ -520,7 +533,7 @@ def dd_update(rid: int, body: DDUpdate, db: Db, who: Writer):
         raise HTTPException(422, f"status must be one of {STATUSES}")
     if body.document_id is not None:
         doc = db.get(Document, body.document_id)
-        if not doc_visible(doc, who):
+        if not doc_visible(doc, who, hidden_deal_names(db, who)):
             raise HTTPException(404, "document not found")
         if doc.deal != r.deal:
             raise HTTPException(422, "document belongs to a different deal")
@@ -557,18 +570,21 @@ class DealIn(BaseModel):
     name: str
     stage: str = "sourcing"
     note: str | None = None
+    mnpi: bool = False
 
 
 class DealUpdate(BaseModel):
     stage: str | None = None
     note: str | None = None
+    legal_hold: bool | None = None
+    mnpi: bool | None = None
 
 
 def _deal_out(db: Session, who: Principal, d: Deal) -> dict:
     dd = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=d.name).all()
     docs = db.query(Document).filter_by(tenant_id=who.tenant, deal=d.name).count()
     closed = sum(r.status != "open" for r in dd)
-    return {"name": d.name, "stage": d.stage, "note": d.note, "updated_at": d.updated_at,
+    return {"name": d.name, "stage": d.stage, "note": d.note, "legal_hold": d.legal_hold, "mnpi": d.mnpi, "updated_at": d.updated_at,
             "documents": docs, "dd_total": len(dd), "dd_open": len(dd) - closed}
 
 
@@ -583,7 +599,8 @@ def deal_create(body: DealIn, db: Db, who: Writer):
         raise HTTPException(422, "name required")
     if db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first():
         raise HTTPException(409, "deal already exists")
-    d = Deal(tenant_id=who.tenant, name=name, stage=body.stage, note=body.note, updated_at=_now_iso())
+    d = Deal(tenant_id=who.tenant, name=name, stage=body.stage, note=body.note, mnpi=body.mnpi,
+             created_by=who.key_id if body.mnpi else None, updated_at=_now_iso())
     db.add(d)
     db.commit()
     log_event(db, who.tenant, actor(who), "deal.create", {"name": name, "stage": d.stage})
@@ -593,24 +610,53 @@ def deal_create(body: DealIn, db: Db, who: Writer):
 @app.get("/deals")
 def deal_list(db: Db, who: Who):
     rows = db.query(Deal).filter_by(tenant_id=who.tenant).order_by(Deal.id).all()
-    return [_deal_out(db, who, d) for d in rows if _dd_scope_ok(who, d.name)]
+    shown = [d for d in rows if _dd_scope_ok(who, d.name) and not deal_hidden(d, who)]
+    mnpi_shown = [d.name for d in shown if d.mnpi]
+    if mnpi_shown:
+        log_event(db, who.tenant, actor(who), "deal.mnpi_access", {"deals": mnpi_shown, "via": "list"})
+        db.commit()
+    return [_deal_out(db, who, d) for d in shown]
 
 
 @app.patch("/deals/{name}")
 def deal_update(name: str, body: DealUpdate, db: Db, who: Writer):
     d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
-    if d is None or not _dd_scope_ok(who, name):
+    if d is None or not _dd_scope_ok(who, name) or deal_hidden(d, who):
         raise HTTPException(404, "deal not found")
+    if body.mnpi is not None:
+        d.mnpi = body.mnpi
+        if body.mnpi and d.created_by is None:
+            d.created_by = who.key_id or None
     if body.stage is not None:
         if body.stage not in STAGES:
             raise HTTPException(422, f"stage must be one of {STAGES}")
         d.stage = body.stage
     if body.note is not None:
         d.note = body.note
+    if body.legal_hold is not None:
+        d.legal_hold = body.legal_hold
     d.updated_at = _now_iso()
     db.commit()
-    log_event(db, who.tenant, actor(who), "deal.update", {"name": name, "stage": d.stage})
+    log_event(db, who.tenant, actor(who), "deal.update", {"name": name, "stage": d.stage, "legal_hold": d.legal_hold})
     return _deal_out(db, who, d)
+
+
+@app.delete("/deals/{name}")
+def deal_delete(name: str, db: Db, who: Writer):
+    d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
+    if d is None or not _dd_scope_ok(who, name) or deal_hidden(d, who):
+        raise HTTPException(404, "deal not found")
+    # Holds and linked documents are refused rather than cascaded: deleting evidence the team
+    # still relies on is the one step here that cannot be walked back.
+    if d.legal_hold:
+        raise HTTPException(409, "deal is under legal hold")
+    if db.query(Document).filter_by(tenant_id=who.tenant, deal=name).first():
+        raise HTTPException(409, "documents still linked to this deal; unlink them first")
+    removed = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=name).delete()
+    db.delete(d)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "deal.delete", {"name": name, "dd_requests_removed": removed})
+    return {"deleted": name, "dd_requests_removed": removed}
 
 
 @app.get("/memo")
@@ -791,6 +837,15 @@ async def uk_psc_extract(file: Annotated[UploadFile, File()], who: Who, companie
             found.append(asdict(rec))
     missing = sorted(want - {r["company_number"] for r in found})
     return {"records": found, "not_in_file": missing, "unreadable_lines": len(errors), "unreadable_sample": errors[:5]}
+
+
+@app.get("/facts.xlsx")
+def facts_xlsx(db: Db, who: Who, entity: str | None = None):
+    """Verified and reviewed facts as a workbook; each value cell's comment lists its sources."""
+    log_event(db, who.tenant, actor(who), "facts.export", {"entity": entity, "format": "xlsx"})
+    return Response(build_facts_xlsx(db, who.tenant, entity, visible_doc_ids(db, who)), headers={
+        "Content-Disposition": 'attachment; filename="facts.xlsx"'},
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @app.get("/memo.docx")
@@ -1153,6 +1208,7 @@ def legal_terms(doc_id: str, doc_type: str, db: Db, who: Who):
         raise HTTPException(422, str(e)) from e
     for f in out["findings"]:
         f["document_id"] = doc_id
+    out["red_flags"] = legal_mod.red_flags(out)
     return out
 
 

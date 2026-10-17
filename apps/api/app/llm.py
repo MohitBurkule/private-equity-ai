@@ -31,7 +31,7 @@ class AnthropicLLM:
 class LlamaCppLLM:
     """Local open model through llama-cpp-python (GGUF). Needs LLAMA_MODEL_PATH; no network, no key."""
 
-    def __init__(self, path: str | None = None, max_tokens: int = 400, n_ctx: int = 8192):
+    def __init__(self, path: str | None = None, max_tokens: int = 600, n_ctx: int = 8192):
         from llama_cpp import (
             Llama,  # lazy: only required when this provider is selected
         )
@@ -41,8 +41,9 @@ class LlamaCppLLM:
 
     def complete(self, system: str, prompt: str) -> str:
         r = self.llm.create_chat_completion(
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-            max_tokens=self.max_tokens, temperature=0.0)
+            # Some chat templates (Gemma) reject a system role, so the instructions go in the user turn.
+            messages=[{"role": "user", "content": f"{system}\n\n{prompt}"}],
+            max_tokens=self.max_tokens, temperature=0.0, response_format={"type": "json_object"})
         return r["choices"][0]["message"]["content"] or ""
 
 

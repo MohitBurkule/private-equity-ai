@@ -353,3 +353,14 @@ def test_oauth_needs_refresh_token_at_consent(monkeypatch):
     monkeypatch.setattr(m, "CONNECTOR_HTTP", lambda u, hd: json.dumps({"access_token": "AT"}).encode())
     r = c.get("/oauth/gmail/callback", params={"code": "c", "state": state})
     assert r.status_code == 400 and "refresh token" in r.json()["detail"]
+
+
+def test_sync_that_brings_new_files_raises_one_inbox_alert(monkeypatch):
+    monkeypatch.setattr(m, "CONNECTOR_HTTP", fake(gmail_routes()))
+    h = new_tenant(c, "gm-alert")
+    c.post("/connectors/gmail/sync", json={"token": "tok", "deal": "atlas"}, headers=h)
+    c.post("/connectors/gmail/sync", json={"token": "tok", "deal": "atlas"}, headers=h)  # no new files
+    alerts = [a for a in c.get("/alerts", headers=h).json() if a["kind"] == "new_documents"]
+    assert len(alerts) == 1
+    assert "1 new document(s) from gmail for atlas" in alerts[0]["title"]
+    assert "https://mail.google.com/mail/u/0/#all/g1" in alerts[0]["detail"]

@@ -7,6 +7,7 @@ its sources. Watchers read the whole tenant, so only unrestricted keys may scan 
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -87,6 +88,42 @@ def _firm_days(db: Session, tenant_id: str, key: str, default: int) -> int:
     if found is None or found[0] <= 0:
         return default
     return int(found[0])
+
+
+_CADENCE_WORDS = {"daily": 1, "weekly": 7, "monthly": 31, "quarterly": 92, "semi-annual": 183, "annual": 366}
+
+
+def cadence_days(text: str) -> int | None:
+    """Days between KPI reports from a firm rule: a cadence word, or an explicit number of days."""
+    lower = text.lower()
+    for word, days in _CADENCE_WORDS.items():
+        if word in lower:
+            return days
+    m = re.search(r"(\d+)\s*days?", lower)
+    return int(m.group(1)) if m and int(m.group(1)) > 0 else None
+
+
+@register_watcher("kpi_overdue")
+def kpi_overdue(db: Session, tenant_id: str) -> list[AlertDraft]:
+    """Portfolio companies whose newest KPI observation is older than the firm's reporting cadence.
+    Companies with no observations at all are not flagged: that is a setup gap, not a late report."""
+    rule = fk.newest_accepted(db, tenant_id, "kpi_reporting_cadence")
+    days = cadence_days(rule.value) if rule else None
+    if days is None:
+        return []
+    out = []
+    for co in db.query(PortfolioCompany).filter_by(tenant_id=tenant_id):
+        obs = current_kpis(db, tenant_id, co.id)
+        if not obs:
+            continue
+        newest = max(o.observed_at for o in obs)
+        age = _age_days(newest)
+        if age is None or age <= days:
+            continue
+        out.append(AlertDraft("kpi", "warning", f"{co.name}: no KPI update for {age} days (firm cadence {days} days)",
+                              f"Firm rule (document {rule.document_id}, page {rule.page}): \"{rule.quote}\"",
+                              f"kpi_overdue:{co.id}:{_week()}"))
+    return out
 
 
 def _week() -> str:

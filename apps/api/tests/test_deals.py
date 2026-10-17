@@ -1,4 +1,7 @@
+import io
+
 from fastapi.testclient import TestClient
+from openpyxl import Workbook
 
 from app.main import app
 from tests.helpers import new_tenant
@@ -25,3 +28,54 @@ def test_deals_tenant_isolated():
     c.post("/deals", headers=a, json={"name": "Secret"})
     assert c.get("/deals", headers=b).json() == []
     assert c.patch("/deals/Secret", headers=b, json={"stage": "ic"}).status_code == 404
+
+
+def test_legal_hold_blocks_delete_until_lifted():
+    h = new_tenant(c, "dl4")
+    c.post("/deals", headers=h, json={"name": "Held"})
+    assert c.patch("/deals/Held", headers=h, json={"legal_hold": True}).json()["legal_hold"] is True
+    assert c.delete("/deals/Held", headers=h).status_code == 409
+    c.patch("/deals/Held", headers=h, json={"legal_hold": False})
+    assert c.delete("/deals/Held", headers=h).json()["deleted"] == "Held"
+    assert c.get("/deals", headers=h).json() == []
+
+
+def test_delete_removes_dd_items():
+    h = new_tenant(c, "dl5")
+    c.post("/deals", headers=h, json={"name": "Gone"})
+    c.post("/dd/requests/seed", headers=h, json={"deal": "Gone", "categories": ["legal"]})
+    r = c.delete("/deals/Gone", headers=h)
+    assert r.status_code == 200 and r.json()["dd_requests_removed"] > 0
+    assert c.delete("/deals/Gone", headers=h).status_code == 404
+
+
+def test_delete_refuses_while_documents_linked_and_is_tenant_isolated():
+    a, b = new_tenant(c, "dl6"), new_tenant(c, "dl7")
+    c.post("/deals", headers=a, json={"name": "Linked"})
+    assert c.delete("/deals/Linked", headers=b).status_code == 404
+    buf = io.BytesIO()
+    wb = Workbook()
+    wb.active["A1"], wb.active["B1"] = "Revenue", 10
+    wb.save(buf)
+    assert c.post("/documents", files={"file": ("l.xlsx", buf.getvalue(), "x")}, data={"deal": "Linked"},
+                  headers=a).status_code in (200, 201)
+    assert c.delete("/deals/Linked", headers=a).status_code == 409
+
+
+def test_mnpi_deal_hidden_from_other_unscoped_keys_and_visible_to_scoped_and_creator():
+    t = c.post("/admin/tenants", json={"name": "mnpi1"}, headers={"X-Admin-Token": "test-admin"}).json()
+    admin_hdr = {"X-Admin-Token": "test-admin"}
+    creator = {"Authorization": f"Bearer {t['api_key']}"}
+    other_key = c.post(f"/admin/tenants/{t['tenant_id']}/keys", json={"role": "admin"}, headers=admin_hdr).json()
+    other = {"Authorization": f"Bearer {other_key['api_key']}"}
+    c.post("/deals", headers=creator, json={"name": "Quiet", "mnpi": True})
+    c.post("/deals", headers=creator, json={"name": "Open"})
+    assert sorted(d["name"] for d in c.get("/deals", headers=creator).json()) == ["Open", "Quiet"]
+    assert [d["name"] for d in c.get("/deals", headers=other).json()] == ["Open"]
+    assert c.patch("/deals/Quiet", headers=other, json={"note": "x"}).status_code == 404
+    assert c.delete("/deals/Quiet", headers=other).status_code == 404
+    scoped = c.post(f"/admin/tenants/{t['tenant_id']}/keys", json={"role": "analyst", "deals": ["Quiet"]},
+                    headers=admin_hdr).json()
+    sh = {"Authorization": f"Bearer {scoped['api_key']}"}
+    assert [d["name"] for d in c.get("/deals", headers=sh).json()] == ["Quiet"]
+    assert c.patch("/deals/Quiet", headers=sh, json={"mnpi": False}).json()["mnpi"] is False

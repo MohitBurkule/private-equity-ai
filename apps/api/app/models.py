@@ -3,7 +3,16 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    false,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -123,6 +132,12 @@ class Deal(Base):
     name: Mapped[str] = mapped_column(String(128))
     stage: Mapped[str] = mapped_column(String(16), default="sourcing")
     note: Mapped[str | None] = mapped_column(Text, default=None)
+    # Set by compliance: a held deal cannot be deleted until the hold is lifted.
+    legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Material non-public information: visible only to keys scoped to this deal by name.
+    mnpi: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Key id that flagged the deal MNPI; that key keeps access so its creator is not locked out.
+    created_by: Mapped[str | None] = mapped_column(String(64), default=None)
     updated_at: Mapped[str] = mapped_column(String(40), default="")
 
 
