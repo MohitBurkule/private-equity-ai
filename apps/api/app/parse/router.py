@@ -24,6 +24,15 @@ def numbers(text: str) -> list[str]:
     return [m.group().replace(",", "").rstrip(".") for m in NUM.finditer(text)]
 
 
+# OCR faults documented in data/uk/sh01/README.md: GBP sign read as "E" (E1,000,000), a stray quote
+# inside a number (1000000'0), and a digit run split by a letter. Such tokens are flagged, never fixed.
+OCR_SUSPECT = re.compile(r"(?<![A-Za-z])E\d[\d,.]*|\d+'\d+|\d[A-Za-z]\d")
+
+
+def ocr_suspects(lines: list[engines.Line]) -> list[str]:
+    return [m.group() for ln in lines for m in OCR_SUSPECT.finditer(ln.text)]
+
+
 @dataclass
 class RoutedPage:
     page: int
@@ -34,6 +43,7 @@ class RoutedPage:
     checked_by: str | None = None
     disputed: list[str] = field(default_factory=list)  # numbers the second engine lacks
     verified: bool = False  # text page whose numbers all agree across two engines
+    suspects: list[str] = field(default_factory=list)  # OCR tokens matching known fault patterns
 
     @property
     def text(self) -> str:
@@ -67,7 +77,7 @@ def route_page(path: Path, page: int, have: set[str] | None = None) -> RoutedPag
     if kind == "scanned":
         if "rapidocr" in have:
             ocr = engines.run("rapidocr", path, [page])[0]
-            return RoutedPage(page, kind, "rapidocr", "ocr", ocr.lines)
+            return RoutedPage(page, kind, "rapidocr", "ocr", ocr.lines, suspects=ocr_suspects(ocr.lines))
         return RoutedPage(page, kind, primary, "text", pr.lines)
     second = next((e for e in ("pdftotext_layout", "pdfplumber", "pdfium", "pypdf") if e in have and e != primary), None)
     rp = RoutedPage(page, kind, primary, "text", pr.lines)
