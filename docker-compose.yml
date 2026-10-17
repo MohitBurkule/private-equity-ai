@@ -9,11 +9,15 @@ services:
       ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN to enable tenant creation}
       SPOOL_DIR: /spool
       REDIS_URL: redis://redis:6379/0
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_FROM: pe-platform@localhost
     volumes:
       - spool:/spool
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_started}
+      mailpit: {condition: service_started}
   web:
     build: apps/web
     ports: ["8080:80"]
@@ -30,6 +34,10 @@ services:
       - ./infra/db-init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
   redis:
     image: redis:7
+  mailpit:
+    # Dev-only fake mail server: SMTP on 1025, web UI and API on 8025. Nothing leaves the stack.
+    image: axllent/mailpit:v1.21.8
+    ports: ["8025:8025"]
 volumes:
   pgdata:
   spool:
