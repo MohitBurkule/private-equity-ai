@@ -61,6 +61,7 @@ from app import marketfeed_facts as marketfeed_facts_mod
 from app import memo_diff as memo_diff_mod
 from app import memo_templates as mt_mod
 from app import notify as notify_mod
+from app import otel as otel_mod
 from app import outreach as outreach_mod
 from app import peer_sets as peer_sets_mod
 from app import peers as peers_mod
@@ -246,6 +247,7 @@ MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
 
 app = FastAPI(title="PE Platform API", version="0.0.1")
 app.middleware("http")(tracing_middleware)
+otel_mod.setup()
 
 
 def get_db():
