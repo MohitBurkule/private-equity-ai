@@ -3290,9 +3290,14 @@ def targets_sic_peers(target_id: int, db: Db, who: Who, pages: int = Query(1, ge
         return {"target_id": t.id, "sic": t.sic, "peers": [], "median": None,
                 "note": "needs a SIC code and a stated revenue"}
     exclude = {t.source_ref.zfill(10)} if t.source == "sec" else set()
-    found = peers_mod.discover_with_group(t.revenue, t.sic, exclude, pages=pages)
+    rule_row = fk.newest_accepted(db, who.tenant, "peer_rules")
+    rule = peers_mod.parse_rule(rule_row.value) if rule_row else peers_mod.PeerRule()
+    found = peers_mod.discover_with_group(t.revenue, t.sic, exclude, pages=pages, rule=rule)
     st = comps_mod.stats([p.revenue for p in found])
-    return {"target_id": t.id, "sic": t.sic, "target_revenue": str(t.revenue), "peers": len(found),
+    applied = {"low": str(rule.low), "high": str(rule.high), "min_year": rule.min_year,
+               "min_peers": rule.min_peers, "widen": rule.widen,
+               "rule_source": f"accepted peer_rules rule: {rule_row.value}" if rule_row else "default"}
+    return {"target_id": t.id, "sic": t.sic, "target_revenue": str(t.revenue), "peers": len(found), "applied": applied,
             "median": None if st.median is None else str(st.median),
             "items": [{"cik": p.cik, "name": p.name, "revenue": str(p.revenue), "period": p.period,
                        "source_url": p.source_url, "rule": p.rule, "matched_on": p.matched_on} for p in found]}

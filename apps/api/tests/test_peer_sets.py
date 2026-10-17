@@ -34,13 +34,13 @@ def test_group_widening_only_when_exact_code_is_thin(monkeypatch):
     def facts_get(url):
         return json.dumps(data[url.split("CIK")[1].split(".")[0].lstrip("0")]).encode()
 
-    out = peers_mod.discover_with_group(Decimal(1000), "7372", set(), pages=1, min_peers=3, get=get,
+    out = peers_mod.discover_with_group(Decimal(1000), "7372", set(), pages=1, rule=peers_mod.PeerRule(min_peers=3), get=get,
                                         facts_get=facts_get)
     assert [(p.name, p.matched_on) for p in out] == [
         ("Exact Co", "sic"), ("Group Co", "sic_group"), ("Other Group Co", "sic_group")]
     assert "SIC family 737" in out[1].rule
     # enough exact-code peers: no widening
-    out = peers_mod.discover_with_group(Decimal(1000), "7372", set(), pages=1, min_peers=1, get=get,
+    out = peers_mod.discover_with_group(Decimal(1000), "7372", set(), pages=1, rule=peers_mod.PeerRule(min_peers=1), get=get,
                                         facts_get=facts_get)
     assert [p.matched_on for p in out] == ["sic"]
 
@@ -104,3 +104,17 @@ def test_peer_refresh_workflow_runs_on_schedule(monkeypatch):
         wf.run_due(s, tid, None, mailer=lambda to, subj, body: sent.append(body),
                    now=datetime(2026, 10, 17, tzinfo=UTC))
         assert sent and "Peer set Wf: 1 kept, 0 dropped." in sent[0]
+
+
+def test_firm_peer_rule_parses_and_controls_widening(monkeypatch):
+    rule = peers_mod.parse_rule("band: 0.4 to 2.5; min peers: 4; min year: 2025; family: no")
+    assert (rule.low, rule.high, rule.min_peers, rule.min_year, rule.widen) == (
+        Decimal("0.4"), Decimal("2.5"), 4, 2025, False)
+    assert peers_mod.parse_rule("nothing stated") == peers_mod.PeerRule()
+    monkeypatch.setattr(peers_mod.time, "sleep", lambda s: None)
+    get = lambda url: entry("0000000011", "7372") if "SIC=7372" in url else entry("0000000012", "7371")
+    facts_get = lambda url: json.dumps(facts("Only Co", "2025-12-31", 1000)).encode()
+    # family: no keeps the search on the exact code, even with too few peers
+    out = peers_mod.discover_with_group(Decimal(1000), "7372", set(), pages=1, get=get, facts_get=facts_get,
+                                        rule=rule)
+    assert [p.matched_on for p in out] == ["sic"]
