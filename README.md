@@ -43,6 +43,18 @@ Known rough edges: `/ask` and auto-extraction need an LLM key and have not run a
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full list.
 
 ## Quick start
+
+### See it in one command (no Postgres, no Docker)
+
+```
+make demo
+```
+
+Starts the API on SQLite, seeds it with three real 10-K filings (3M, Hertz, Sotera) when `data/demo/edgar`
+or `DATA_DIR` holds them, builds the web UI, and prints the URL and API key. Open http://localhost:5173 and
+paste the key. Stop with Ctrl+C. Logs go to a temp folder, or to `DEMO_DIR` if you set it.
+
+For Postgres and the full stack, use the Docker steps below.
 ```
 export ADMIN_TOKEN=$(openssl rand -hex 16)
 docker compose up --build          # api :8000, web :8080, Postgres (RLS), Redis
