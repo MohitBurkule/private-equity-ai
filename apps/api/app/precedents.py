@@ -27,6 +27,14 @@ _MULT = re.compile(
 _SCALE = {"million": Decimal(1), "billion": Decimal(1000)}
 
 
+# Sentences about pro forma, banker or peer analysis state a figure that is not the deal's own price.
+# They are still shown with their cite, but flagged and left out of the statistics.
+_REVIEW = re.compile(
+    r"pro forma|combined company|combined|implied|calculated|analysis|reviewed|premia|per share",
+    re.IGNORECASE,
+)
+
+
 def _millions(num: str, scale: str) -> Decimal | None:
     try:
         return Decimal(num.replace(",", "")) * _SCALE[scale.lower()]
@@ -46,11 +54,22 @@ def extract(pages: list[tuple[int, str]]) -> dict:
                 if m:
                     val = _millions(m.group(1), m.group(2))
                     if val is not None:
-                        terms["ev_musd"] = {"value": str(val), "page": num, "quote": s}
+                        terms["ev_musd"] = {
+                            "value": str(val),
+                            "page": num,
+                            "quote": s,
+                            "needs_review": bool(_REVIEW.search(s)),
+                        }
             for m in _MULT.finditer(s):
                 metric = m.group(2).lower().replace("adjusted ", "")
                 terms["multiples"].append(
-                    {"metric": metric, "value": m.group(1), "page": num, "quote": s}
+                    {
+                        "metric": metric,
+                        "value": m.group(1),
+                        "page": num,
+                        "quote": s,
+                        "needs_review": bool(_REVIEW.search(s)),
+                    }
                 )
     if terms["ev_musd"] is None:
         terms["absent"].append("enterprise_value")
@@ -67,7 +86,7 @@ def summarise(deals: list[dict]) -> dict:
         for m in d["terms"]["multiples"]:
             val = Decimal(m["value"])
             # first positive stated multiple per metric: one deal is one data point
-            if m["metric"] in seen or val <= 0:
+            if m["metric"] in seen or val <= 0 or m["needs_review"]:
                 continue
             seen.add(m["metric"])
             by_metric.setdefault(m["metric"], []).append(

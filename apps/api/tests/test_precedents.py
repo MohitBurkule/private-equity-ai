@@ -14,11 +14,8 @@ ACQ = [(1, P1), (2, P2)]
 
 def test_ev_and_multiples_cited_to_page():
     t = extract(ACQ)
-    assert t["ev_musd"] == {
-        "value": "1200.0",
-        "page": 1,
-        "quote": t["ev_musd"]["quote"],
-    }
+    assert t["ev_musd"]["value"] == "1200.0" and t["ev_musd"]["page"] == 1
+    assert t["ev_musd"]["needs_review"] is False
     by = {m["metric"]: m for m in t["multiples"]}
     assert by["revenue"]["value"] == "8.5" and by["revenue"]["page"] == 1
     assert by["ebitda"]["value"] == "14" and "adjusted EBITDA" in by["ebitda"]["quote"]
@@ -59,3 +56,22 @@ def test_zero_multiple_and_repeat_ignored():
     s = summarise(deals)["revenue"]
     assert s["n"] == 1 and s["inputs"][0]["value"] == "5"
     assert Decimal(s["median"]) == Decimal(5)
+
+
+def test_banker_and_pro_forma_figures_flagged_and_left_out_of_stats():
+    pages = [
+        (
+            1,
+            "Piper Sandler calculated an implied transaction value of approximately $249.2 million.",
+        ),
+        (
+            2,
+            "The combined company has an enterprise value of approximately $5.0 billion.",
+        ),
+        (3, "The price represents 9x LTM revenue."),
+    ]
+    t = extract(pages)
+    assert t["ev_musd"]["needs_review"] is True
+    assert t["multiples"][0]["needs_review"] is False
+    s = summarise([{"name": "A", "document_id": "a", "terms": t}])
+    assert s == {} or "revenue" in s
