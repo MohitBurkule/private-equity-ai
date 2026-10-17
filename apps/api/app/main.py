@@ -34,7 +34,7 @@ from app import research as research_mod
 from app import seen_before as seen_mod
 from app import targets as tg_mod
 from app import workflows as wf_mod
-from app.acl import Principal, doc_visible, fact_visible, visible_doc_ids
+from app.acl import Principal, deal_hidden, doc_visible, fact_visible, visible_doc_ids
 from app.answer import answer_question
 from app.audit import log_event, verify_chain
 from app.auth import (
@@ -558,19 +558,21 @@ class DealIn(BaseModel):
     name: str
     stage: str = "sourcing"
     note: str | None = None
+    mnpi: bool = False
 
 
 class DealUpdate(BaseModel):
     stage: str | None = None
     note: str | None = None
     legal_hold: bool | None = None
+    mnpi: bool | None = None
 
 
 def _deal_out(db: Session, who: Principal, d: Deal) -> dict:
     dd = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=d.name).all()
     docs = db.query(Document).filter_by(tenant_id=who.tenant, deal=d.name).count()
     closed = sum(r.status != "open" for r in dd)
-    return {"name": d.name, "stage": d.stage, "note": d.note, "legal_hold": d.legal_hold, "updated_at": d.updated_at,
+    return {"name": d.name, "stage": d.stage, "note": d.note, "legal_hold": d.legal_hold, "mnpi": d.mnpi, "updated_at": d.updated_at,
             "documents": docs, "dd_total": len(dd), "dd_open": len(dd) - closed}
 
 
@@ -585,7 +587,7 @@ def deal_create(body: DealIn, db: Db, who: Writer):
         raise HTTPException(422, "name required")
     if db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first():
         raise HTTPException(409, "deal already exists")
-    d = Deal(tenant_id=who.tenant, name=name, stage=body.stage, note=body.note, updated_at=_now_iso())
+    d = Deal(tenant_id=who.tenant, name=name, stage=body.stage, note=body.note, mnpi=body.mnpi, updated_at=_now_iso())
     db.add(d)
     db.commit()
     log_event(db, who.tenant, actor(who), "deal.create", {"name": name, "stage": d.stage})
@@ -595,14 +597,16 @@ def deal_create(body: DealIn, db: Db, who: Writer):
 @app.get("/deals")
 def deal_list(db: Db, who: Who):
     rows = db.query(Deal).filter_by(tenant_id=who.tenant).order_by(Deal.id).all()
-    return [_deal_out(db, who, d) for d in rows if _dd_scope_ok(who, d.name)]
+    return [_deal_out(db, who, d) for d in rows if _dd_scope_ok(who, d.name) and not deal_hidden(d.name, d.mnpi, who)]
 
 
 @app.patch("/deals/{name}")
 def deal_update(name: str, body: DealUpdate, db: Db, who: Writer):
     d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
-    if d is None or not _dd_scope_ok(who, name):
+    if d is None or not _dd_scope_ok(who, name) or deal_hidden(name, d.mnpi, who):
         raise HTTPException(404, "deal not found")
+    if body.mnpi is not None:
+        d.mnpi = body.mnpi
     if body.stage is not None:
         if body.stage not in STAGES:
             raise HTTPException(422, f"stage must be one of {STAGES}")
@@ -620,7 +624,7 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Writer):
 @app.delete("/deals/{name}")
 def deal_delete(name: str, db: Db, who: Writer):
     d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
-    if d is None or not _dd_scope_ok(who, name):
+    if d is None or not _dd_scope_ok(who, name) or deal_hidden(name, d.mnpi, who):
         raise HTTPException(404, "deal not found")
     # Holds and linked documents are refused rather than cascaded: deleting evidence the team
     # still relies on is the one step here that cannot be walked back.

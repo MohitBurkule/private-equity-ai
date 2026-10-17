@@ -61,5 +61,11 @@ def doc_visible(doc: Document | None, p: Principal) -> bool:
     return doc is not None and doc.tenant_id == p.tenant and (p.deals is None or doc.deal in p.deals)
 
 
+def deal_hidden(deal_name: str, mnpi: bool, p: Principal) -> bool:
+    """MNPI deals need an explicit deal scope. An unscoped admin key does not see them either,
+    so a wall cannot be bypassed by role."""
+    return mnpi and (p.deals is None or deal_name not in p.deals)
+
+
 def fact_visible(fact: Fact, scope: set[str] | None) -> bool:
     return scope is None or (bool(fact.sources) and all(s.document_id in scope for s in fact.sources))
