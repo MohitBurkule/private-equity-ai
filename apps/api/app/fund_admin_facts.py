@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app import accounting as accounting_mod
 from app import fundadmin as fundadmin_mod
 from app.facts import CitationError, add_verified_fact
 from app.models import Fact, PageRow
@@ -16,7 +17,8 @@ def extract_facts(db: Session, tenant_id: str, doc, entity: str) -> tuple[list[i
     pages = db.query(PageRow).filter_by(document_id=doc.id).order_by(PageRow.number).all()
     text_pages = [(p.number, p.text) for p in pages]
     created, skipped = [], []
-    for f in fundadmin_mod.extract(text_pages) + fundadmin_mod.extract_notice(text_pages):
+    found = fundadmin_mod.extract(text_pages) + fundadmin_mod.extract_notice(text_pages) + accounting_mod.extract(text_pages)
+    for f in found:
         same = [x for x in db.query(Fact).filter_by(tenant_id=tenant_id, entity=entity, metric=f.metric,
                                                      period=f.period, status="verified")
                 if any(s.document_id == doc.id and s.page == f.page and s.quote == f.quote for s in x.sources)]
