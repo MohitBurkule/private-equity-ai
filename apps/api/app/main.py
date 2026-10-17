@@ -188,14 +188,16 @@ def get_tenant(p: Who) -> str:
 
 
 def writer(p: Who) -> Principal:
-    if not p.can_write:
+    if not p.can_anywhere("write"):
         raise HTTPException(403, "role is read-only")
     return p
 
 
-def _require(p: Principal, capability: str, what: str) -> None:
-    if not p.can(capability):
-        raise HTTPException(403, f"role {p.role} cannot {what}")
+def _require(p: Principal, capability: str, what: str, deal: str | None = None) -> None:
+    """Checks the key's role, or the role it holds on `deal` when one is given. Routes that take a deal name
+    pass it, so a per-deal override applies to that deal only."""
+    if not p.can(capability, deal):
+        raise HTTPException(403, f"role {p.role_on(deal)} cannot {what}")
 
 
 Writer = Annotated[Principal, Depends(writer)]
@@ -235,6 +237,7 @@ def admin_create_tenant(body: TenantIn, db: Db, x_admin_token: Annotated[str | N
 class KeyIn(BaseModel):
     role: str = "analyst"
     deals: list[str] | None = None  # None = unrestricted; [] = sees nothing
+    deal_roles: dict[str, str] | None = None  # per-deal role overrides, e.g. {"atlas": "partner"}
 
 
 @app.post("/admin/tenants/{tenant_id}/keys", status_code=201)
@@ -245,10 +248,11 @@ def admin_add_key(tenant_id: str, db: Db, body: KeyIn | None = None, x_admin_tok
         raise HTTPException(404, "tenant not found")
     body = body or KeyIn()
     try:
-        kid, key = add_key(db, tenant_id, body.role, body.deals)
+        kid, key = add_key(db, tenant_id, body.role, body.deals, body.deal_roles)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
-    return {"key_id": kid, "role": body.role, "deals": body.deals, "api_key": key, "note": "store this key now; it is not shown again"}
+    return {"key_id": kid, "role": body.role, "deals": body.deals, "deal_roles": body.deal_roles, "api_key": key,
+            "note": "store this key now; it is not shown again"}
 
 
 @app.delete("/admin/keys/{kid}")
@@ -261,12 +265,13 @@ def admin_revoke_key(kid: str, db: Db, x_admin_token: Annotated[str | None, Head
 
 
 @app.post("/documents")
-async def upload(file: Annotated[UploadFile, File()], db: Db, who: Writer,
+async def upload(file: Annotated[UploadFile, File()], db: Db, who: Who,
                  deal: Annotated[str | None, Form()] = None):
     tenant = who.tenant
     deal = (deal or "").strip() or None
     if who.restricted and deal not in who.deals:
         raise HTTPException(403, "deal is required and must be within this key's scope")
+    _require(who, "upload", "upload documents", deal=deal)
     data = await file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
@@ -288,12 +293,13 @@ async def upload(file: Annotated[UploadFile, File()], db: Db, who: Writer,
 
 
 @app.post("/documents/async", status_code=202)
-async def upload_async(file: Annotated[UploadFile, File()], db: Db, who: Writer,
+async def upload_async(file: Annotated[UploadFile, File()], db: Db, who: Who,
                        deal: Annotated[str | None, Form()] = None):
     """Same rules as /documents, but parsing happens in the background. Poll GET /jobs/{id}."""
     deal = (deal or "").strip() or None
     if who.restricted and deal not in who.deals:
         raise HTTPException(403, "deal is required and must be within this key's scope")
+    _require(who, "upload", "upload documents", deal=deal)
     data = await file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
@@ -860,8 +866,9 @@ def checklist_list(name: str, db: Db, who: Who):
 
 
 @app.post("/deals/{name}/checklist", status_code=201)
-def checklist_add(name: str, body: ChecklistIn, db: Db, who: Writer):
+def checklist_add(name: str, body: ChecklistIn, db: Db, who: Who):
     _visible_deal_or_404(db, who, name)
+    _require(who, "write", "edit the checklist", deal=name)
     r = DealChecklistItem(tenant_id=who.tenant, deal=name, title=body.title.strip(), done=False, updated_at=_now_iso())
     db.add(r)
     db.commit()
@@ -870,7 +877,7 @@ def checklist_add(name: str, body: ChecklistIn, db: Db, who: Writer):
 
 
 @app.patch("/deals/{name}/checklist/{item_id}")
-def checklist_update(name: str, item_id: int, body: ChecklistUpdate, db: Db, who: Writer):
+def checklist_update(name: str, item_id: int, body: ChecklistUpdate, db: Db, who: Who):
     _visible_deal_or_404(db, who, name)
     r = db.query(DealChecklistItem).filter_by(tenant_id=who.tenant, deal=name, id=item_id).first()
     if r is None:
@@ -886,7 +893,7 @@ def checklist_update(name: str, item_id: int, body: ChecklistUpdate, db: Db, who
 
 
 @app.delete("/deals/{name}/checklist/{item_id}", status_code=204)
-def checklist_delete(name: str, item_id: int, db: Db, who: Writer):
+def checklist_delete(name: str, item_id: int, db: Db, who: Who):
     _visible_deal_or_404(db, who, name)
     r = db.query(DealChecklistItem).filter_by(tenant_id=who.tenant, deal=name, id=item_id).first()
     if r is None:
@@ -903,11 +910,11 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
         raise HTTPException(404, "deal not found")
     # Compliance may hold and flag a deal without being able to change its analysis.
     if body.stage is not None or body.note is not None:
-        _require(who, "write", "edit deal stage or notes")
+        _require(who, "write", "edit deal stage or notes", deal=name)
     if body.legal_hold is not None:
-        _require(who, "govern", "change a legal hold")
+        _require(who, "govern", "change a legal hold", deal=name)
     if body.mnpi is not None:
-        _require(who, "govern", "change the MNPI flag")
+        _require(who, "govern", "change the MNPI flag", deal=name)
         d.mnpi = body.mnpi
         if body.mnpi and d.created_by is None:
             d.created_by = who.key_id or None
@@ -932,7 +939,7 @@ def deal_delete(name: str, db: Db, who: Writer):
         raise HTTPException(404, "deal not found")
     # Holds and linked documents are refused rather than cascaded: deleting evidence the team
     # still relies on is the one step here that cannot be walked back.
-    _require(who, "govern", "delete deals")
+    _require(who, "govern", "delete deals", deal=name)
     if d.legal_hold:
         raise HTTPException(409, "deal is under legal hold")
     if db.query(Document).filter_by(tenant_id=who.tenant, deal=name).first():
