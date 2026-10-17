@@ -275,8 +275,9 @@ def test_oauth_start_callback_then_refresh_on_sync(monkeypatch):
 
     from cryptography.fernet import Fernet
 
-    from app.connectors import vault
+    from app.connectors import oauth, vault
     from app.models import Connection
+    from app.rls import bind_tenant
     _oauth_env(monkeypatch)
     monkeypatch.setenv("CONNECTOR_KEY", Fernet.generate_key().decode())
     h = new_tenant(c, "oa")
@@ -313,6 +314,7 @@ def test_oauth_start_callback_then_refresh_on_sync(monkeypatch):
     cid = cb.json()["id"]
     assert calls[0]["grant_type"] == "authorization_code" and calls[0]["code"] == "auth-code"
     db = m.SessionLocal()
+    bind_tenant(db, oauth.verify_state(state)["tenant"])  # RLS hides rows outside the tenant binding
     row = db.get(Connection, cid)
     assert "RT1" not in row.token_sealed and vault.unseal(row.token_sealed) == "RT1"
     db.close()
@@ -320,6 +322,7 @@ def test_oauth_start_callback_then_refresh_on_sync(monkeypatch):
     assert synced.status_code == 200, synced.text
     assert calls[-1]["grant_type"] == "refresh_token" and calls[-1]["refresh_token"] == "RT1"
     db = m.SessionLocal()
+    bind_tenant(db, oauth.verify_state(state)["tenant"])
     assert vault.unseal(db.get(Connection, cid).token_sealed) == "RT2"  # rotated token re-sealed
     db.close()
 
