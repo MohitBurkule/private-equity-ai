@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app import firm_knowledge as fk
 from app import secfeed
+from app.candidate_verify import ebitda_margin_clause
 from app.models import Alert, DDRequest, Deal, Target
 from app.portfolio import (
     Covenant,
@@ -197,9 +198,9 @@ def scan(db: Session, tenant_id: str, only: list[str] | None = None) -> list[Ale
 
 
 def scan_candidates(db: Session, tenant_id: str, edgar_search: Callable | None, ch_search: Callable | None,
-                    since: str, until: str) -> list[Alert]:
+                    since: str, until: str, verify: Callable[[str, str], str] | None = None) -> list[Alert]:
     """Weekly candidate watch (run by a schedule, not by every scan: it calls out to SEC and Companies House)."""
-    return _persist(db, tenant_id, candidate_watch(db, tenant_id, edgar_search, ch_search, since, until))
+    return _persist(db, tenant_id, candidate_watch(db, tenant_id, edgar_search, ch_search, since, until, verify))
 
 
 def _persist(db: Session, tenant_id: str, drafts: list[AlertDraft]) -> list[Alert]:
@@ -295,7 +296,8 @@ def company_key(name: str) -> str:
 
 
 def candidate_watch(db: Session, tenant_id: str, edgar_search: Callable | None = None,
-                    ch_search: Callable | None = None, since: str = "", until: str = "") -> list[AlertDraft]:
+                    ch_search: Callable | None = None, since: str = "", until: str = "",
+                    verify: Callable[[str, str], str] | None = None) -> list[AlertDraft]:
     """New companies from live searches on the accepted firm sectors. Each search is a function
     (term, since, until) -> [(name, url, label)]. Each company alerts once (dedupe key from its name),
     skipping companies already imported as targets. Revenue is not checked here; the alert says so."""
@@ -306,6 +308,8 @@ def candidate_watch(db: Session, tenant_id: str, edgar_search: Callable | None =
     known |= {a.dedupe_key.removeprefix("candidate:")
               for a in db.query(Alert).filter_by(tenant_id=tenant_id, kind="candidate")}
     out: list[AlertDraft] = []
+    margin = ebitda_margin_clause(rule.quote)
+    not_screened = f" Not screened: EBITDA margin at least {margin}% (no margin data)." if margin else ""
     for term in criteria.sectors[:3]:
         found: list[tuple[str, str, str]] = []  # (name, source url, source label) from each search
         for fn in (edgar_search, ch_search):
@@ -320,10 +324,11 @@ def candidate_watch(db: Session, tenant_id: str, edgar_search: Callable | None =
                 continue
             known.add(company_key(name))
             key = f"candidate:{company_key(name)}"
+            check = verify(url, name) if verify else "Revenue not checked."
             out.append(AlertDraft("candidate", "info", f"New candidate: {name}",
                                   f"Matches firm rule (document {rule.document_id}, page {rule.page}): "
                                   f"\"{rule.quote}\". Sector search: {term}. Source: {label} {url}. "
-                                  "Revenue not checked.", key))
+                                  f"{check}{not_screened}", key))
     return out
 
 
