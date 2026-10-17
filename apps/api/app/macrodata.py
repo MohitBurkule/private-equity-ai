@@ -84,3 +84,19 @@ class FredProvider:
 def registered(fetch: Fetch = default_fetch) -> list:
     """ECB and FRED are both listed. FRED uses the key when FRED_API_KEY is set, else the public CSV."""
     return [EcbFxProvider(fetch), FredProvider(os.environ.get("FRED_API_KEY", ""), fetch=fetch)]
+
+
+def fx_rate(provider: EcbFxProvider, frm: str, to: str) -> tuple[Decimal, str, str]:
+    """Units of `to` per one unit of `frm`, from ECB euro reference rates. Cross rates go through EUR; the
+    as-of date is the older of the two days used. Returns (rate, as_of, source)."""
+    frm, to = frm.upper(), to.upper()
+    if frm == to:
+        return Decimal(1), "", "identity"
+    if to == "EUR":
+        q = provider.quote(frm)
+        return q.price, q.as_of, provider.name
+    if frm == "EUR":
+        q = provider.quote(to)
+        return 1 / q.price, q.as_of, provider.name
+    a, b = provider.quote(frm), provider.quote(to)
+    return a.price / b.price, min(a.as_of, b.as_of), provider.name

@@ -8,12 +8,14 @@ with every input fact id returned. Fewer than MIN_PEERS usable multiples gives n
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
 from app.calc import _find
+from app.marketdata import NoData
 from app.models import Fact
 
 MIN_PEERS = 3
@@ -26,6 +28,7 @@ class Row:
     multiples: dict[str, Decimal | None] = field(default_factory=dict)
     nm: dict[str, str] = field(default_factory=dict)  # metric -> reason not meaningful
     facts: dict[str, int] = field(default_factory=dict)  # role -> fact id
+    fx: dict[str, dict] = field(default_factory=dict)  # metric -> cited rate when the denominator was converted
 
 
 @dataclass
@@ -85,8 +88,12 @@ def implied_range(metric: str, target_value: Decimal, st: Stats) -> Implied:
                    target_value * st.q3)
 
 
+# fx(from_unit, to_unit) -> (rate, as_of, source); raises NoData when no rate exists. None = no conversion.
+FxFn = Callable[[str, str], tuple[Decimal, str, str]]
+
+
 def build_rows(db: Session, tenant: str, entities: list[str], period: str, metrics: list[str],
-               scope: set[str] | None, ev_period: str | None = None) -> list[Row]:
+               scope: set[str] | None, ev_period: str | None = None, fx: FxFn | None = None) -> list[Row]:
     rows = []
     for ent in entities:
         r = Row(ent)
@@ -100,10 +107,19 @@ def build_rows(db: Session, tenant: str, entities: list[str], period: str, metri
                                                  else f"no {m} fact for {period}")
                 continue
             r.facts[m] = d.id
+            denom = d.value
             if ev.unit != d.unit:
-                r.multiples[m], r.nm[m] = None, f"unit mismatch {ev.unit} vs {d.unit}"
-                continue
-            r.multiples[m], r.nm[m] = multiple(ev.value, d.value)
+                if fx is None:
+                    r.multiples[m], r.nm[m] = None, f"unit mismatch {ev.unit} vs {d.unit}"
+                    continue
+                try:
+                    rate, as_of, source = fx(d.unit, ev.unit)
+                except (NoData, OSError) as e:  # no rate, or the rate source is unreachable: never a guess
+                    r.multiples[m], r.nm[m] = None, f"no FX rate {d.unit} to {ev.unit}: {e}"
+                    continue
+                denom = d.value * rate
+                r.fx[m] = {"from": d.unit, "to": ev.unit, "rate": str(rate), "as_of": as_of, "source": source}
+            r.multiples[m], r.nm[m] = multiple(ev.value, denom)
             if r.multiples[m] is not None:
                 r.nm.pop(m)
         rows.append(r)
@@ -111,8 +127,9 @@ def build_rows(db: Session, tenant: str, entities: list[str], period: str, metri
 
 
 def run(db: Session, tenant: str, target: str, entities: list[str], period: str, metrics: list[str],
-        scope: set[str] | None, target_period: str | None = None, ev_period: str | None = None) -> dict:
-    rows = build_rows(db, tenant, [e for e in entities if e != target], period, metrics, scope, ev_period)
+        scope: set[str] | None, target_period: str | None = None, ev_period: str | None = None,
+        fx: FxFn | None = None) -> dict:
+    rows = build_rows(db, tenant, [e for e in entities if e != target], period, metrics, scope, ev_period, fx)
     out = {"target": target, "period": period, "peers": [], "stats": {}, "implied": []}
     for m in metrics:
         st = stats([r.multiples[m] for r in rows if r.multiples.get(m) is not None])
@@ -128,7 +145,7 @@ def run(db: Session, tenant: str, target: str, entities: list[str], period: str,
                                **{k: None if getattr(im, k) is None else str(getattr(im, k))
                                   for k in ("low", "mid", "high")}})
     for r in rows:
-        out["peers"].append({"entity": r.entity, "facts": r.facts, "nm": r.nm,
+        out["peers"].append({"entity": r.entity, "facts": r.facts, "nm": r.nm, "fx": r.fx,
                              "multiples": {k: None if v is None else str(v.quantize(Decimal("0.01")))
                                            for k, v in r.multiples.items()}})
     return out
