@@ -1,7 +1,8 @@
 import { BarChart3, Building2, Calculator, Workflow, FileText, Plug, FlaskConical, LayoutGrid, LogOut, MessageSquare, ShieldCheck, Briefcase, Map } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { api, getApiKey, setApiKey } from "./api";
+import { api, api2, DealRow, getApiKey, setApiKey } from "./api";
+import { CommandPalette } from "./CommandPalette";
 import { Chat } from "./Chat";
 import { Dashboards } from "./Dashboards";
 import { Targets } from "./Targets";
@@ -30,6 +31,23 @@ const NAV: { id: string; icon: ReactNode }[] = [
   { id: "Review", icon: <ShieldCheck size={16} /> },
   { id: "Evals", icon: <FlaskConical size={16} /> },
 ];
+
+/** Deals in the sidebar so a click goes straight to the deal's workspace. Loaded once; a failed load just hides the list. */
+function DealList({ onGo }: { onGo: (tab: string) => void }) {
+  const [deals, setDeals] = useState<DealRow[]>([]);
+  useEffect(() => { api2.deals().then(setDeals).catch(() => setDeals([])); }, []);
+  if (deals.length === 0) return null;
+  return (
+    <div className="mt-4 border-t border-line pt-3">
+      <p className="mb-1 px-2.5 text-[11px] font-medium uppercase tracking-wider text-mut">Deals</p>
+      {deals.slice(0, 8).map((d) => (
+        <button key={d.name} onClick={() => onGo("Deals")} className="mb-0.5 flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm text-mut hover:bg-sunk hover:text-fg">
+          <span className="truncate">{d.name}</span><span className="ml-2 text-[11px] uppercase">{d.stage}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function KeyGate({ onOk, message }: { onOk: () => void; message: string }) {
   const [k, setK] = useState("");
@@ -76,8 +94,12 @@ export function App() {
             {n.icon}{n.id}
           </button>
         ))}
+        <DealList onGo={setTab} />
         <button onClick={() => { setApiKey(""); check(); }} className="mt-auto flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-mut hover:bg-sunk"><LogOut size={16} />Sign out</button>
       </nav>
+      <CommandPalette items={[
+        ...NAV.map((n) => ({ id: `nav-${n.id}`, label: n.id, hint: "Section", run: () => setTab(n.id) })),
+      ]} />
       <SourceProvider>
         {tab === "Home" && (
           <div className="flex h-full">

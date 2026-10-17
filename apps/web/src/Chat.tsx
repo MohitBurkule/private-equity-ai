@@ -1,5 +1,5 @@
 import { Search, SendHorizonal, Sparkles } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, api2, AskResult, DocumentInfo, Hit } from "./api";
 import { SourceChip } from "./source";
 import { Badge, Button, Card } from "./ui";
@@ -13,6 +13,26 @@ const SUGGESTIONS = [
   "Show total liabilities and where it comes from",
   "Any covenant or debt terms I should flag?",
 ];
+
+/**
+ * Reveals verified claims one at a time, each with its source chip already attached. The answer arrives
+ * whole from the API, so this paces the reading rather than faking tokens. Reduced motion shows all at once.
+ */
+function StreamedClaims({ claims }: { claims: AskResult["claims"] }) {
+  const [n, setN] = useState(() => (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? claims.length : 0));
+  useEffect(() => {
+    if (n >= claims.length) return;
+    const id = setTimeout(() => setN((x) => x + 1), 220);
+    return () => clearTimeout(id);
+  }, [n, claims.length]);
+  return (
+    <>
+      {claims.slice(0, n).map((c, k) => (
+        <p key={k} className="text-sm leading-relaxed">{c.text}{" "}<SourceChip docId={c.document_id} page={c.page} quote={c.quote} /></p>
+      ))}
+    </>
+  );
+}
 
 /** Agent chat. Runs document search first (always works), then asks the model for a verified, cited answer. */
 export function Chat() {
@@ -75,9 +95,7 @@ export function Chat() {
             )}
             {t.answer?.status === "not_found" && <p className="text-sm">Not found in the documents. Nothing was verified against a source. {t.answer.detail}</p>}
             {t.answer?.status === "error" && <p role="alert" className="text-sm text-bad">{t.answer.detail}</p>}
-            {t.answer?.claims.map((c, k) => (
-              <p key={k} className="text-sm leading-relaxed">{c.text}{" "}<SourceChip docId={c.document_id} page={c.page} quote={c.quote} /></p>
-            ))}
+            {t.answer && <StreamedClaims claims={t.answer.claims} />}
             {t.answer && t.answer.rejected.length > 0 && (
               <details className="text-xs text-mut"><summary>{t.answer.rejected.length} claim(s) dropped by verification</summary>
                 <ul className="mt-1 list-disc pl-5">{t.answer.rejected.map((c, k) => <li key={k}>{c.text}: {c.reason}</li>)}</ul></details>
