@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api2, ICReview } from "./api";
+import { api2, ICPrecedents, ICReview } from "./api";
 import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input, Page } from "./ui";
 
 const TONE = { proceed: "ok", pass: "bad", hold: "warn", more_diligence: "acc" } as const;
@@ -8,6 +8,7 @@ const TONE = { proceed: "ok", pass: "bad", hold: "warn", more_diligence: "acc" }
 export function IcReview() {
   const [deal, setDeal] = useState("");
   const [review, setReview] = useState<ICReview | null>(null);
+  const [precedents, setPrecedents] = useState<ICPrecedents | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -18,7 +19,11 @@ export function IcReview() {
         <form className="flex flex-wrap items-end gap-3 p-5" onSubmit={(e) => {
           e.preventDefault(); if (!deal.trim()) return;
           setBusy(true); setErr("");
-          api2.icReview(deal.trim()).then(setReview).catch((x) => { setReview(null); setErr(String(x)); }).finally(() => setBusy(false));
+          const name = deal.trim();
+          Promise.all([api2.icReview(name), api2.icPrecedents(name)])
+            .then(([r, p]) => { setReview(r); setPrecedents(p); })
+            .catch((x) => { setReview(null); setPrecedents(null); setErr(String(x)); })
+            .finally(() => setBusy(false));
         }}>
           <label className="text-xs text-mut">Deal name<Input className="mt-1" value={deal} onChange={(e) => setDeal(e.target.value)} placeholder="Deal" /></label>
           <Button variant="primary" type="submit" disabled={!deal.trim() || busy}>{busy ? "Loading" : "Load record"}</Button>
@@ -50,6 +55,23 @@ export function IcReview() {
               </ul>
             )}
           </Card>
+          {precedents && (
+            <Card>
+              <CardHead title="Same-stage precedents" hint={`${precedents.compared_deals} compared at ${precedents.stage ?? "unknown stage"}`} />
+              {precedents.precedents.length === 0 ? (
+                <p className="p-5 text-sm text-mut">No other visible deal at this stage has an IC decision.</p>
+              ) : (
+                <ul className="divide-y divide-line text-sm">
+                  {precedents.precedents.map((p) => (
+                    <li key={p.id} className="space-y-1 p-3">
+                      <div className="flex items-center gap-2"><span>{p.deal}</span><Badge tone={TONE[p.outcome as keyof typeof TONE] ?? "mut"}>{p.outcome.replace("_", " ")}</Badge></div>
+                      <p className="text-xs text-mut">{p.rationale}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          )}
           <Card>
             <CardHead title="Dissents on file" hint={`${review.dissents.length} recorded`} />
             {review.dissents.length === 0 ? (
