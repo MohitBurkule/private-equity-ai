@@ -65,9 +65,9 @@ def rrf(rankings: list[list[Hit]], k: int = 10, c: int = 60) -> list[Hit]:
 
 
 class HybridIndex:
-    def __init__(self, pages: list[tuple[str, int, str]], extra: list[Ranker] | None = None):
+    def __init__(self, pages: list[tuple[str, int, str]], extra: list[Ranker] | None = None, trigram: bool = True):
         self.bm25 = PageIndex(pages)
-        self.rankers: list[Ranker] = [CharNgramRanker(pages), *(extra or [])]
+        self.rankers: list[Ranker] = [*([CharNgramRanker(pages)] if trigram else []), *(extra or [])]
 
     def search(self, query: str, k: int = 5, doc_ids: set[str] | None = None, depth: int = 50) -> list[Hit]:
         lists = [self.bm25.search(query, depth, doc_ids)]
@@ -94,7 +94,9 @@ def default_index(pages: list[tuple[str, int, str]]) -> HybridIndex:
             extra.append(DenseRanker(pages))
         except ImportError:  # the `dense` extra is not installed
             pass
-    _CACHE[key] = HybridIndex(pages, extra)
+    # With dense, drop the char-trigram leg: on the FinanceBench subset it pulled recall@1 and @5 down.
+    # Without dense (fastembed missing), keep it as the second lexical leg.
+    _CACHE[key] = HybridIndex(pages, extra, trigram=not extra)
     while len(_CACHE) > 4:
         _CACHE.popitem(last=False)
     return _CACHE[key]
