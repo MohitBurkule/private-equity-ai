@@ -104,3 +104,25 @@ def start_periodic_scan(session_factory: sessionmaker) -> threading.Event | None
 
     threading.Thread(target=loop, name="alert-scan", daemon=True).start()
     return stop
+
+
+SEVERITY_RANK = {"critical": 0, "warning": 1, "info": 2}
+
+
+def send_personal_digest(db: Session, tenant_id: str, pref) -> int:
+    """Email one person the alerts at or above their chosen severity that they have not had yet.
+    Their own watermark (last_alert_id) moves, so each person gets every alert once and nobody else's
+    digest is affected. Nothing is marked when the send fails."""
+    floor = SEVERITY_RANK[pref.min_severity]
+    pending = [a for a in db.query(Alert).filter(Alert.tenant_id == tenant_id, Alert.id > pref.last_alert_id,
+                                                  Alert.status == "new").order_by(Alert.id).all()
+               if SEVERITY_RANK.get(a.severity, 3) <= floor]
+    if not pending:
+        return 0
+    subject, body = render_digest(pending)
+    send_email(valid_recipients([pref.email]), subject, body)  # raises before the watermark moves
+    pref.last_alert_id = max(a.id for a in db.query(Alert).filter(Alert.tenant_id == tenant_id,
+                                                                  Alert.id.in_([x.id for x in pending])))
+    db.commit()
+    return len(pending)
+
