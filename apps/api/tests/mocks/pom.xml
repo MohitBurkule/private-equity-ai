@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Jars for the open-source mock servers the API tests use (see docs/MOCKS.md). CI runs
+     `mvn -f apps/api/tests/mocks/pom.xml dependency:copy-dependencies` and points the tests at the result. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.firm.mocks</groupId>
+  <artifactId>mock-servers</artifactId>
+  <version>1</version>
+  <dependencies>
+    <dependency><groupId>org.wiremock</groupId><artifactId>wiremock-standalone</artifactId><version>3.9.1</version></dependency>
+    <dependency><groupId>no.nav.security</groupId><artifactId>mock-oauth2-server</artifactId><version>6.1.1</version></dependency>
+    <dependency><groupId>org.apache.sshd</groupId><artifactId>sshd-sftp</artifactId><version>2.13.2</version></dependency>
+    <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-nop</artifactId><version>2.0.13</version></dependency>
+  </dependencies>
+</project>

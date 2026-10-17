@@ -43,7 +43,7 @@ jobs:
         env:
           GREENMAIL_OPTS: >-
             -Dgreenmail.setup.test.imap -Dgreenmail.setup.test.smtp -Dgreenmail.hostname=0.0.0.0
-            -Dgreenmail.users=ic@firm.test:app-pass
+            -Dgreenmail.users=ic@firm.test:app-pass -Dgreenmail.auth.disabled=false
         ports: ["3025:3025", "3143:3143"]
     defaults: {run: {working-directory: apps/api}}
     env:
@@ -65,6 +65,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: "21"}
+      - name: Mock servers - open-source jars (WireMock, mock-oauth2-server, MINA SSHD)
+        run: |
+          mvn -q -B -f apps/api/tests/mocks/pom.xml dependency:copy-dependencies -DoutputDirectory="$RUNNER_TEMP/mocks"
+          echo "WIREMOCK_JAR=$RUNNER_TEMP/mocks/wiremock-standalone-3.9.1.jar" >> "$GITHUB_ENV"
+          ls "$RUNNER_TEMP"/mocks/*.jar | paste -sd: - > "$RUNNER_TEMP/mocks/classpath.txt"
+          echo "SSHD_CLASSPATH=$RUNNER_TEMP/mocks/classpath.txt" >> "$GITHUB_ENV"
+          JSON_CONFIG_PATH="$PWD/tests/mock_oauth/config.json" nohup java -cp "$(cat "$RUNNER_TEMP/mocks/classpath.txt")" \
+            no.nav.security.mock.oauth2.StandaloneMockOAuth2ServerKt > "$RUNNER_TEMP/oauth.log" 2>&1 &
+          echo "MOCK_OAUTH_URL=http://localhost:8080" >> "$GITHUB_ENV"
+          for i in $(seq 1 60); do curl -sf http://localhost:8080/default/.well-known/openid-configuration >/dev/null && break; sleep 1; done
       - name: Roles (owner owns schema; app role is not superuser and cannot bypass RLS)
         run: |
           psql -h localhost -U postgres pe_ci -v ON_ERROR_STOP=1 <<'SQL'
