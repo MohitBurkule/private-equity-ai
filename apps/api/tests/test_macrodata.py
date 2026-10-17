@@ -32,21 +32,31 @@ def test_fred_skips_missing_days_and_keeps_the_date():
     assert (q.symbol, str(q.price), q.currency, q.as_of, q.source) == ("DGS10", "4.21", "PCT", "2026-10-15", "fred")
 
 
-def test_fred_all_missing_is_no_data_and_key_is_required():
+def test_fred_all_missing_is_no_data():
     with pytest.raises(NoData):
         md.FredProvider("k", fetch=lambda u, h: b'{"observations":[{"date":"2026-10-16","value":"."}]}').quote("DGS10")
+
+
+def test_fred_keyless_csv_skips_missing_and_keeps_date():
+    # SYNTHETIC: shaped like the public FRED graph CSV (observation_date,<ID>; '.' for missing)
+    body = b"observation_date,SOFR\n2026-10-14,3.60\n2026-10-15,.\n2026-10-16,3.62\n"
+    seen = []
+    q = md.FredProvider(fetch=lambda u, h: (seen.append(u), body)[1]).quote("sofr")
+    assert (str(q.price), q.as_of, q.source) == ("3.62", "2026-10-16", "fred")
+    assert "fredgraph.csv" in seen[0] and "api_key" not in seen[0]
+
+
+def test_fred_keyless_csv_all_missing_is_no_data():
     with pytest.raises(NoData):
-        md.FredProvider("", fetch=lambda u, h: b"{}")
+        md.FredProvider(fetch=lambda u, h: b"observation_date,SOFR\n2026-10-16,.\n").quote("SOFR")
 
 
-def test_fred_only_registered_with_a_key(monkeypatch):
+def test_fred_is_always_registered_key_or_not(monkeypatch):
     monkeypatch.delenv("FRED_API_KEY", raising=False)
-    assert [p.name for p in md.registered(_ecb)] == ["ecb"]
-    monkeypatch.setenv("FRED_API_KEY", "k")
     assert [p.name for p in md.registered(_ecb)] == ["ecb", "fred"]
 
 
-def test_market_quote_endpoint_serves_ecb_and_refuses_fred_without_key(monkeypatch):
+def test_market_quote_endpoint_serves_ecb(monkeypatch):
     from fastapi.testclient import TestClient
 
     from app.main import app, get_market_fetch
@@ -59,6 +69,5 @@ def test_market_quote_endpoint_serves_ecb_and_refuses_fred_without_key(monkeypat
         h = new_tenant(c, "macro-ep")
         r = c.get("/market/quote", params={"symbol": "usd", "provider": "ecb"}, headers=h)
         assert r.status_code == 200 and r.json()["as_of"] == "2026-10-16" and r.json()["source"] == "ecb"
-        assert c.get("/market/quote", params={"symbol": "DGS10", "provider": "fred"}, headers=h).status_code == 404
     finally:
         app.dependency_overrides.pop(get_market_fetch, None)
