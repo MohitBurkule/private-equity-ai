@@ -61,7 +61,7 @@ TERMS: dict[str, dict] = {
     },
     "termination_notice_days": {
         "doc": ("lease", "employment"),
-        "re": r"(?:terminat|resign)\w*(?![^.]{0,80}\b(?:service|within)\b)[^.]{0,80}?\(?(\d{1,3})\)?\s*days(?:['’]|’s)?\s*(?:(?:prior|advance|written) )*notice|\(?(\d{1,3})\)?\s*days(?:['’]|’s)?\s*(?:(?:prior|advance|written) )*notice(?![^.]*\bservice\b)[^.]{0,80}?(?:terminat|resign)\w*|notice of termination[^.]{0,60}?\(?(\d{1,3})\)?\s*days",
+        "re": r"(?:terminat|resign)\w*(?![^.]{0,80}\b(?:service|within)\b)[^.]{0,80}?\(?(\d{1,3})\)?\s*days(?:['’]|’s)?\s*(?:(?:prior|advance|written) )*notice|\(?(\d{1,3})\)?\s*days(?:['’]|’s)?\s*(?:(?:prior|advance|written) )*notice(?![^.]*\bservice\b)[^.]{0,80}?(?:terminat|resign)\w*|notice of termination[^.]{0,60}?\(?(\d{1,3})\)?\s*days|(?:terminat|resign)\w*[^.]{0,120}?\(?(\d{1,3})\)?\s*days after the giving of (?:such|the) notice",
     },
     "severance": {
         "doc": ("employment",),
@@ -164,7 +164,7 @@ def extract(pages: list[tuple[int, str]], doc_type: str) -> dict:
                         value = _months(value, m.group(0))
                     if term == "non_compete_months" and re.search(r"\b(?:reduc|modif|waiv)\w*", sent, re.IGNORECASE):
                         continue  # an amendment changing the covenant, not the covenant itself
-                    review = bool(_NEG.search(sent)) or (term == "termination_fee" and bool(
+                    review = bool(_NEG.search(sent)) or term == "termination_notice_days" or (term == "termination_fee" and bool(
                         re.search(r"\binstead of\b|\bthereafter\b", sent, re.IGNORECASE)))  # conditional fee change
                     found.append(
                         Finding(

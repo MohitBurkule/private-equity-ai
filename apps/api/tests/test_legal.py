@@ -117,3 +117,9 @@ def test_conditional_termination_fee_change_is_flagged_for_review():
     out = extract([(778, "(a) the amount of the Reverse Termination Fee shall thereafter be equal to $15,000,000 (instead of $10,000,000).")], "spa")
     fee = [f for f in out["findings"] if f["term"] == "termination_fee"]
     assert fee and fee[0]["value"] == "$15,000,000" and fee[0]["needs_review"] is True
+
+
+def test_termination_notice_is_always_flagged_for_review_and_reads_days_after_notice():
+    out = extract([(7, "Any such termination shall be effective thirty (30) days after the giving of such notice by the Employee.")], "employment")
+    fs = [f for f in out["findings"] if f["term"] == "termination_notice_days"]
+    assert [f["value"] for f in fs] == ["30"] and all(f["needs_review"] for f in fs)

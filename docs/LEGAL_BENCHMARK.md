@@ -120,3 +120,7 @@ Known errors:
 Termination fee ordering (open item, decided): a fee sentence with "instead of" or "thereafter" is still reported but now flagged `needs_review`. The held-out Lantheus 1521036 value stays $15,000,000 as scored, against gold $10,000,000. Gold reading is the base fee; the amendment raises it to $15M on a condition. Not changed in the held-out numbers above.
 
 Also fixed in this pass: "not assignable" is now a restriction; "shall not be required" is not; a non-compete inside an amendment that reduces it is skipped; a "notice ... days" phrase that ends in "service" or "within" is skipped.
+
+### Update: termination notice and governing-law precision
+- `termination_notice_days` is now always `needs_review`, so it never shows as a clean finding. Added "thirty (30) days after the giving of such notice" (Mercantile now found: fresh set 1 of 1). Side effect: two extra "days after notice" hits in the first lease/employment set (score 4/3/0, was 4/1/0). Still review-only.
+- Blind governing-law precision 0.55 was a labelling error, not a rule error. The five blind "false positives" were exhibits where I had labelled null but the text states the law (Colorado, Michigan, Pennsylvania, Delaware, New Jersey). Corrected gold fixed it; the rule matched the text.
