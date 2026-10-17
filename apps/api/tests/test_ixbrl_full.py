@@ -44,3 +44,26 @@ def test_opaque_context_ids_take_period_from_definition():
     (assets,) = figures(tags, "us-gaap:Assets", "@2025-12-31")
     assert assets.row == "Total assets 22,311"
     assert [t.text for t in figures(tags, "us-gaap:Revenues", "2025-01-01/2025-12-31")] == ["8,504"]
+
+
+def test_sign_minus_marks_a_loss():
+    html = """<ix:resources>
+<xbrli:context id="c-1"><xbrli:entity/><xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period></xbrli:context>
+</ix:resources>
+<table><tr><td>Net income (loss)</td><td>(<ix:nonFraction name="us-gaap:NetIncomeLoss" contextRef="c-1" scale="6" sign="-">747</ix:nonFraction>)</td></tr></table>"""
+    _, tags = read_filing(html)
+    (loss,) = figures(tags, "us-gaap:NetIncomeLoss", "2025-01-01/2025-12-31")
+    assert loss.negative is True
+    assert loss.text == "747"
+    assert loss.row == "Net income (loss) ( 747 )"
+
+
+def test_unsigned_figure_is_positive_and_scale_is_kept():
+    html = """<ix:resources>
+<xbrli:context id="c-2"><xbrli:entity/><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>
+</ix:resources>
+<table><tr><td>Total assets</td><td><ix:nonFraction name="us-gaap:Assets" contextRef="c-2" scale="3">3,263,190</ix:nonFraction></td></tr></table>"""
+    _, tags = read_filing(html)
+    (assets,) = figures(tags, "us-gaap:Assets", "@2025-12-31")
+    assert assets.negative is False
+    assert assets.scale == 3

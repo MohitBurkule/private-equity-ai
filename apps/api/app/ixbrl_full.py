@@ -33,6 +33,7 @@ class Tagged:
     page: int           # 1-based, matches the page list
     row: str            # visible text of the table row the figure sits in
     period: str | None  # period_key(): "start/end" for a duration, "@date" for an instant
+    negative: bool = False  # sign="-": the printed number is the magnitude of a negative value
 
 
 def period_of(context: str) -> tuple[str, str] | None:
@@ -103,7 +104,8 @@ class _Parser(HTMLParser):
             el["row"] = self._row
         if tag == "ix:nonfraction" and not self._hidden and not hidden:
             self._fig = {"name": a.get("name", ""), "context": a.get("contextref", ""),
-                         "scale": int(a.get("scale") or 0), "chunks": [], "row": self._row}
+                         "scale": int(a.get("scale") or 0), "negative": a.get("sign") == "-",
+                         "chunks": [], "row": self._row}
             el["fig"] = self._fig
         self._stack.append(el)
         if hidden:
@@ -119,7 +121,8 @@ class _Parser(HTMLParser):
                 text = " ".join("".join(f["chunks"]).split())
                 if text and f["name"]:
                     period = self._ctx.get(f["context"]) or _legacy_key(f["context"])
-                    t = Tagged(f["name"], f["context"], f["scale"], text, len(self.pages), "", period)
+                    t = Tagged(f["name"], f["context"], f["scale"], text, len(self.pages), "", period,
+                               f["negative"])
                     self.tags.append(t)
                     if f["row"] is not None:
                         self._row_refs.append((t, f["row"]))
