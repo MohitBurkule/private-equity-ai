@@ -149,3 +149,20 @@ def test_quote_found_only_in_layout_text_is_ocr_unverified(monkeypatch):
                           tenant_id="t", entity="Acme", period="FY24", unit="USD", document_id=doc, page=1)
     assert f.status == "ocr_unverified"
     assert f.sources[0].anchor is None
+
+
+def test_margin_slide_plots_cited_ratios_with_both_inputs_in_the_footnote():
+    import io
+
+    from pptx import Presentation
+
+    from app.memo import build_memo_pptx
+    s, doc = setup_db()
+    kw = {"tenant_id": "t", "entity": "Margin Co", "unit": "USD", "document_id": doc, "page": 1}
+    for period in ("FY23", "FY24"):
+        add_verified_fact(s, metric="revenue", value=Decimal(1000), quote="Total revenues 1,000", period=period, **kw)
+        add_verified_fact(s, metric="net_income", value=Decimal(150), quote="Net income 150", period=period, **kw)
+    prs = Presentation(io.BytesIO(build_memo_pptx(s, "t", "Margin Co")))
+    slide = next(sl for sl in prs.slides if sl.shapes.title is not None and "Margins (%)" in sl.shapes.title.text)
+    foot = next(sh.text_frame.text for sh in slide.shapes if sh.has_text_frame and sh.text_frame.text.startswith("Source:"))
+    assert "Net income 150" in foot and "Total revenues 1,000" in foot
