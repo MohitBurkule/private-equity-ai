@@ -33,6 +33,8 @@ CAPABILITIES: dict[str, frozenset[str]] = {
     "govern": frozenset({"admin", "partner", "vp", "compliance"}),
     # Deleting a deal for good: admin only, and only after a request is on file (see the deletion routes).
     "purge": frozenset({"admin"}),
+    # Setting or reading a deal's ethical wall: admin only, since the list names the people walled off.
+    "wall": frozenset({"admin"}),
 }
 
 
@@ -223,6 +225,16 @@ def mnpi_name_conflict(db: Session, p: Principal, name: str) -> bool:
 
     target = normalise(name)
     return any(normalise(h) == target for h in _mnpi_hidden_names(db, p))
+
+
+def same_company_deals(db: Session, tenant: str, name: str) -> list[str]:
+    """Other deals in the tenant whose name is the same company as `name`. A warning when a wall is set, never
+    enforcement: a wall is per deal, and two deals can name one company."""
+    from app.seen_before import normalise
+
+    target = normalise(name)
+    return sorted(d.name for d in db.query(Deal).filter_by(tenant_id=tenant) if d.name != name
+                  and normalise(d.name) == target)
 
 
 def visible_mnpi_deal_names(db: Session, p: Principal) -> list[str]:

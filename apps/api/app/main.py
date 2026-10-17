@@ -85,8 +85,11 @@ from app.acl import (
     doc_visible,
     fact_visible,
     format_groups,
+    format_wall,
     hidden_deal_names,
     mnpi_name_conflict,
+    parse_wall,
+    same_company_deals,
     visible_doc_ids,
     visible_mnpi_deal_names,
 )
@@ -1866,6 +1869,38 @@ def _deletable_deal(db: Session, who: Principal, name: str, capability: str = "p
     if db.query(Document).filter_by(tenant_id=who.tenant, deal=name).first():
         raise HTTPException(409, "documents still linked to this deal; unlink them first")
     return d
+
+
+class WallIn(BaseModel):
+    walled: list[str] = Field(default_factory=list, max_length=200)  # identities, or "group:<id>" grants
+
+
+def _wall_deal(db: Session, who: Principal, name: str) -> Deal:
+    """The deal whose wall an admin reads or sets. A walled admin cannot see the wall, so another admin lifts it."""
+    d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
+    if d is None or not _dd_scope_ok(who, name) or deal_hidden(d, who):
+        raise HTTPException(404, "deal not found")
+    _require(who, "wall", "manage a deal's ethical wall", deal=name)
+    return d
+
+
+@app.get("/deals/{name}/wall")
+def get_deal_wall(name: str, db: Db, who: Who):
+    d = _wall_deal(db, who, name)
+    return {"deal": name, "walled": list(parse_wall(d.wall))}
+
+
+@app.put("/deals/{name}/wall")
+def set_deal_wall(name: str, body: WallIn, db: Db, who: Who):
+    """Replaces the deal's wall. Each change is audited with the before and after lists. Same-company deals are
+    returned as warnings: name matching never enforces a wall."""
+    d = _wall_deal(db, who, name)
+    before = list(parse_wall(d.wall))
+    d.wall = format_wall(body.walled)
+    after = list(parse_wall(d.wall))
+    log_event(db, who.tenant, actor(who), "deal.wall", {"deal": name, "before": before, "after": after})
+    db.commit()
+    return {"deal": name, "walled": after, "warnings": same_company_deals(db, who.tenant, name)}
 
 
 @app.post("/deals/{name}/deletion-request", status_code=201)
