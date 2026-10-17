@@ -3,12 +3,15 @@ re-sync sees a changed version and ingests the workbook again."""
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from datetime import UTC, datetime
 
 from openpyxl import Workbook
 
 _FIXED = datetime(2000, 1, 1, tzinfo=UTC)
+# openpyxl stamps the save time into the core properties on every save, whatever the workbook says.
+_STAMP = re.compile(rb"(<dcterms:(?:created|modified)[^>]*>)[^<]*")
 
 
 def save_stable(wb: Workbook) -> bytes:
@@ -20,5 +23,8 @@ def save_stable(wb: Workbook) -> bytes:
         for info in src.infolist():
             entry = zipfile.ZipInfo(info.filename, date_time=_FIXED.timetuple()[:6])
             entry.compress_type = zipfile.ZIP_DEFLATED
-            dst.writestr(entry, src.read(info.filename))
+            data = src.read(info.filename)
+            if info.filename == "docProps/core.xml":
+                data = _STAMP.sub(rb"\g<1>2000-01-01T00:00:00Z", data)
+            dst.writestr(entry, data)
     return out.getvalue()
