@@ -43,7 +43,9 @@ class GoogleDrive(Connector):
                         continue  # forms, drawings, shortcuts: no faithful export
                     else:
                         data = self.http(f"{D}/files/{f['id']}?alt=media", self._auth())
-                    yield Item(f["id"], f"{prefix}{name}", data, f.get("webViewLink", ""), f.get("modifiedTime", ""))
+                    # Every file cites its Drive page; the fallback covers responses that omit webViewLink.
+                    url = f.get("webViewLink") or f"https://drive.google.com/file/d/{f['id']}/view"
+                    yield Item(f["id"], f"{prefix}{name}", data, url, f.get("modifiedTime", ""))
                     n += 1
                 token = page.get("nextPageToken", "")
                 if not token:
