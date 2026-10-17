@@ -145,6 +145,17 @@ class Deal(Base):
     updated_at: Mapped[str] = mapped_column(String(40), default="")
 
 
+class DealChecklistItem(Base):
+    """A deal-level checklist line (e.g. "IC memo drafted"), separate from the DD request list."""
+    __tablename__ = "deal_checklist_item"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    deal: Mapped[str] = mapped_column(String(128), index=True)
+    title: Mapped[str] = mapped_column(String(512))
+    done: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    updated_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 class Holding(Base):
     """One row of a user-supplied secondary-market holdings export, tied to the file it came from."""
     __tablename__ = "holding"

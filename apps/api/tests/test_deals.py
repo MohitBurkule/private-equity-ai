@@ -146,3 +146,17 @@ def test_deal_pipeline_accepts_every_stage_in_order():
     for stage in ["nda", "cim", "ioi", "loi", "dd", "ic", "signed"]:
         assert c.patch("/deals/Pipe", headers=h, json={"stage": stage}).json()["stage"] == stage
     assert c.patch("/deals/Pipe", headers=h, json={"stage": "cim_review"}).status_code == 422
+
+
+def test_deal_checklist_crud_and_walled_deal_hidden():
+    t = c.post("/admin/tenants", json={"name": "checklist"}, headers={"X-Admin-Token": "test-admin"}).json()
+    h = {"Authorization": f"Bearer {t['api_key']}"}
+    c.post("/deals", headers=h, json={"name": "Chk"})
+    item = c.post("/deals/Chk/checklist", headers=h, json={"title": "IC memo drafted"}).json()
+    assert item["done"] is False and item["deal"] == "Chk"
+    assert c.patch(f"/deals/Chk/checklist/{item['id']}", headers=h, json={"done": True}).json()["done"] is True
+    assert [r["title"] for r in c.get("/deals/Chk/checklist", headers=h).json()] == ["IC memo drafted"]
+    assert c.delete(f"/deals/Chk/checklist/{item['id']}", headers=h).status_code == 204
+    assert c.get("/deals/Chk/checklist", headers=h).json() == []
+    assert c.get("/deals/nope/checklist", headers=h).status_code == 404
+    assert c.post("/deals/Chk/checklist", headers=h, json={"title": ""}).status_code == 422
