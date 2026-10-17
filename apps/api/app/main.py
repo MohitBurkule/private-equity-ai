@@ -95,6 +95,7 @@ from app.holdings import parse_holdings
 from app.hybrid import default_index
 from app.ingest import finalize_upload, ingest_any
 from app.ixbrl_full import read_filing
+from app.kpi_workbook import ingest_kpi_pack as kpi_pack_ingest
 from app.llm import LLM, NoLLMConfigured, get_llm
 from app.memo import build_memo, build_memo_docx, build_memo_pptx
 from app.migrate import migrate
@@ -2307,6 +2308,21 @@ def enrich_people(body: PeopleIn, who: Who):
     except (ValueError, RuntimeError, OSError, chfeed.CompanyNotFound) as e:
         raise HTTPException(502, f"enrichment failed: {e}") from e
     return {"people": out}
+
+
+@app.post("/portfolio/companies/{company_id}/kpi-pack")
+async def upload_kpi_pack(company_id: int, file: Annotated[UploadFile, File()], db: Db, who: Writer):
+    """Monthly KPI workbook for a portfolio company. Each row becomes a cited observation."""
+    data = await file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
+    try:
+        out = kpi_pack_ingest(db, who.tenant, company_id, data, file.filename or "kpi-pack.xlsx")
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    log_event(db, who.tenant, actor(who), "portfolio.kpi_pack",
+              {"company_id": company_id, "observations": len(out.observations), "skipped": len(out.skipped)})
+    return {"observations": out.observations, "skipped": out.skipped, "unchanged": out.unchanged}
 
 
 @app.get("/documents/{doc_id}/source")
