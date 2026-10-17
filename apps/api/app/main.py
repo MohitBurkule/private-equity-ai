@@ -2687,9 +2687,9 @@ def budget_vs_actual(company_id: int, period: str, db: Db, who: Who):
         row = {"metric": metric, "unit": (act or bud).unit, "actual": None, "budget": None,
                "variance": None, "variance_pct": None}
         if act is not None:
-            row["actual"] = {"value": str(act.value), "fact_id": act.fact_id}
+            row["actual"] = _cited_figure(db, act.fact_id, str(act.value))
         if bud is not None:
-            row["budget"] = {"value": str(bud.value), "fact_id": bud.fact_id}
+            row["budget"] = _cited_figure(db, bud.fact_id, str(bud.value))
         if act is not None and bud is not None:
             diff, pct = budget_variance(act.value, bud.value)
             row["variance"] = str(diff)
@@ -2710,7 +2710,7 @@ def valuation_roll_forward(company_id: int, period: str, prior: str, db: Db, who
         o = next((o for o in rows if o.metric == metric and o.period == p), None)
         if o is None or not fact_visible(db.get(Fact, o.fact_id), scope):
             return None, None
-        return o.value, {"value": str(o.value), "fact_id": o.fact_id}
+        return o.value, _cited_figure(db, o.fact_id, str(o.value))
 
     marks = current_kpis(db, who.tenant, company_id, "mark")
     actuals = current_kpis(db, who.tenant, company_id)
@@ -2722,6 +2722,12 @@ def valuation_roll_forward(company_id: int, period: str, prior: str, db: Db, who
     return {"period": period, "prior": prior, "opening": open_c, "closing": close_c,
             "contributions": contrib_c, "distributions": dist_c,
             "change_in_value": None if change is None else str(change)}
+
+
+def _cited_figure(db: Session, fact_id: int, value: str) -> dict:
+    """A figure as the portfolio routes return it: the value, its fact, and the document it was read from."""
+    c = _fact_cite(db, fact_id, value)
+    return {"value": value, "fact_id": fact_id, "source": c.source, "url": c.url}
 
 
 def _fact_cite(db: Session, fact_id: int, value: str) -> lp_mod.Cite:

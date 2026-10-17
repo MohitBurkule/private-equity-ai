@@ -289,6 +289,8 @@ export const api2 = {
   documentAccess: (tenantId: string, adminToken: string) => fetch(`/api/admin/tenants/${encodeURIComponent(tenantId)}/document-access`, {
     headers: { "X-Admin-Token": adminToken },
   }).then((r) => j<DocumentAccess>(r)),
+  budgetVsActual: (companyId: number, period: string) => call<BudgetVsActual>(`/portfolio/companies/${companyId}/budget-vs-actual?period=${encodeURIComponent(period)}`),
+  portfolioSubmissions: (period: string) => call<SubmissionsOut>(`/portfolio/submissions?period=${encodeURIComponent(period)}`),
   emailAttach: (docId: string, deal: string) => call<{ document_id: string; deal: string }>(`/email/review/${encodeURIComponent(docId)}/attach`, "POST", { deal }),
 };
 
@@ -305,5 +307,12 @@ export interface PersonIn { name: string; organisation?: string; title?: string;
 
 export interface DocumentAccessRow { document_id: string; filename: string; deal: string | null; connector: string; grants: string[] }
 export interface DocumentAccess { documents: DocumentAccessRow[]; restricted: number }
+
+/** A figure as the portfolio routes return it: its fact, and the document it was read from. */
+export interface CitedFigure { value: string; fact_id: number; source: string; url: string | null }
+export interface BudgetMetric { metric: string; unit: string; actual: CitedFigure | null; budget: CitedFigure | null; variance: string | null; variance_pct: string | null }
+export interface BudgetVsActual { period: string; metrics: BudgetMetric[] }
+export interface SubmissionRow { company_id: number; name: string; metrics: string[] }
+export interface SubmissionsOut { period: string; submitted: SubmissionRow[]; missing: SubmissionRow[]; pct_submitted: number | null }
 
 export const STAGES = ["sourcing", "screening", "dd", "ic", "signed", "closed", "passed"];
