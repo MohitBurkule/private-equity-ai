@@ -31,6 +31,7 @@ from app import ch_search as chs_mod
 from app import companies_house as ch_mod
 from app import comps as comps_mod
 from app import covenant_parse as covparse_mod
+from app import debt_parse as debt_parse_mod
 from app import firm_knowledge as fk
 from app import jobs as jobs_mod
 from app import lbo as lbo_mod
@@ -377,6 +378,37 @@ def capital_form_facts(doc_id: str, db: Db, who: Writer):
         created.append(fact.id)
     log_event(db, who.tenant, actor(who), "capital_form.facts", {"document_id": doc.id, "created": created})
     return {"created": created, "skipped": skipped, "problems": f.problems}
+
+
+@app.post("/documents/{doc_id}/credit-agreement/facts", status_code=201)
+def credit_agreement_facts(doc_id: str, db: Db, who: Writer):
+    """Store covenant thresholds and facility amounts read from a credit agreement as facts. Each one goes
+    through the citation gate (its number must appear in the cited quote on that page). Duplicates within
+    one page are stored once."""
+    doc = _own_doc(db, who, doc_id)
+    rows = db.query(PageRow).filter_by(document_id=doc.id).order_by(PageRow.number).all()
+    pages = [(r.number, r.text) for r in rows]
+    entity = doc.deal or doc.filename
+    candidates = []
+    for c in covparse_mod.extract(pages):
+        word = "maximum" if c["operator"] == "<=" else "minimum"
+        candidates.append((f"covenant {c['kpi_metric']} {word}", "x", Decimal(c["threshold"]), c["page"], c["quote"]))
+    for t in debt_parse_mod.extract(pages):
+        candidates.append((f"facility amount {t['facility']}", "USD", t["amount"], t["page"], t["quote"]))
+    created, skipped, seen = [], [], set()
+    for metric, unit, value, page, quote in candidates:
+        if (metric, value, page, quote) in seen:
+            continue
+        seen.add((metric, value, page, quote))
+        try:
+            fact = add_verified_fact(db, tenant_id=who.tenant, entity=entity, metric=metric, period="per agreement",
+                                     value=value, unit=unit, document_id=doc.id, page=page, quote=quote)
+        except CitationError as e:
+            skipped.append({"metric": metric, "page": page, "reason": str(e)})
+            continue
+        created.append(fact.id)
+    log_event(db, who.tenant, actor(who), "credit_agreement.facts", {"document_id": doc.id, "created": created})
+    return {"created": created, "skipped": skipped}
 
 
 @app.get("/documents/{doc_id}/pages/{number}")
