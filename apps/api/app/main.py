@@ -10,6 +10,7 @@ from datetime import date as DateT
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Annotated, Literal
 
 from fastapi import (
@@ -1968,12 +1969,16 @@ class FlagshipIn(BaseModel):
     precedents: dict | None = None  # {"since": "YYYY-MM-DD", "until": "YYYY-MM-DD", "limit": 5}
 
 
-def _peer_ev(db: Session, tenant_id: str, name: str, scope: set[str] | None) -> Fact | None:
+def _peer_ev(db: Session, tenant_id: str, name: str, scope: set[str] | None):
     """The latest verified enterprise_value fact for a peer that this caller may see, from a market-data feed or a
     filing. A fact cited to a document outside the caller's scope is skipped, as comps skip it."""
     rows = (db.query(Fact).filter_by(tenant_id=tenant_id, entity=name, metric=EV_METRIC, status="verified")
             .order_by(Fact.id.desc()).all())
-    return next((f for f in rows if fact_visible(f, scope)), None)
+    f = next((f for f in rows if fact_visible(f, scope)), None)
+    if f is None:
+        return None
+    doc = db.get(Document, f.sources[0].document_id)  # the feed record: its file name carries the feed's label
+    return SimpleNamespace(id=f.id, value=f.value, unit=f.unit, label=doc.filename if doc else None)
 
 
 @app.post("/flagship/run")
