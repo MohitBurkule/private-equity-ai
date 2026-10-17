@@ -51,7 +51,8 @@ def test_leverage_limit_from_accepted_firm_rule_alerts_on_breach_only():
     c.post(f"/firm-knowledge/{r['saved'][0]['id']}/review", headers=h, json={"status": "accepted"})
     co = c.post("/portfolio/companies", json={"name": "Co"}, headers=h).json()["id"]
     for per, v in (("Q1", 3.9), ("Q2", 5.2)):
-        o = fact(h, doc, "net_leverage_x", per, v, f"Net leverage {per} {v}x")
+        row = {"Q1": 2, "Q2": 3}[per]  # the workbook row this figure sits on
+        o = fact(h, doc, "net_leverage_x", per, v, f"Sheet!A{row}: Net leverage {per} {v}x")
         assert c.post(f"/portfolio/companies/{co}/observations", params={"fact_id": o}, headers=h).status_code == 201
     made = c.post("/alerts/scan", headers=h).json()["created"]
     lev = [a for a in made if a["kind"] == "leverage"]
@@ -64,6 +65,6 @@ def test_no_accepted_rule_means_no_leverage_alerts():
     h = new_tenant(c, "ft2")
     doc = upload(h, [("Net leverage Q1 9.9x", None)])
     co = c.post("/portfolio/companies", json={"name": "Co"}, headers=h).json()["id"]
-    o = fact(h, doc, "net_leverage_x", "Q1", 9.9, "Net leverage Q1 9.9x")
+    o = fact(h, doc, "net_leverage_x", "Q1", 9.9, "Sheet!A1: Net leverage Q1 9.9x")
     c.post(f"/portfolio/companies/{co}/observations", params={"fact_id": o}, headers=h)
     assert [a for a in c.post("/alerts/scan", headers=h).json()["created"] if a["kind"] == "leverage"] == []

@@ -17,7 +17,7 @@ from app.portfolio import Covenant, PortfolioCompany, current_kpis, evaluate_cov
 
 
 def _src(f: Fact) -> list[dict]:
-    return [{"document_id": s.document_id, "page": s.page, "section": s.section, "heading": s.heading, "quote": s.quote} for s in f.sources]
+    return [{"document_id": s.document_id, "page": s.page, "locator": s.locator, "quote": s.quote} for s in f.sources]
 
 
 def build_report(db: Session, tenant_id: str, scope: set[str] | None = None) -> dict:
@@ -46,7 +46,7 @@ def build_report(db: Session, tenant_id: str, scope: set[str] | None = None) -> 
 
 
 def _cite(sources: list[dict]) -> str:
-    return "; ".join(f"doc {s['document_id'][:8]} {locator_label(s['page'], s.get('section'), s.get('heading'))}"
+    return "; ".join(f"doc {s['document_id'][:8]} {s['locator']}"
                      for s in sources) or "no source visible"
 
 

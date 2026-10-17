@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.citations import quote_in_page, verify_number
+from app.citations import quote_in_page, verify_number, xlsx_location
 from app.models import Document, Fact, FactSource, HtmlUnit, PageRow
 
 # Labels for money paid out. Their tables print the amount in parentheses, so a positive claim
@@ -22,6 +22,21 @@ class CitationError(ValueError):
 
 def is_outflow(metric: str) -> bool:
     return bool(_OUTFLOW.search(metric))
+
+
+def make_source(doc: Document, page: int, quote: str, row: PageRow) -> FactSource:
+    """The citation for a quote on a page. Workbooks cite a cell, so the quote must start with its sheet and
+    address, and that sheet must be the one this page holds; a page of text cannot say where a figure sits."""
+    if doc.kind != "xlsx":
+        return FactSource(document_id=doc.id, page=page, quote=quote)
+    loc = xlsx_location(quote)
+    if loc is None:
+        raise CitationError("workbook quote must start with its cell, e.g. 'P&L!C14: 1,000'")
+    sheet, cell, rowlabel = loc
+    if row.label != sheet:
+        raise CitationError("quote names a different sheet than the page cited")
+    return FactSource(document_id=doc.id, page=page, quote=quote, kind="xlsx", heading=sheet, anchor=cell,
+                      section=rowlabel)
 
 
 def add_verified_fact(
@@ -41,7 +56,7 @@ def add_verified_fact(
     fact = Fact(tenant_id=tenant_id, entity=entity, metric=metric, period=period, value=value, unit=unit,
                 basis=basis,
                 status="ocr_unverified" if row.method == "ocr" else "verified")
-    fact.sources = [FactSource(document_id=document_id, page=page, quote=quote)]
+    fact.sources = [make_source(doc, page, quote, row)]
     db.add(fact)
     db.commit()
     return fact
@@ -70,8 +85,9 @@ def add_html_fact(
         raise CitationError("value does not match any number in the quote")
     fact = Fact(tenant_id=tenant_id, entity=entity, metric=metric, period=period, value=value, unit=unit,
                 basis=basis, status="verified")
-    fact.sources = [FactSource(document_id=document_id, page=0, quote=quote, section=rows[idx].section,
-                               heading=rows[idx].heading, anchor=rows[idx].anchor, offset=rows[idx].offset)
+    fact.sources = [FactSource(document_id=document_id, page=0, quote=quote, kind="html",
+                               section=rows[idx].section, heading=rows[idx].heading, anchor=rows[idx].anchor,
+                               offset=rows[idx].offset)
                     for idx, quote in sources]
     db.add(fact)
     db.commit()
@@ -97,7 +113,10 @@ def review_fact(db: Session, fact: Fact, *, action: str, reviewer: str, note: st
             raise CitationError("quote not found on cited page")
         if not verify_number(new_value, new_quote, scale, outflow=is_outflow(fact.metric)):
             raise CitationError("value does not match any number in the quote")
+        doc = db.get(Document, src.document_id)
+        fresh = make_source(doc, new_page, new_quote, row)
         fact.value, src.page, src.quote = new_value, new_page, new_quote
+        src.kind, src.heading, src.anchor, src.section = fresh.kind, fresh.heading, fresh.anchor, fresh.section
     fact.status = "rejected" if action == "reject" else "verified"
     fact.reviewed_by, fact.reviewed_at, fact.review_note = reviewer, datetime.now(UTC).isoformat(), note
     db.commit()

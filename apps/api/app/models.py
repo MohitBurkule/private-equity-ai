@@ -17,6 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.citations import locator_label
 from app.db import Base
 
 
@@ -96,13 +97,19 @@ class FactSource(Base):
     fact_id: Mapped[int] = mapped_column(ForeignKey("fact.id"), nullable=False)
     document_id: Mapped[str] = mapped_column(ForeignKey("document.id"), nullable=False)
     # PDF citations use page. HTML filings have no pages: page is 0 and the location is section/anchor/offset.
+    # Workbooks: page is the stored text chunk, and the location is heading (sheet), anchor (cell), section (row).
     page: Mapped[int] = mapped_column(Integer, nullable=False)
     quote: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(String(8), default="pdf", server_default="pdf")  # pdf | html | xlsx
     section: Mapped[str | None] = mapped_column(String(32), default=None)
     heading: Mapped[str | None] = mapped_column(String(256), default=None)
     anchor: Mapped[str | None] = mapped_column(String(128), default=None)
     offset: Mapped[int | None] = mapped_column(Integer, default=None)
     fact: Mapped[Fact] = relationship(back_populates="sources")
+
+    @property
+    def locator(self) -> str:
+        return locator_label(self.page, self.section, self.heading, kind=self.kind, anchor=self.anchor)
 
 
 class HtmlUnit(Base):

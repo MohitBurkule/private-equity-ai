@@ -80,8 +80,8 @@ def ingest_kpi_pack(db: Session, tenant_id: str, company_id: int, data: bytes, f
                 quote = f"{cells['metric']} | {period} | {cells['value']} {unit}"
                 fact = Fact(tenant_id=tenant_id, entity=company.name, metric=metric, period=period, value=value,
                             unit=unit, basis="MGMT", status="verified")
-                fact.sources = [FactSource(document_id=doc.id, page=sheet_no, quote=quote, heading=ws.title,
-                                           anchor=where.split("!", 1)[1])]
+                fact.sources = [FactSource(document_id=doc.id, page=sheet_no, quote=quote, kind="xlsx",
+                                           heading=ws.title, anchor=where.split("!", 1)[1])]
                 db.add(fact)
                 db.commit()
                 out.observations.append(record_observation(db, tenant_id, company_id, fact.id).id)
