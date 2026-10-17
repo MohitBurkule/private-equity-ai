@@ -587,7 +587,8 @@ def documents_bulk_deal(body: BulkDealIn, db: Db, who: Writer):
         before = doc.deal
         doc.deal = body.deal
         log_event(db, who.tenant, actor(who), "document.bulk_deal",
-                  {"doc_id": doc.id, "from": before, "to": body.deal})
+                  {"doc_id": doc.id, "from": before, "to": body.deal,
+                   "deals": [d for d in (before, body.deal) if d]})  # the deal report matches on these
         moved.append(doc_id)
     db.commit()
     return {"moved": moved, "refused": refused}
