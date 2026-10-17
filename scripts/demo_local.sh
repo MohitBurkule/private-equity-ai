@@ -4,7 +4,8 @@
 #   scripts/demo_local.sh            (or: make demo)
 # Asks once for an SEC User-Agent (name and contact) for live EDGAR search; nothing personal is stored.
 # Needs Python 3 with apps/api installed, and Node for the web UI. Filings are seeded when DATA_DIR
-# holds the SEC companyfacts and 10-K HTML files; otherwise the UI starts empty.
+# holds the 10-K HTML files. When they are missing, make demo downloads the public 3M 10-K and XPO
+# Term Loan A exhibit from EDGAR (needs SEC_USER_AGENT) and records each URL and SHA-256 in filings/manifest.json.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
@@ -37,7 +38,12 @@ pids+=($!)
 for _ in $(seq 1 30); do curl -sf "localhost:$API_PORT/health" >/dev/null && break; sleep 1; done
 curl -sf "localhost:$API_PORT/health" >/dev/null || { echo "API did not start, see $DEMO_DIR/api.log"; exit 1; }
 
-if [ -d "$DATA_DIR" ]; then
+# Fetch the public filings when they are not local yet. Without a User-Agent the fetch is skipped, not faked.
+if [ ! -f "$DATA_DIR/filings/3M_2019_10K.htm" ]; then
+  python3 scripts/fetch_demo_filings.py "$DATA_DIR" || echo "EDGAR filings not fetched; the UI starts empty."
+fi
+
+if [ -f "$DATA_DIR/filings/3M_2019_10K.htm" ]; then
   SEED=$(python3 scripts/seed_ixbrl_facts.py "http://localhost:$API_PORT" "$ADMIN_TOKEN" "$DATA_DIR")
   KEY=$(awk '/API key/{print $3}' <<<"$SEED")
   # Term Loan A terms, a labelled-assumption LBO run, and one candidate watch over the dated cache.
