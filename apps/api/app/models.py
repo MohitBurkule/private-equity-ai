@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     ForeignKey,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -47,6 +48,14 @@ class Document(Base):
     # When the document was stored. NULL means unknown, and retention treats unknown age as too young to purge.
     created_at: Mapped[str | None] = mapped_column(String(40), default=lambda: datetime.now(UTC).isoformat())
     pages: Mapped[list[PageRow]] = relationship(back_populates="document", cascade="all")
+
+
+class DocumentFile(Base):
+    """Original PDF bytes, kept so a citation can show the page as filed, with the quote highlighted."""
+    __tablename__ = "document_file"
+    document_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 class PageRow(Base):

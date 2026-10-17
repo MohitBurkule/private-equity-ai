@@ -24,6 +24,12 @@ export const api = {
   search: (q: string, docId?: string) =>
     fetch(`/api/search?q=${encodeURIComponent(q)}${docId ? `&doc_id=${docId}` : ""}`, { headers: auth() }).then((r) => j<Hit[]>(r)),
   page: (docId: string, n: number) => fetch(`/api/documents/${docId}/pages/${n}`, { headers: auth() }).then((r) => j<PageData>(r)),
+  /** The page as filed, PNG, with the quote highlighted when the page contains it. */
+  pageImage: (docId: string, n: number, quote: string) =>
+    fetch(`/api/documents/${docId}/pages/${n}/image?quote=${encodeURIComponent(quote)}`, { headers: auth() }).then(async (r) => {
+      if (!r.ok) throw new Error(`page image ${r.status}`);
+      return { url: URL.createObjectURL(await r.blob()), highlighted: r.headers.get("X-Quote-Highlighted") === "1" };
+    }),
   ask: (question: string, docId?: string) =>
     fetch("/api/ask", {
       method: "POST",

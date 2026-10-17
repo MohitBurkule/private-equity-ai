@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.ixbrl import read_ixbrl
 from app.ixbrl_full import read_filing
-from app.models import Document, PageRow
+from app.models import Document, DocumentFile, PageRow
 from app.parse.eml import parse_eml
 from app.parse.office import RawPage, extract_docx, extract_pptx
 from app.parse.pdf import extract_pages
@@ -134,13 +134,21 @@ def ingest_csv(db: Session, tenant_id: str, data: bytes, filename: str) -> Docum
     return doc
 
 
+def _keep_original(db: Session, tenant_id: str, doc_id: str, data: bytes) -> None:
+    if db.get(DocumentFile, doc_id) is None:
+        db.add(DocumentFile(document_id=doc_id, tenant_id=tenant_id, data=data))
+        db.commit()
+
+
 def ingest_upload(db: Session, tenant_id: str, data: bytes, filename: str) -> Document:
     """Dispatch on content, not extension: PDF magic or zip (xlsx) magic."""
     with tempfile.TemporaryDirectory() as d:
         if data[:4] == b"%PDF":
             p = Path(d) / "upload.pdf"
             p.write_bytes(data)
-            return ingest_pdf(db, tenant_id, p, filename)
+            doc = ingest_pdf(db, tenant_id, p, filename)
+            _keep_original(db, tenant_id, doc.id, data)
+            return doc
         if data[:2] == b"PK":
             p = Path(d) / "upload.xlsx"
             p.write_bytes(data)
