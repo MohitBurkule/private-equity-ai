@@ -26,11 +26,12 @@ FILINGS = [
         ("net_income", "FY2019", ["us-gaap:NetIncomeLoss"], FY, "Net income attributable to 3M"),
         ("operating_income", "FY2019", ["us-gaap:OperatingIncomeLoss"], FY, "Operating income"),
         ("total_assets", "FY2019", ["us-gaap:Assets"], "@2019-12-31", "Total assets"),
-        ("cash", "FY2019", ["us-gaap:CashAndCashEquivalentsAtCarryingValue"], "@2019-12-31", "Cash and cash equivalents"),
+        ("cash", "FY2019", ["us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsIncludingDisposalGroupAndDiscontinuedOperations"], "@2019-12-31", "Cash and cash equivalents"),
         ("long_term_debt", "FY2019", ["us-gaap:LongTermDebtNoncurrent"], "@2019-12-31", "Long-term debt"),
     ]),
     ("filings/Hertz_10-K_2025-12-31.htm", "Hertz Global Holdings", [
         ("revenue", "FY2025", ["us-gaap:Revenues"], FY25, "Revenues"),
+        ("net_income", "FY2025", ["us-gaap:NetIncomeLoss"], FY25, "Net income (loss)"),
         ("total_assets", "FY2025", ["us-gaap:Assets"], "@2025-12-31", "Total assets"),
         ("cash", "FY2025", ["us-gaap:CashAndCashEquivalentsAtCarryingValue"], "@2025-12-31", "Cash and cash equivalents"),
     ]),
@@ -102,7 +103,8 @@ for name, entity, wanted in FILINGS:
             "entity": entity,
             "metric": metric,
             "period": period,
-            "value": str(int(fig.text.replace(",", "")) * 10**fig.scale),
+            # sign="-" marks a loss; the printed digits are its magnitude.
+            "value": str((-1 if fig.negative else 1) * int(fig.text.replace(",", "")) * 10**fig.scale),
             "unit": "USD",
             "document_id": doc,
             "page": fig.page,
