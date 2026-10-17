@@ -65,3 +65,43 @@ def test_alert_digest_is_sent_over_smtp_and_read_back_from_mailpit():
     text = _mailpit("GET", f"/api/v1/message/{msg['ID']}")["Text"]
     assert "[CRITICAL] Acme: leverage breaches covenant (<= 3.0x)" in text
     assert "FY2024: 4.2x against threshold 3.0x." in text
+
+
+def test_weekly_portfolio_digest_is_sent_over_smtp_and_read_back_from_mailpit():
+    _mailpit("DELETE", "/api/v1/messages")
+    h = new_tenant(c, "mailpit-weekly")
+    key = h["Authorization"].split()[1]
+    with SessionLocal() as s:
+        tid = principal_for_key(s, key).tenant
+    body = {"name": "Portfolio weekly", "kind": "portfolio_report", "every_days": 7, "recipients": ["ops@firm.test"]}
+    assert c.post("/workflows", json=body, headers=h).status_code == 201
+
+    with SessionLocal() as s:
+        bind_tenant(s, tid)
+        runs = wf_mod.run_due(s, tid, None, wf_mod.smtp_mailer())
+    assert runs and runs[0]["status"] == "ok", runs
+
+    msg = _wait_for_message("[Portfolio weekly] scheduled update")
+    assert [t["Address"] for t in msg["To"]] == ["ops@firm.test"]
+    text = _mailpit("GET", f"/api/v1/message/{msg['ID']}")["Text"]
+    assert "Breaches:" in text
+
+
+def test_weekly_comps_digest_is_sent_over_smtp_and_read_back_from_mailpit():
+    _mailpit("DELETE", "/api/v1/messages")
+    h = new_tenant(c, "mailpit-comps")
+    key = h["Authorization"].split()[1]
+    with SessionLocal() as s:
+        tid = principal_for_key(s, key).tenant
+    params = {"target": "Acme", "peers": ["Peer1", "Peer2", "Peer3"], "period": "FY2024"}
+    body = {"name": "Comps weekly", "kind": "comps", "every_days": 7, "params": params, "recipients": ["deals@firm.test"]}
+    assert c.post("/workflows", json=body, headers=h).status_code == 201
+
+    with SessionLocal() as s:
+        bind_tenant(s, tid)
+        runs = wf_mod.run_due(s, tid, None, wf_mod.smtp_mailer())
+    assert runs and runs[0]["status"] == "ok", runs
+
+    msg = _wait_for_message("[Comps weekly] scheduled update")
+    text = _mailpit("GET", f"/api/v1/message/{msg['ID']}")["Text"]
+    assert "Comps for Acme (FY2024)" in text
