@@ -12,15 +12,14 @@ Amounts are positive as the ledger reports them. Net income is income minus expe
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import re
-from datetime import UTC, datetime
 from urllib.parse import quote
 
 from openpyxl import Workbook
 
 from app.connectors.base import Connector, ConnectorError, Item
+from app.connectors.workbook import save_stable
 
 _PERIOD = re.compile(r"\d{4}-\d{2}")
 
@@ -34,16 +33,12 @@ def monthly_row(tb: dict) -> tuple[str, float, float]:
 
 def render_workbook(rows: list[tuple[str, float, float]]) -> bytes:
     wb = Workbook()
-    # Fixed document timestamps: a re-sync of the same ledger must give the same bytes, or it re-ingests.
-    wb.properties.created = wb.properties.modified = datetime(2000, 1, 1, tzinfo=UTC).replace(tzinfo=None)
     ws = wb.active
     ws.title = "Monthly"
     ws["A1"], ws["B1"], ws["C1"] = "Period", "Revenue (USD)", "Net income (USD)"
     for i, (period, revenue, net) in enumerate(rows, 2):
         ws[f"A{i}"], ws[f"B{i}"], ws[f"C{i}"] = period, revenue, net
-    out = io.BytesIO()
-    wb.save(out)
-    return out.getvalue()
+    return save_stable(wb)
 
 
 class PortcoAccounting(Connector):

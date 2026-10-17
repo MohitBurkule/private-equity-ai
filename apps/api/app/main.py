@@ -120,6 +120,7 @@ from app.models import (
     AgentRun,
     Alert,
     Connection,
+    DDQuestion,
     DDRequest,
     Deal,
     DealChecklistItem,
@@ -933,6 +934,66 @@ def dd_update(rid: int, body: DDUpdate, db: Db, who: Writer):
     log_event(db, who.tenant, actor(who), "dd.update", {"request_id": r.id, "status": r.status,
                                                          "document_id": r.document_id})
     return _dd_out(r)
+
+
+class DDQuestionIn(BaseModel):
+    deal: str
+    question: str
+    request_id: int | None = None
+
+
+class DDQuestionUpdate(BaseModel):
+    answer: str | None = None
+    document_id: str | None = None
+
+
+def _dd_question_out(q: DDQuestion) -> dict:
+    return {"id": q.id, "deal": q.deal, "request_id": q.request_id, "question": q.question, "status": q.status,
+            "answer": q.answer, "document_id": q.document_id, "asked_at": q.asked_at, "answered_at": q.answered_at}
+
+
+@app.post("/dd/questions", status_code=201)
+def dd_question_add(body: DDQuestionIn, db: Db, who: Writer):
+    if not _dd_scope_ok(who, body.deal):
+        raise HTTPException(403, "deal is outside this key's scope")
+    if body.request_id is not None and db.query(DDRequest).filter_by(
+            tenant_id=who.tenant, id=body.request_id, deal=body.deal).first() is None:
+        raise HTTPException(422, "request_id is not on this deal's request list")
+    q = DDQuestion(tenant_id=who.tenant, deal=body.deal, request_id=body.request_id, question=body.question,
+                   asked_at=_now_iso())
+    db.add(q)
+    db.commit()
+    return _dd_question_out(q)
+
+
+@app.get("/dd/questions")
+def dd_question_list(db: Db, who: Who, deal: str | None = None, status: str | None = None):
+    q = db.query(DDQuestion).filter_by(tenant_id=who.tenant)
+    if deal:
+        q = q.filter_by(deal=deal)
+    if status:
+        q = q.filter_by(status=status)
+    return [_dd_question_out(r) for r in q.order_by(DDQuestion.id).all() if _dd_scope_ok(who, r.deal)]
+
+
+@app.patch("/dd/questions/{qid}")
+def dd_question_update(qid: int, body: DDQuestionUpdate, db: Db, who: Writer):
+    q = db.query(DDQuestion).filter_by(tenant_id=who.tenant, id=qid).first()
+    if q is None or not _dd_scope_ok(who, q.deal):
+        raise HTTPException(404, "question not found")
+    if body.document_id is not None:
+        scope = visible_doc_ids(db, who)  # None = unrestricted key
+        doc = db.query(Document).filter_by(tenant_id=who.tenant, id=body.document_id).first()
+        if doc is None or (scope is not None and doc.id not in scope):
+            raise HTTPException(422, "document is not visible to this key")
+    if body.answer is not None:
+        q.answer = body.answer
+        q.status = "answered"
+        q.answered_at = _now_iso()
+    if body.document_id is not None:
+        q.document_id = body.document_id
+    db.commit()
+    return _dd_question_out(q)
 
 
 @app.get("/dd/summary")
