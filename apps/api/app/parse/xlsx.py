@@ -22,30 +22,35 @@ class Sheet:
 
 
 def extract_sheets(path: Path) -> list[Sheet]:
+    """Streams both workbooks in read-only mode: a 100 MB workbook is never held as a full object model.
+    Values and formulas are read as two row streams in step, so a cell's formula is the one in the same
+    position, without random access into the formula sheet."""
     doc_id = hashlib.sha256(path.read_bytes()).hexdigest()
-    values = load_workbook(path, data_only=True, read_only=False)
-    formulas = load_workbook(path, data_only=False, read_only=False)
-    out = []
-    for i, ws in enumerate(values.worksheets, 1):
-        fws = formulas[ws.title]
-        lines = []
-        for row in ws.iter_rows():
-            # Row label: first text cell in the row. Carried on each numeric line so the
-            # quote's page line names the line item (the gate's label check reads it).
-            label = next((str(c.value) for c in row if isinstance(c.value, str) and c.value.strip()), None)
-            for c in row:
-                f = fws[c.coordinate].value
-                is_formula = isinstance(f, str) and f.startswith("=")
-                if c.value is None and not is_formula:
-                    continue
-                suffix = f" [{f}]" if is_formula else ""
-                if c.value is None:  # never silently drop: workbook was saved without calculation
-                    v = "(no cached value)"
-                else:
-                    v = f"{c.value:,}" if isinstance(c.value, (int, float)) else str(c.value)
-                row_note = f" | row: {label}" if label and label != str(c.value) else ""
-                lines.append(f"{ws.title}!{c.coordinate}: {v}{suffix}{row_note}")
-        hidden = ws.sheet_state != "visible"
-        head = f"[hidden sheet: {ws.sheet_state}]\n" if hidden else ""
-        out.append(Sheet(doc_id, i, ws.title, hidden, head + "\n".join(lines)))
-    return out
+    values = load_workbook(path, data_only=True, read_only=True)
+    formulas = load_workbook(path, data_only=False, read_only=True)
+    try:
+        out = []
+        for i, (ws, fws) in enumerate(zip(values.worksheets, formulas.worksheets), 1):
+            lines = []
+            for vrow, frow in zip(ws.iter_rows(min_row=1, min_col=1), fws.iter_rows(min_row=1, min_col=1)):
+                label = next((str(c.value) for c in vrow if isinstance(c.value, str) and c.value.strip()), None)
+                for vc, fc in zip(vrow, frow):
+                    if vc.value is None and fc.value is None:
+                        continue
+                    coord = vc.coordinate
+                    f = fc.value
+                    is_formula = isinstance(f, str) and f.startswith("=")
+                    suffix = f" [{f}]" if is_formula else ""
+                    if vc.value is None:  # never silently drop: workbook was saved without calculation
+                        v = "(no cached value)"
+                    else:
+                        v = f"{vc.value:,}" if isinstance(vc.value, (int, float)) else str(vc.value)
+                    row_note = f" | row: {label}" if label and label != str(vc.value) else ""
+                    lines.append(f"{ws.title}!{coord}: {v}{suffix}{row_note}")
+            hidden = ws.sheet_state != "visible"
+            head = f"[hidden sheet: {ws.sheet_state}]\n" if hidden else ""
+            out.append(Sheet(doc_id, i, ws.title, hidden, head + "\n".join(lines)))
+        return out
+    finally:
+        values.close()
+        formulas.close()
