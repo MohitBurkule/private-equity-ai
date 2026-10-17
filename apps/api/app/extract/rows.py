@@ -21,6 +21,7 @@ from app.extraction_schema import (
     CapTableRow,
     CohortRow,
     ContractTerms,
+    Covenant,
     CustomerShare,
     DebtTranche,
     EbitdaBridgeRow,
@@ -47,6 +48,7 @@ _ROWS = {
     "ebitda_bridge": EbitdaBridgeRow,
     "cohort": CohortRow,
     "debt_schedule": DebtTranche,
+    "covenant": Covenant,
 }
 # Retrieval query per schema: the model sees only the blocks that match, so a 500-page filing does not go in
 # one prompt. Words are the table's own vocabulary, as filings print it.
@@ -57,9 +59,10 @@ _HINTS = {
     "ebitda_bridge": "adjusted EBITDA reconciliation net income add-back non-GAAP adjustments",
     "debt_schedule": "term loan revolving credit facility notes principal lenders interest rate maturity",
     "cohort": "cohort net revenue retention annual recurring revenue churn customers",
+    "covenant": "financial covenant maximum minimum leverage ratio interest coverage not permit to be",
 }
 _TOP_BLOCKS = 12
-_NUMERIC_UNITS = {"shares", "%", "days", "USD", "count"}
+_NUMERIC_UNITS = {"shares", "%", "days", "USD", "count", "x"}
 
 
 @dataclass
@@ -77,6 +80,11 @@ def _facts_for(schema: str, row: BaseModel) -> list[tuple[str, str, str, Decimal
     run's, since one customer table carries several periods."""
     data = row.model_dump()
     out = []
+    if schema == "covenant":
+        # Same metric naming as the credit-agreement path, so a covenant is one fact however it was extracted.
+        bound = "maximum" if data["operator"] == "<=" else "minimum"
+        out.append((data["name"], None, f"covenant {data['metric']} {bound}", Decimal(data["threshold"]), "x"))
+        return out
     if schema == "debt_schedule":
         ent = f"{data['lender']} {data['instrument']}"
         out.append((ent, None, "principal", Decimal(data["principal"]), "USD"))

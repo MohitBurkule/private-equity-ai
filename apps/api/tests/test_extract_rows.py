@@ -188,3 +188,17 @@ def test_debt_schedule_rows_cite_principal_and_rate():
     assert [r["status"] for r in out["rows"]] == ["accepted", "rejected"]
     metrics = sorted(f["metric"] for f in c.get("/facts", headers=h).json() if f["metric"] in ("principal", "rate_pct"))
     assert metrics == ["principal"]
+
+
+def test_covenant_rows_match_credit_agreement_metric_naming():
+    h = new_tenant(c, "rows11")
+    doc = upload(h, {"A1": "Interest Coverage Ratio", "B1": "2.00:1.00"})
+    q = "Sheet!B1: 2.00:1.00 | row: Interest Coverage Ratio"
+    good = {"page": 1, "quote": q,
+            "fields": {"name": "Interest cover", "metric": "interest_cover", "operator": ">=", "threshold": 2.0}}
+    no_number = {"page": 1, "quote": q,
+                 "fields": {"name": "Interest cover", "metric": "interest_cover", "operator": ">=", "threshold": 3.5}}
+    out = run(h, doc, "covenant", [good, no_number])
+    assert [r["status"] for r in out["rows"]] == ["accepted", "rejected"]
+    metrics = [f["metric"] for f in c.get("/facts", headers=h).json() if f["metric"].startswith("covenant ")]
+    assert metrics == ["covenant interest_cover minimum"]
