@@ -97,6 +97,7 @@ from app.auth import (
     revoke_key,
 )
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
+from app.calendar_events import retag_deals
 from app.chat_alerts import chat_poster
 from app.citations import quote_in_page
 from app.comps import EV_METRIC
@@ -1416,6 +1417,7 @@ def deal_create(body: DealIn, db: Db, who: Writer):
              created_by=who.key_id if body.mnpi else None, updated_at=_now_iso())
     db.add(d)
     db.commit()
+    retag_deals(db, who.tenant)  # meetings already stored may name the new deal
     log_event(db, who.tenant, actor(who), "deal.create", {"name": name, "stage": d.stage})
     return _deal_out(db, who, d)
 
@@ -1458,7 +1460,7 @@ class DealNoteIn(BaseModel):
 
 def _note_out(n: DealNote) -> dict:
     return {"id": n.id, "deal": n.deal, "author": n.author, "body": n.body, "created_at": n.created_at,
-            "edited_at": n.edited_at or None}
+            "source_url": n.source_url, "edited_at": n.edited_at or None}
 
 
 @app.get("/deals/{name}/notes")
@@ -1586,6 +1588,7 @@ def checklist_delete(name: str, item_id: int, db: Db, who: Who):
 
 @app.patch("/deals/{name}")
 def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
+    retag_after_alias = False
     d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
     if d is None or not _dd_scope_ok(who, name) or deal_hidden(d, who):
         raise HTTPException(404, "deal not found")
@@ -1606,6 +1609,7 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
         _require(who, "write", "edit deal identifiers", deal=name)
         if body.aliases is not None:
             d.aliases = _aliases_text(body.aliases)
+            retag_after_alias = True
         if body.cik is not None:
             d.cik = _cik(body.cik)
         if body.lei is not None:
@@ -1620,6 +1624,8 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
         d.legal_hold = body.legal_hold
     d.updated_at = _now_iso()
     db.commit()
+    if retag_after_alias:
+        retag_deals(db, who.tenant)  # a new alias can claim meetings already stored
     log_event(db, who.tenant, actor(who), "deal.update", {"name": name, "stage": d.stage, "legal_hold": d.legal_hold})
     return _deal_out(db, who, d)
 
@@ -1639,6 +1645,7 @@ def deal_delete(name: str, db: Db, who: Writer):
     removed = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=name).delete()
     db.delete(d)
     db.commit()
+    retag_deals(db, who.tenant)  # meetings tagged to the deal lose the tag and their note
     log_event(db, who.tenant, actor(who), "deal.delete", {"name": name, "dd_requests_removed": removed})
     return {"deleted": name, "dd_requests_removed": removed}
 
