@@ -38,6 +38,7 @@ from app import companies_house as ch_mod
 from app import comps as comps_mod
 from app import covenant_parse as covparse_mod
 from app import ddq as ddq_mod
+from app import ddq_llm as ddq_llm_mod
 from app import debt_parse as debt_parse_mod
 from app import derived as derived_mod
 from app import firm_knowledge as fk
@@ -1443,7 +1444,10 @@ def ddq_answer(body: DdqIn, who: Who, db: Db):
     accepted = {k: [r for r in rows if visible is None or r["source"]["document_id"] in visible]
                 for k, rows in fk.profile(db, who.tenant).items()}
     qs = [ddq_mod.Question(q.id, q.section, q.text) for q in body.questions]
-    out = ddq_mod.answer(qs, accepted)
+    try:  # retrieval plus the configured local model; word overlap when no model is set up
+        out = ddq_llm_mod.answer(qs, accepted, get_llm())
+    except NoLLMConfigured:
+        out = ddq_mod.answer(qs, accepted)
     log_event(db, who.tenant, actor(who), "ddq.answer", {"questions": len(qs),
               "answered": sum(1 for r in out if r["status"] == "answered")})
     return {"answers": out, "answered": sum(1 for r in out if r["status"] == "answered"),

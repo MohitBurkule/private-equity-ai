@@ -35,3 +35,25 @@ def test_endpoint_counts_and_hides_rules_from_unseen_documents():
     r = c.post("/ddq/answer", headers=h, json={"questions": [
         {"id": "1", "section": "P", "text": "How often do portfolio company boards meet?"}]})
     assert r.status_code == 200 and r.json()["answered"] == 0 and r.json()["unanswered"] == 1
+
+
+class _Pick:
+    def __init__(self, reply):
+        self.reply = reply
+
+    def complete(self, system, prompt):
+        return self.reply
+
+
+def test_model_choice_must_be_a_listed_rule_and_carry_a_quote():
+    from app import ddq_llm
+
+    q = [Question("1", "P", "How often do portfolio company boards meet?")]
+    picked = ddq_llm.answer(q, acc(), _Pick('{"choice": 1, "reason": "board rule"}'))
+    assert picked[0]["status"] == "answered" and picked[0]["answer"] == "quarterly"
+    assert ddq_llm.answer(q, acc(), _Pick('{"choice": null}'))[0]["status"] == "unanswered"
+    assert ddq_llm.answer(q, acc(), _Pick('{"choice": 9}'))[0]["status"] == "unanswered"  # not a listed rule
+    assert ddq_llm.answer(q, acc(), _Pick("not json"))[0]["status"] == "unanswered"
+    no_quote = acc()
+    no_quote["board_meeting_frequency"][0]["source"]["quote"] = ""
+    assert ddq_llm.answer(q, no_quote, _Pick('{"choice": 1}'))[0]["status"] == "unanswered"  # citation gate
