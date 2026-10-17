@@ -268,6 +268,9 @@ export const api2 = {
     return call<{ query: string; people: PersonRow[] }>(`/people?${p}`);
   },
   addPerson: (body: PersonIn) => call<PersonRow>("/people", "POST", body),
+  // A plain link would not send the key, so the research deck is fetched with it and saved from a blob.
+  researchPptxBlob: (targetId: number) => fetch(`/api/targets/${targetId}/research.pptx`, { headers: auth() })
+    .then((r) => { if (!r.ok) throw new Error(`research deck: ${r.status}`); return r.blob(); }),
   emailAttach: (docId: string, deal: string) => call<{ document_id: string; deal: string }>(`/email/review/${encodeURIComponent(docId)}/attach`, "POST", { deal }),
 };
 
