@@ -122,7 +122,7 @@ The router keeps every row with a bbox, at about 0.34 s/page. pdfplumber misses 
 
 ## Table golden set v1, hand-checked (78 rows)
 
-Hand check: each of the 63 text-layer rows was rendered as a tight crop of its row from the cited page and read against the golden label and value. 62 of 63 match. One fails: `tb17` (AMD FY2022, `Net income for diluted earnings per share`, $1,320). The crop is the basic-EPS line, so the golden label is wrong. Row kept, marked `hand_read: false`, to be corrected.
+Hand check: each of the 63 text-layer rows was rendered as a tight crop of its row from the cited page and read against the golden label and value. All 63 match after one fix. `tb17` (AMD FY2022, `Net income for diluted earnings per share`, $1,320) first looked wrong because its crop landed on the basic-EPS line, which carries the same $1,320. Re-rendered on the diluted line, the label and value match, so the golden row was right and the crop was wrong.
 
 Scanned rows: 15 more rows point at image-only copies of the same pages (`data/sec_scan/`, rasterised at 200 dpi, no text layer). These rows were located on the text-layer original but not read on the scan, so they are `hand_read: false`.
 
