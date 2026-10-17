@@ -40,8 +40,8 @@ def test_ddq_batch_flags_unanswered_and_isolates_errors():
         r = c.post("/ddq", headers=h, json={"questions": ["What was revenue?", "boom revenue?", "", "unrelated thing"]})
         assert r.status_code == 200
         items = r.json()["items"]
-        # The xlsx cell quote "Sheet!B1: 1,234" does not name the line item (the label sits in A1), so the
-        # label gate abstains rather than trusting a number whose row is unproven. Safer for diligence answers.
+        # This scripted quote has no row label on its line, so the label gate abstains rather than trust a
+        # number whose row is unproven. Real xlsx lines carry "| row: <label>" (see test_xlsx_labels.py).
         assert [i["status"] for i in items] == ["not_found", "error", "skipped", "not_found"]
         assert [i["needs_human"] for i in items] == [True, True, True, True]
         assert c.post("/ddq", headers=h, json={"questions": []}).status_code == 422
