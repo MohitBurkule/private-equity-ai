@@ -558,6 +558,40 @@ def get_page_image(doc_id: str, number: int, db: Db, who: Who, quote: str = Quer
     return Response(png, media_type="image/png", headers={"X-Quote-Highlighted": "1" if highlighted else "0"})
 
 
+class BulkDealIn(BaseModel):
+    doc_ids: list[str]
+    deal: str | None = None  # None takes the documents off their deal
+
+
+@app.post("/documents/bulk-deal")
+def documents_bulk_deal(body: BulkDealIn, db: Db, who: Writer):
+    """Move many documents to one deal (or off it). Each document is checked on its own: it must be visible to the
+    caller, and the caller must hold write on the deal it leaves and on the deal it joins. A refused document is
+    reported with its reason and the rest still move. Every move is written to the audit trail."""
+    if len(body.doc_ids) > 200:
+        raise HTTPException(422, "too many documents")
+    if body.deal:
+        _visible_deal_or_404(db, who, body.deal)
+    hidden = hidden_deal_names(db, who)
+    acl_hidden = acl_hidden_doc_ids(db, who)
+    moved, refused = [], []
+    for doc_id in body.doc_ids:
+        doc = db.get(Document, doc_id)
+        if not doc_visible(doc, who, hidden) or doc_id in acl_hidden:
+            refused.append({"doc_id": doc_id, "reason": "document not found"})
+            continue
+        if not (who.can("write", doc.deal) and (body.deal is None or who.can("write", body.deal))):
+            refused.append({"doc_id": doc_id, "reason": "needs write on the source and target deal"})
+            continue
+        before = doc.deal
+        doc.deal = body.deal
+        log_event(db, who.tenant, actor(who), "document.bulk_deal",
+                  {"doc_id": doc.id, "from": before, "to": body.deal})
+        moved.append(doc_id)
+    db.commit()
+    return {"moved": moved, "refused": refused}
+
+
 @app.post("/documents/{doc_id}/capital-form/facts", status_code=201)
 def capital_form_facts(doc_id: str, db: Db, who: Writer):
     """Store each readable SH01 allotment as a fact (shares allotted per class and period). Each goes

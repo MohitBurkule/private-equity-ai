@@ -11,6 +11,9 @@ export function Documents() {
   const docs = useLoad<DocumentInfo[]>(api.documents);
   const [libQ, setLibQ] = useState("");
   const [views, setViews] = useState<SavedView[]>(() => loadViews());
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [targetDeal, setTargetDeal] = useState("");
+  const [bulkNote, setBulkNote] = useState("");
   const [left, setLeft] = useState("");
   const [right, setRight] = useState("");
   const [q, setQ] = useState("");
@@ -56,9 +59,28 @@ export function Documents() {
           </div>
         )}
         {docs.data && docs.data.length > 0 && filterDocs(docs.data, libQ).length === 0 && <Empty>No document name matches "{libQ}".</Empty>}
+        {picked.size > 0 && (
+          <div className="flex flex-wrap items-center gap-2 px-4 pt-3 text-sm">
+            <span className="text-mut">{picked.size} selected</span>
+            <Input value={targetDeal} onChange={(e) => setTargetDeal(e.target.value)} placeholder="Deal name (blank = no deal)" aria-label="Target deal" />
+            <Button disabled={busy} onClick={() => void run(async () => {
+              setBusy(true);
+              try {
+                const out = await api.bulkDeal([...picked], targetDeal.trim() || null);
+                setBulkNote(`Moved ${out.moved.length}. Refused ${out.refused.length}${out.refused.length ? `: ${out.refused.map((x) => x.reason).join("; ")}` : ""}.`);
+                setPicked(new Set());
+                docs.reload();
+              } finally { setBusy(false); }
+            })}>Move selected</Button>
+            {bulkNote && <span className="text-mut">{bulkNote}</span>}
+          </div>
+        )}
         <ul className="divide-y divide-line">
           {filterDocs(docs.data ?? [], libQ).map((d) => (
-            <li key={d.id} className="flex items-center gap-3 px-5 py-2.5 text-sm"><span className="min-w-0 flex-1 truncate font-medium">{d.filename}</span>
+            <li key={d.id} className="flex items-center gap-3 px-5 py-2.5 text-sm">
+              <input type="checkbox" aria-label={`Select ${d.filename}`} checked={picked.has(d.id)}
+                onChange={(e) => setPicked((prev) => { const next = new Set(prev); if (e.target.checked) next.add(d.id); else next.delete(d.id); return next; })} />
+              <span className="min-w-0 flex-1 truncate font-medium">{d.filename}</span>
               <span className="tnum text-mut">{d.n_pages} pages</span><SourceChip docId={d.id} page={1} quote="" label="Open" /></li>
           ))}
         </ul>

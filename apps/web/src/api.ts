@@ -1,3 +1,4 @@
+export interface BulkDealOut { moved: string[]; refused: { doc_id: string; reason: string }[] }
 export interface DocumentInfo { id: string; filename: string; n_pages: number; deal?: string | null }
 export interface Hit { document_id: string; page: number; score: number; snippet: string }
 export interface Claim { text: string; document_id: string; page: number; quote: string; reason?: string }
@@ -49,6 +50,12 @@ export const api = {
     }).then((r) => j<AskResult>(r)),
   memo: (entity: string) =>
     fetch(`/api/memo?entity=${encodeURIComponent(entity)}`, { headers: auth() }).then((r) => j<{ markdown: string }>(r)),
+  bulkDeal: (docIds: string[], deal: string | null) =>
+    fetch("/api/documents/bulk-deal", {
+      method: "POST",
+      headers: { ...auth(), "Content-Type": "application/json" },
+      body: JSON.stringify({ doc_ids: docIds, deal }),
+    }).then((r) => j<BulkDealOut>(r)),
 };
 
 export interface FactRow {
