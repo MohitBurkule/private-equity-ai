@@ -47,6 +47,11 @@ services:
         -Dgreenmail.setup.test.imap -Dgreenmail.setup.test.smtp -Dgreenmail.hostname=0.0.0.0
         -Dgreenmail.users=ic@firm.test:app-pass -Dgreenmail.auth.disabled=false
     ports: ["3025:3025", "3143:3143"]
+  wiremock:
+    # Dev-only mock of SaaS HTTP APIs (Graph, Drive, CRM, Slack, Teams). Stubs are posted per test to /__admin.
+    # Point tests at it with WIREMOCK_URL=http://localhost:8089 (see docs/MOCKS.md).
+    image: wiremock/wiremock:3.9.1
+    ports: ["8089:8080"]
 volumes:
   pgdata:
   spool:
