@@ -8,7 +8,9 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.calendar_events import record_events
 from app.connectors.base import Connector
+from app.connectors.calendar import CalendarConnector
 from app.dataroom_check import check_room, parse_required
 from app.ingest import finalize_upload, ingest_any
 from app.models import Alert, DocumentSource
@@ -35,6 +37,8 @@ def sync(db: Session, who, conn: Connector, deal: str | None, limit: int = 50) -
     if out["ingested"]:
         _alert_new_documents(db, who.tenant, conn.name, deal, out["ingested"])
     check_room(db, who.tenant, deal, parse_required(conn.opts.get("required", "")))
+    if isinstance(conn, CalendarConnector):
+        record_events(db, who.tenant, conn.name, conn.last_events)
     return out
 
 

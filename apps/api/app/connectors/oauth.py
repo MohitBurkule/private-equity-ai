@@ -36,7 +36,7 @@ class OAuthConfig:
 
 
 def config_for(name: str) -> OAuthConfig:
-    p = f"OAUTH_{name.upper()}_"
+    p = f"OAUTH_{name.upper().replace('-', '_')}_"
     vals = {k: os.environ.get(p + k, "") for k in ("CLIENT_ID", "CLIENT_SECRET", "AUTH_URL", "TOKEN_URL")}
     if not all(vals.values()):
         raise OAuthError(f"OAuth for {name} is not configured")

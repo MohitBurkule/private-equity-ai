@@ -10,7 +10,7 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app import firm_knowledge as fk
 from app import secfeed
 from app.candidate_verify import ebitda_margin_clause
-from app.models import Alert, DDRequest, Deal, Target
+from app.models import Alert, CalendarEvent, DDRequest, Deal, Target
 from app.portfolio import (
     Covenant,
     PortfolioCompany,
@@ -105,6 +105,29 @@ def cadence_days(text: str) -> int | None:
             return days
     m = re.search(r"(\d+)\s*days?", lower)
     return int(m.group(1)) if m and int(m.group(1)) > 0 else None
+
+
+@register_watcher("board_cadence")
+def board_cadence(db: Session, tenant_id: str) -> list[AlertDraft]:
+    """Portfolio companies whose newest board meeting on a connected calendar is older than the firm's board
+    cadence. Companies with no board meeting on any calendar are not flagged: that is a setup gap."""
+    rule = fk.newest_accepted(db, tenant_id, "board_meeting_cadence")
+    days = cadence_days(rule.value) if rule else None
+    if days is None:
+        return []
+    today = datetime.now(UTC).date()
+    out = []
+    for co in db.query(PortfolioCompany).filter_by(tenant_id=tenant_id):
+        held = [e.starts_at for e in db.query(CalendarEvent).filter_by(tenant_id=tenant_id, company=co.name, board=True)
+                if e.starts_at <= today.isoformat()]
+        if not held:
+            continue
+        age = (today - date.fromisoformat(max(held))).days
+        if age > days:
+            out.append(AlertDraft("board", "warning", f"{co.name}: no board meeting for {age} days (firm cadence {days} days)",
+                                  f"Firm rule (document {rule.document_id}, page {rule.page}): \"{rule.quote}\"",
+                                  f"board_overdue:{co.id}:{_week()}"))
+    return out
 
 
 @register_watcher("kpi_overdue")
