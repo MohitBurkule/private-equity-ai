@@ -66,3 +66,34 @@ def recent_filings(ticker: str, fetch: Fetch = default_fetch) -> list[Filing]:
     if not hit:
         return []
     return parse_submissions(json.loads(fetch(f"https://data.sec.gov/submissions/CIK{hit[0]}.json")))
+
+
+@dataclass(frozen=True)
+class FeedEntry:
+    accession: str
+    form: str
+    filed: str
+    url: str
+
+
+def feed_url(cik: str, count: int = 40) -> str:
+    """EDGAR company atom feed: the newest filings for one CIK, all forms."""
+    return (f"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={int(cik):010d}"
+            f"&type=&dateb=&owner=include&count={count}&output=atom")
+
+
+def parse_atom(xml_text: str, forms: set[str] | None = INTERESTING) -> list[FeedEntry]:
+    """Entries from an EDGAR company atom feed. Each entry carries its archive index URL."""
+    import xml.etree.ElementTree as ET
+    ns = {"a": "http://www.w3.org/2005/Atom"}
+    out = []
+    for e in ET.fromstring(xml_text).findall("a:entry", ns):
+        form = e.find("a:category", ns).get("term", "")
+        if forms is not None and form not in forms:
+            continue
+        acc = e.findtext("a:content/{*}accession-number", default="", namespaces=ns)
+        filed = e.findtext("a:updated", default="", namespaces=ns)[:10]
+        url = e.find("a:link", ns).get("href", "")
+        if acc and url:
+            out.append(FeedEntry(acc, form, filed, url))
+    return out
