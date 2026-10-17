@@ -1,0 +1,44 @@
+# Production stack: API and PostgreSQL only. No mail, mock, IdP or SFTP services, no Redis (rate limiting uses
+# the database, RATE_LIMIT_BACKEND=postgres), and no published database port. Put TLS in front of the API
+# (see docs/DEPLOY.md). Every secret is required from the environment; nothing is defaulted here.
+#
+#   docker compose -f docker-compose.prod.yml --env-file /etc/pe/prod.env up -d
+services:
+  api:
+    build: apps/api
+    restart: unless-stopped
+    ports: ["127.0.0.1:8000:8000"]   # reachable only from the reverse proxy on this host
+    environment:
+      DATABASE_URL: postgresql+psycopg://pe_app:${PE_APP_DB_PASSWORD:?set PE_APP_DB_PASSWORD}@db:5432/pe
+      MIGRATE_DATABASE_URL: postgresql+psycopg://pe_owner:${PE_OWNER_DB_PASSWORD:?set PE_OWNER_DB_PASSWORD}@db:5432/pe
+      APP_DB_ROLE: pe_app
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN}
+      RATE_LIMIT_BACKEND: postgres
+      SPOOL_DIR: /spool
+    volumes:
+      - spool:/spool
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status == 200 else 1)"]
+      interval: 15s
+      retries: 3
+    depends_on:
+      db: {condition: service_healthy}
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pe
+      POSTGRES_PASSWORD: ${PE_SUPERUSER_PASSWORD:?set PE_SUPERUSER_PASSWORD}
+      POSTGRES_DB: pe
+      PE_APP_DB_PASSWORD: ${PE_APP_DB_PASSWORD:?set PE_APP_DB_PASSWORD}
+      PE_OWNER_DB_PASSWORD: ${PE_OWNER_DB_PASSWORD:?set PE_OWNER_DB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pe -d pe"]
+      interval: 5s
+      retries: 12
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/db-init-prod.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+volumes:
+  pgdata:
+  spool:
