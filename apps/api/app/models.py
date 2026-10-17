@@ -378,6 +378,18 @@ class Target(Base):
     web_checked_at: Mapped[str | None] = mapped_column(String(40), default=None)
 
 
+class MemoTemplate(Base):
+    """A firm's own memo layout: which section keys it carries, in order. Built-in templates stay available."""
+    __tablename__ = "memo_template"
+    __table_args__ = (UniqueConstraint("tenant_id", "name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    sections: Mapped[str] = mapped_column(Text)  # JSON list of section keys
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 class MemoVersion(Base):
     """A saved IC memo draft. Stored as the text the reviewer saw, so a later reader sees the same figures and sources."""
     __tablename__ = "memo_version"

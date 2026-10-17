@@ -58,6 +58,7 @@ from app import lp_tone as lp_tone_mod
 from app import lp_waterfall as wf_lp_mod
 from app import marketfeed_facts as marketfeed_facts_mod
 from app import memo_diff as memo_diff_mod
+from app import memo_templates as mt_mod
 from app import notify as notify_mod
 from app import outreach as outreach_mod
 from app import peers as peers_mod
@@ -157,6 +158,7 @@ from app.models import (
     IngestJob,
     LboRun,
     MemoComment,
+    MemoTemplate,
     MemoVersion,
     OutreachItem,
     PageRow,
@@ -1503,11 +1505,46 @@ def memo(entity: str, db: Db, who: Who, peers: str = "", period: str = ""):
     return {"entity": entity, "markdown": build_memo(db, who.tenant, entity, visible_doc_ids(db, who), comps)}
 
 
+class MemoTemplateIn(BaseModel):
+    name: str = Field(min_length=2, max_length=64)
+    sections: list[str] = Field(min_length=1, max_length=8)
+
+
+@app.get("/memo/templates")
+def memo_templates_list(db: Db, who: Who):
+    return {"items": [{"name": k, "sections": v, "built_in": k in TEMPLATES}
+                      for k, v in mt_mod.list_templates(db, who.tenant).items()]}
+
+
+@app.post("/memo/templates", status_code=201)
+def memo_templates_save(body: MemoTemplateIn, db: Db, who: Writer):
+    """The firm's own memo layout. Tenant-wide, so only a whole-tenant key may save one; a built-in name is refused."""
+    if who.restricted:
+        raise HTTPException(403, "memo templates are firm-wide; use an unrestricted key")
+    if body.name in TEMPLATES or not mt_mod.NAME.match(body.name):
+        raise HTTPException(422, "name must be 2-64 lowercase letters, digits, - or _, and not a built-in name")
+    try:
+        keys = mt_mod.validate_sections(body.sections)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    row = db.query(MemoTemplate).filter_by(tenant_id=who.tenant, name=body.name).one_or_none()
+    if row is None:
+        row = MemoTemplate(tenant_id=who.tenant, name=body.name, created_by=actor(who), created_at=_now_iso())
+        db.add(row)
+    row.sections = json.dumps(keys)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "memo.template_saved", {"name": body.name, "sections": keys})
+    return {"name": row.name, "sections": keys}
+
+
 @app.get("/memo/sections")
 def memo_sections(entity: str, db: Db, who: Who, template: str = "ic"):
     """Memo with the sections a named template selects, in its order. Unknown templates are refused."""
-    if template not in TEMPLATES:
-        raise HTTPException(422, f"unknown template; choose one of {sorted(TEMPLATES)}")
+    try:
+        mt_mod.resolve(db, who.tenant, template)
+    except KeyError as e:
+        names = sorted(mt_mod.list_templates(db, who.tenant))
+        raise HTTPException(422, f"unknown template; choose one of {names}") from e
     return {"entity": entity, "template": template,
             "markdown": build_memo_sections(db, who.tenant, entity, template, visible_doc_ids(db, who))}
 
