@@ -34,8 +34,8 @@ def render_digest(alerts: list[Alert]) -> tuple[str, str]:
 
 
 def send_email(to: list[str], subject: str, body: str,
-               attachment: tuple[str, bytes, str] | None = None) -> None:
-    """attachment is (filename, bytes, mime type). Callers check the recipients."""
+               attachments: list[tuple[str, bytes, str]] = ()) -> None:
+    """Each attachment is (filename, bytes, mime type). Callers check the recipients."""
     host = os.environ.get("SMTP_HOST")
     if not host:
         raise MailNotConfigured("set SMTP_HOST (and SMTP_PORT, SMTP_USER, SMTP_PASSWORD, ALERT_EMAIL_FROM)")
@@ -43,8 +43,7 @@ def send_email(to: list[str], subject: str, body: str,
     msg["Subject"], msg["To"] = subject, ", ".join(to)
     msg["From"] = os.environ.get("ALERT_EMAIL_FROM", "alerts@localhost")
     msg.set_content(body)
-    if attachment:
-        name, data, mime = attachment
+    for name, data, mime in attachments:
         maintype, subtype = mime.split("/", 1)
         msg.add_attachment(data, maintype=maintype, subtype=subtype, filename=name)
     with smtplib.SMTP(host, int(os.environ.get("SMTP_PORT", "587")), timeout=20) as s:
