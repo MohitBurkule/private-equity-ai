@@ -225,6 +225,8 @@ class Deal(Base):
     legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Material non-public information: visible only to keys scoped to this deal by name.
     mnpi: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Same SIC code as portfolio companies, so precedents compare like with like.
+    sic: Mapped[str | None] = mapped_column(String(8), default=None)
     # Key id that flagged the deal MNPI; that key keeps access so its creator is not locked out.
     created_by: Mapped[str | None] = mapped_column(String(64), default=None)
     updated_at: Mapped[str] = mapped_column(String(40), default="")
