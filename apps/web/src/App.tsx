@@ -30,6 +30,7 @@ import { People } from "./People";
 import { ResearchDeck } from "./ResearchDeck";
 import { DocumentAccess } from "./DocumentAccess";
 import { BudgetVsActual } from "./BudgetVsActual";
+import { RollForward } from "./RollForward";
 import { SourceProvider } from "./source";
 import { Button, Card } from "./ui";
 import clsx from "clsx";
@@ -54,6 +55,7 @@ const NAV: { id: string; icon: ReactNode }[] = [
   { id: "Research deck", icon: <FileText size={16} /> },
   { id: "Document access", icon: <ShieldCheck size={16} /> },
   { id: "Budget vs actual", icon: <Calculator size={16} /> },
+  { id: "Roll-forward", icon: <Calculator size={16} /> },
   { id: "Sourcing", icon: <Map size={16} /> },
   { id: "Candidates", icon: <Briefcase size={16} /> },
   { id: "Dashboards", icon: <BarChart3 size={16} /> },
@@ -157,6 +159,7 @@ export function App() {
         {tab === "Research deck" && <ResearchDeck />}
         {tab === "Document access" && <DocumentAccess />}
         {tab === "Budget vs actual" && <BudgetVsActual />}
+        {tab === "Roll-forward" && <RollForward />}
         {tab === "MNPI wall" && <MnpiWall />}
         {tab === "IC review" && <IcReview />}
         {tab === "Sourcing" && <Sourcing />}
