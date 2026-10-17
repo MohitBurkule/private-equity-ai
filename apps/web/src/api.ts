@@ -85,7 +85,11 @@ export interface Conflict {
   sources: ConflictSource[];
 }
 export type ConnectorState = "connected" | "needs_key" | "stubbed";
-export interface Connector { name: string; label: string; category: string; auth: string; status: "live" | "planned"; state: ConnectorState; detail: string }
+export type ConnectorHealth = "never_run" | "ok" | "error";
+export interface Connector {
+  name: string; label: string; category: string; auth: string; status: "live" | "planned"; state: ConnectorState; detail: string;
+  health?: ConnectorHealth; last_run?: string | null; last_status?: string | null;
+}
 export interface CompsOut {
   target: string; period: string;
   peers: { entity: string; multiples: Record<string, string | null> }[];

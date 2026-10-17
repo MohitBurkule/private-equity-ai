@@ -78,6 +78,6 @@ def catalog() -> list[dict]:
 def connection_health(row) -> dict:
     """Last run of a saved connection: never run, ok, or error with the message it stored."""
     if row.last_run is None:
-        return {"health": "never_run", "last_run": None, "detail": "not synced yet"}
+        return {"health": "never_run", "last_run": None, "last_status": None}
     state = "ok" if (row.last_status or "").startswith("ok") else "error"
-    return {"health": state, "last_run": row.last_run, "detail": row.last_status or ""}
+    return {"health": state, "last_run": row.last_run, "last_status": row.last_status or ""}
