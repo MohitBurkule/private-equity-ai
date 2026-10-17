@@ -23,6 +23,7 @@ class PortfolioCompany(Base):
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     name: Mapped[str] = mapped_column(String(256))
     sector: Mapped[str | None] = mapped_column(String(128), default=None)
+    sic: Mapped[str | None] = mapped_column(String(8), default=None)  # SIC code; add-on search matches on it too
     ownership_pct: Mapped[Decimal | None] = mapped_column(Numeric(7, 4), default=None)
 
 
