@@ -130,7 +130,7 @@ def _execute(db: Session, w: WorkflowSchedule, scope: set[str] | None) -> dict:
 
 
 def run_due(db: Session, tenant: str, scope: set[str] | None, mailer: Mailer | None = None,
-            now: datetime | None = None) -> list[dict]:
+            now: datetime | None = None, chat: Callable[[str], None] | None = None) -> list[dict]:
     now = now or _now()
     out = []
     due = (db.query(WorkflowSchedule).filter_by(tenant_id=tenant, active=1)
@@ -143,6 +143,8 @@ def run_due(db: Session, tenant: str, scope: set[str] | None, mailer: Mailer | N
             quiet_when_empty = w.kind in ("alert_digest", "candidate_watch", "daily_brief")
             if mailer and w.recipients and (not quiet_when_empty or result["alerts"]):
                 mailer(w.recipients.split(","), f"[{w.name}] scheduled update", body)  # no mail for an empty digest
+            if chat and w.kind == "alert_digest" and result["alerts"]:
+                chat(f"[{w.name}] {body}")  # same empty-digest rule as mail: silent when nothing new
         except Exception as e:  # noqa: BLE001  recorded, never raised: one bad schedule must not stop the others
             w.last_status, w.last_result = "failed", f"{type(e).__name__}: {e}"
         w.last_run = _iso(now)

@@ -36,3 +36,41 @@ def extract(pages: list[tuple[int, str]]) -> list[dict]:
                 "maturity_terms": [m.group(1) for m in _MATURITY.finditer(s)],
             })
     return out
+
+
+# The pricing grid is printed as one row per level: "<level> <leverage test> <Term SOFR %> <Base Rate %>".
+# Percentages are kept as printed (1.25 means 1.25%), so every stored value appears verbatim in its quote.
+_GRID_ROW = re.compile(
+    r"(?<![\d.])(\d)\s+([<>≤≥]=?\s?\d+\.\d+:1\.00)\s+(\d+(?:\.\d+)?)\s?%\s+(\d+(?:\.\d+)?)\s?%"
+)
+_MATURITY_CLAUSE = re.compile(r"Maturity Date\s*”?\s*means[^;]{0,160}")
+
+
+def margin_grid(pages: list[tuple[int, str]]) -> list[dict]:
+    """Term SOFR margin per pricing level, from a printed Applicable Margin table. Only rows that are
+    complete (level, leverage test, SOFR %, base rate %) are returned."""
+    out = []
+    for num, text in pages:
+        flat = re.sub(r"\s+", " ", text)
+        for m in _GRID_ROW.finditer(flat):
+            out.append({
+                "level": int(m.group(1)),
+                "leverage_test": m.group(2).replace(" ", ""),
+                "sofr_pct": Decimal(m.group(3)),
+                "base_pct": Decimal(m.group(4)),
+                "page": num,
+                "quote": m.group(0),
+            })
+    return out
+
+
+def maturity_clauses(pages: list[tuple[int, str]]) -> list[dict]:
+    """The sentence that defines the maturity date, cited. The tenor is returned as written (for example
+    "three years after the Closing Date"), not converted to a calendar date, since the closing date is not
+    stated in the clause."""
+    out = []
+    for num, text in pages:
+        flat = re.sub(r"\s+", " ", text)
+        for m in _MATURITY_CLAUSE.finditer(flat):
+            out.append({"text": m.group(0).strip(), "page": num, "quote": m.group(0).strip()})
+    return out

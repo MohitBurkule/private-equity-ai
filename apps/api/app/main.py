@@ -68,6 +68,7 @@ from app.auth import (
     revoke_key,
 )
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
+from app.chat_alerts import chat_poster
 from app.connectors import oauth, vault
 from app.connectors.base import ConnectorError, default_http
 from app.connectors.gsheets import GoogleSheets
@@ -414,6 +415,10 @@ def credit_agreement_facts(doc_id: str, db: Db, who: Writer):
         candidates.append((f"covenant {c['kpi_metric']} {word}", "x", Decimal(c["threshold"]), c["page"], c["quote"]))
     for t in debt_parse_mod.extract(pages):
         candidates.append((f"facility amount {t['facility']}", "USD", t["amount"], t["page"], t["quote"]))
+    for g in debt_parse_mod.margin_grid(pages):
+        tier = f"level {g['level']} ({g['leverage_test']})"
+        candidates.append((f"Term SOFR margin {tier}", "%", Decimal(g["sofr_pct"]), g["page"], g["quote"]))
+        candidates.append((f"Base Rate margin {tier}", "%", Decimal(g["base_pct"]), g["page"], g["quote"]))
     created, skipped, seen = [], [], set()
     for metric, unit, value, page, quote in candidates:
         if (metric, value, page, quote) in seen:
@@ -427,7 +432,8 @@ def credit_agreement_facts(doc_id: str, db: Db, who: Writer):
             continue
         created.append(fact.id)
     log_event(db, who.tenant, actor(who), "credit_agreement.facts", {"document_id": doc.id, "created": created})
-    return {"created": created, "skipped": skipped}
+    # Maturity is a defined tenor, not a number, so it is returned cited and not stored as a fact.
+    return {"created": created, "skipped": skipped, "maturity_clauses": debt_parse_mod.maturity_clauses(pages)}
 
 
 @lru_cache(maxsize=4)
@@ -1644,7 +1650,7 @@ def workflow_delete(wid: int, db: Db, who: Writer):
 @app.post("/workflows/run-due")
 def workflow_run_due(db: Db, who: Writer):
     """Run every due schedule of this tenant now. Call from cron; emails when SMTP_HOST is set."""
-    runs = wf_mod.run_due(db, who.tenant, visible_doc_ids(db, who), wf_mod.smtp_mailer())
+    runs = wf_mod.run_due(db, who.tenant, visible_doc_ids(db, who), wf_mod.smtp_mailer(), chat=chat_poster())
     log_event(db, who.tenant, actor(who), "workflow.run_due", {"ran": len(runs)})
     return runs
 
