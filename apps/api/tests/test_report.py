@@ -37,4 +37,4 @@ def test_report_docx_and_isolation_and_wall():
     text = "\n".join(p.text for p in Docx(io.BytesIO(res.content)).paragraphs)
     assert "BREACH" in text and "net_leverage_x Q2" in text
     other = new_tenant(c, "rp3")
-    assert c.get("/portfolio/report", headers=other).json() == {"companies": [], "breaches": []}
+    assert c.get("/portfolio/report", headers=other).json() == {"companies": [], "breaches": [], "rules": []}

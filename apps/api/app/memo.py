@@ -12,6 +12,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy.orm import Session
 
 from app.acl import fact_visible
+from app.firm_knowledge import applied_rules
 from app.models import Document, Fact
 
 
@@ -34,6 +35,7 @@ class Memo:
     lines: list[str] = field(default_factory=list)  # bullet text, includes [n] markers
     derived: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)  # footnote texts, index = marker - 1
+    rules: list[dict] = field(default_factory=list)  # accepted firm rules this draft applies, each quoted
 
     @property
     def empty(self) -> bool:
@@ -60,17 +62,24 @@ def build_memo_data(db: Session, tenant_id: str, entity: str, scope: set[str] | 
             if rev.value and rev.unit == f.unit:
                 memo.derived.append(f"net margin ({period}): {_fmt(f.value / rev.value * 100)}% "
                                     f"= net_income / revenue, computed from cited facts")
+    memo.rules = applied_rules(db, tenant_id, scope)
     return memo
+
+
+def _rule_line(r: dict) -> str:
+    return f'{r["label"]}: {r["value"]} [{r["source"]["document_id"][:8]} p.{r["source"]["page"]}: "{r["source"]["quote"].strip()}"]'
 
 
 def build_memo(db: Session, tenant_id: str, entity: str, scope: set[str] | None = None) -> str:
     m = build_memo_data(db, tenant_id, entity, scope)
-    if m.empty:
+    if m.empty and not m.rules:
         return f"# {entity}\n\nNo verified facts available. Nothing to report.\n"
     out = [f"# {entity}: financial summary (draft, analyst review required)", ""]
     out += [f"- {ln}" for ln in m.lines]
     if m.derived:
         out += ["", "Derived (computed in code):", *[f"- {d}" for d in m.derived]]
+    if m.rules:
+        out += ["", "Firm rules applied (accepted, quoted):", *[f"- {_rule_line(r)}" for r in m.rules]]
     return "\n".join([*out, "", "Sources:", *m.notes]) + "\n"
 
 
@@ -89,6 +98,10 @@ def build_memo_docx(db: Session, tenant_id: str, entity: str, scope: set[str] | 
         d.add_heading("Derived (computed in code)", level=2)
         for ln in m.derived:
             d.add_paragraph(ln, style="List Bullet")
+    if m.rules:
+        d.add_heading("Firm rules applied", level=2)
+        for r in m.rules:
+            d.add_paragraph(_rule_line(r), style="List Bullet")
     if m.notes:
         d.add_heading("Sources", level=2)
         for n in m.notes:
@@ -123,6 +136,8 @@ def build_memo_pptx(db: Session, tenant_id: str, entity: str, scope: set[str] | 
         bullets("No verified facts", ["Nothing to report."])
     for i in range(0, len(m.lines), 8):
         bullets("Figures" + (f" ({i // 8 + 1})" if len(m.lines) > 8 else ""), m.lines[i:i + 8])
+    if m.rules:
+        bullets("Firm rules applied", [_rule_line(r) for r in m.rules], size=12)
     if m.derived:
         bullets("Derived (computed in code)", m.derived)
     for i in range(0, len(m.notes), 6):

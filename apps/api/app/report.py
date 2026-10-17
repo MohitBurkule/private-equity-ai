@@ -10,6 +10,7 @@ import io
 from sqlalchemy.orm import Session
 
 from app.acl import fact_visible
+from app.firm_knowledge import applied_rules
 from app.models import Fact
 from app.portfolio import Covenant, PortfolioCompany, current_kpis, evaluate_covenant
 
@@ -40,7 +41,7 @@ def build_report(db: Session, tenant_id: str, scope: set[str] | None = None) -> 
         companies.append({"id": co.id, "name": co.name, "sector": co.sector,
                           "ownership_pct": None if co.ownership_pct is None else str(co.ownership_pct),
                           "kpis": kpis, "covenants": covs})
-    return {"companies": companies, "breaches": breaches}
+    return {"companies": companies, "breaches": breaches, "rules": applied_rules(db, tenant_id, scope)}
 
 
 def _cite(sources: list[dict]) -> str:
@@ -65,6 +66,12 @@ def build_report_docx(db: Session, tenant_id: str, scope: set[str] | None = None
             d.add_paragraph("No visible KPI observations.")
         for k in co["kpis"]:
             d.add_paragraph(f"{k['metric']} {k['period']}: {k['value']} {k['unit']} ({_cite(k['sources'])})",
+                            style="List Bullet")
+    if r["rules"]:
+        d.add_heading("Firm rules applied", level=2)
+        for ru in r["rules"]:
+            q = ru["source"]
+            d.add_paragraph(f"{ru['label']}: {ru['value']} (doc {q['document_id'][:8]} p.{q['page']}: \"{q['quote'].strip()}\")",
                             style="List Bullet")
     buf = io.BytesIO()
     d.save(buf)
