@@ -532,6 +532,7 @@ class Alert(Base):
     status: Mapped[str] = mapped_column(String(16), default="new", server_default="new")
     created_at: Mapped[str] = mapped_column(String(40), default="")
     emailed_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    deal: Mapped[str | None] = mapped_column(String(128), default=None, index=True)  # set when the alert is about a deal
 
 
 class DealLink(Base):
