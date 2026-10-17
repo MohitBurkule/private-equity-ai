@@ -102,6 +102,27 @@ def format_deal_roles(deal_roles: dict[str, str] | None, deals: list[str] | None
     return ",".join(f"{d}:{r}" for d, r in sorted(deal_roles.items()))
 
 
+def parse_wall(raw: str | None) -> tuple[str, ...]:
+    """A deal's wall: sorted, lowercased grants. Stored as JSON so an identity may hold any character."""
+    return tuple(sorted(set(json.loads(raw)))) if raw else ()
+
+
+def format_wall(grants: list[str]) -> str | None:
+    """Normalise and store a wall. Empty means no wall (null)."""
+    clean = sorted({g.strip().lower() for g in grants if g and g.strip()})
+    return json.dumps(clean) if clean else None
+
+
+def wall_hides(d: Deal, p: Principal) -> bool:
+    """True when this deal's ethical wall names one of the principal's identity or groups."""
+    return bool(d.wall) and not set(parse_wall(d.wall)).isdisjoint(principal_grants(p))
+
+
+def _walled_deal_names(db: Session, p: Principal) -> frozenset[str]:
+    return frozenset(d.name for d in db.query(Deal).filter(Deal.tenant_id == p.tenant, Deal.wall.isnot(None))
+                     if wall_hides(d, p))
+
+
 def visible_doc_ids(db: Session, p: Principal) -> set[str] | None:
     """None means unrestricted. Otherwise the set of document ids this principal may see: the deal wall, minus the
     documents whose source access list does not name this principal."""
@@ -145,16 +166,16 @@ def format_groups(groups: list[str] | None) -> str | None:
 
 
 def _deal_visible_doc_ids(db: Session, p: Principal) -> set[str] | None:
+    hidden = hidden_deal_names(db, p)
     if p.deals is None:
-        hidden = hidden_deal_names(db, p)
         if not hidden:
             return None
         return {d.id for d in db.query(Document).filter(Document.tenant_id == p.tenant,
                                                           Document.deal.is_(None) | Document.deal.notin_(hidden))}
-    if not p.deals:
+    names = set(p.deals) - hidden
+    if not names:
         return set()
-    return {d.id for d in db.query(Document).filter(Document.tenant_id == p.tenant,
-                                                      Document.deal.in_(p.deals))}
+    return {d.id for d in db.query(Document).filter(Document.tenant_id == p.tenant, Document.deal.in_(names))}
 
 
 def doc_visible(doc: Document | None, p: Principal, hidden: frozenset[str] = frozenset()) -> bool:
@@ -171,12 +192,17 @@ def _may_see_mnpi(d: Deal, p: Principal) -> bool:
     return (p.deals is not None and d.name in p.deals) or bool(p.key_id and d.created_by == p.key_id)
 
 
-def hidden_deal_names(db: Session, p: Principal) -> frozenset[str]:
+def _mnpi_hidden_names(db: Session, p: Principal) -> frozenset[str]:
     return frozenset(d.name for d in _mnpi_deals(db, p.tenant) if not _may_see_mnpi(d, p))
 
 
+def hidden_deal_names(db: Session, p: Principal) -> frozenset[str]:
+    """Deals this principal may not see: MNPI deals outside their scope, and deals walled against them."""
+    return _mnpi_hidden_names(db, p) | _walled_deal_names(db, p)
+
+
 def deal_hidden(d: Deal, p: Principal) -> bool:
-    return d.mnpi and not _may_see_mnpi(d, p)
+    return (d.mnpi and not _may_see_mnpi(d, p)) or wall_hides(d, p)
 
 
 def deal_scope(db: Session, p: Principal) -> set[str] | None:
@@ -196,11 +222,11 @@ def mnpi_name_conflict(db: Session, p: Principal, name: str) -> bool:
     from app.seen_before import normalise
 
     target = normalise(name)
-    return any(normalise(h) == target for h in hidden_deal_names(db, p))
+    return any(normalise(h) == target for h in _mnpi_hidden_names(db, p))
 
 
 def visible_mnpi_deal_names(db: Session, p: Principal) -> list[str]:
-    return sorted(d.name for d in _mnpi_deals(db, p.tenant) if _may_see_mnpi(d, p))
+    return sorted(d.name for d in _mnpi_deals(db, p.tenant) if _may_see_mnpi(d, p) and not wall_hides(d, p))
 
 
 def fact_visible(fact: Fact, scope: set[str] | None) -> bool:
