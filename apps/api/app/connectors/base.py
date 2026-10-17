@@ -20,7 +20,9 @@ def default_http(url: str, headers: dict[str, str]) -> bytes:
         raise ValueError("connectors only call https URLs")
     headers = dict(headers)
     body = headers.pop("X-Post-Body", None)  # POST-only APIs (Dropbox): see connectors/files.py
-    req = urllib.request.Request(url, headers=headers, data=body.encode() if body is not None else None)
+    method = headers.pop("X-Method", None)  # PATCH/PUT writes (CRM stage sync): see connectors/crm.py
+    req = urllib.request.Request(url, headers=headers, method=method,
+                                 data=body.encode() if body is not None else None)
     with urllib.request.urlopen(req, timeout=30) as r:
         return r.read()
 

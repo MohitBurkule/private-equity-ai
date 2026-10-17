@@ -7,6 +7,7 @@ import base64
 import csv
 import hashlib
 import io
+import json
 from collections.abc import Iterator
 from typing import ClassVar
 
@@ -72,6 +73,18 @@ class Salesforce(CrmConnector):
     def home_url(self, obj):
         return f"{self._base()}/lightning/o/{obj}/list"
 
+    def fetch_stages(self, limit: int) -> list[dict]:
+        from urllib.parse import quote
+        q = quote(f"SELECT Id,Name,StageName FROM Opportunity LIMIT {limit}")
+        records = self._get_json(f"{self._base()}/services/data/v60.0/query?q={q}").get("records", [])
+        return [{"id": r["Id"], "name": r.get("Name") or "", "stage": r.get("StageName") or ""} for r in records]
+
+    def push_stage(self, ext_id: str, stage: str) -> None:
+        from urllib.parse import quote
+        url = f"{self._base()}/services/data/v60.0/sobjects/Opportunity/{quote(ext_id, safe='')}"
+        self.http(url, {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json",
+                        "X-Method": "PATCH", "X-Post-Body": json.dumps({"StageName": stage})})
+
 
 class HubSpot(CrmConnector):
     name, label = "hubspot", "HubSpot"
@@ -120,6 +133,21 @@ class DealCloud(CrmConnector):
 
     def home_url(self, obj):
         return f"https://{self._site()}/#/{obj}"
+
+    def _stage_object(self) -> str:
+        return self.opts.get("stage_object") or self.opts.get("objects", "").split(",")[0].strip()
+
+    def fetch_stages(self, limit: int) -> list[dict]:
+        """opts: stage_object (entry type api name), stage_field (default 'stage'), name_field (default 'name')."""
+        obj, stage, name = self._stage_object(), self.opts.get("stage_field", "stage"), self.opts.get("name_field", "name")
+        rows = self.fetch_rows(obj, limit)
+        return [{"id": str(r["id"]), "name": str(r.get(name) or ""), "stage": str(r.get(stage) or "")} for r in rows]
+
+    def push_stage(self, ext_id: str, stage: str) -> None:
+        field = self.opts.get("stage_field", "stage")
+        url = f"https://{self._site()}/api/rest/v4/data/entrydata/rows/{self._stage_object()}"
+        self.http(url, {"Authorization": f"Bearer {self.token}", "Content-Type": "application/json",
+                        "X-Method": "PUT", "X-Post-Body": json.dumps([{"id": ext_id, field: stage}])})
 
     def items(self, limit: int = 50):
         if not self.opts.get("objects"):

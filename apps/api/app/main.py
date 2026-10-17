@@ -135,6 +135,7 @@ from app.report import build_report, build_report_docx
 from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
 from app.shareledger import Event as LedgerEvent
 from app.shareledger import reconcile as reconcile_shares
+from app.stage_sync import stage_sync as run_stage_sync
 from app.sumcheck import sum_check
 from app.tracing import render_metrics, tracing_middleware
 from app.waterfall import PrefClass, waterfall
@@ -187,14 +188,16 @@ def get_tenant(p: Who) -> str:
 
 
 def writer(p: Who) -> Principal:
-    if not p.can_write:
+    if not p.can_anywhere("write"):
         raise HTTPException(403, "role is read-only")
     return p
 
 
-def _require(p: Principal, capability: str, what: str) -> None:
-    if not p.can(capability):
-        raise HTTPException(403, f"role {p.role} cannot {what}")
+def _require(p: Principal, capability: str, what: str, deal: str | None = None) -> None:
+    """Checks the key's role, or the role it holds on `deal` when one is given. Routes that take a deal name
+    pass it, so a per-deal override applies to that deal only."""
+    if not p.can(capability, deal):
+        raise HTTPException(403, f"role {p.role_on(deal)} cannot {what}")
 
 
 Writer = Annotated[Principal, Depends(writer)]
@@ -234,6 +237,7 @@ def admin_create_tenant(body: TenantIn, db: Db, x_admin_token: Annotated[str | N
 class KeyIn(BaseModel):
     role: str = "analyst"
     deals: list[str] | None = None  # None = unrestricted; [] = sees nothing
+    deal_roles: dict[str, str] | None = None  # per-deal role overrides, e.g. {"atlas": "partner"}
 
 
 @app.post("/admin/tenants/{tenant_id}/keys", status_code=201)
@@ -244,10 +248,11 @@ def admin_add_key(tenant_id: str, db: Db, body: KeyIn | None = None, x_admin_tok
         raise HTTPException(404, "tenant not found")
     body = body or KeyIn()
     try:
-        kid, key = add_key(db, tenant_id, body.role, body.deals)
+        kid, key = add_key(db, tenant_id, body.role, body.deals, body.deal_roles)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
-    return {"key_id": kid, "role": body.role, "deals": body.deals, "api_key": key, "note": "store this key now; it is not shown again"}
+    return {"key_id": kid, "role": body.role, "deals": body.deals, "deal_roles": body.deal_roles, "api_key": key,
+            "note": "store this key now; it is not shown again"}
 
 
 @app.delete("/admin/keys/{kid}")
@@ -260,12 +265,13 @@ def admin_revoke_key(kid: str, db: Db, x_admin_token: Annotated[str | None, Head
 
 
 @app.post("/documents")
-async def upload(file: Annotated[UploadFile, File()], db: Db, who: Writer,
+async def upload(file: Annotated[UploadFile, File()], db: Db, who: Who,
                  deal: Annotated[str | None, Form()] = None):
     tenant = who.tenant
     deal = (deal or "").strip() or None
     if who.restricted and deal not in who.deals:
         raise HTTPException(403, "deal is required and must be within this key's scope")
+    _require(who, "upload", "upload documents", deal=deal)
     data = await file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
@@ -287,12 +293,13 @@ async def upload(file: Annotated[UploadFile, File()], db: Db, who: Writer,
 
 
 @app.post("/documents/async", status_code=202)
-async def upload_async(file: Annotated[UploadFile, File()], db: Db, who: Writer,
+async def upload_async(file: Annotated[UploadFile, File()], db: Db, who: Who,
                        deal: Annotated[str | None, Form()] = None):
     """Same rules as /documents, but parsing happens in the background. Poll GET /jobs/{id}."""
     deal = (deal or "").strip() or None
     if who.restricted and deal not in who.deals:
         raise HTTPException(403, "deal is required and must be within this key's scope")
+    _require(who, "upload", "upload documents", deal=deal)
     data = await file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
@@ -537,7 +544,8 @@ def _fact_out(f: Fact) -> dict:
     return {"id": f.id, "entity": f.entity, "metric": f.metric, "period": f.period, "value": str(f.value),
             "unit": f.unit, "basis": f.basis, "status": f.status, "reviewed_by": f.reviewed_by,
             "reviewed_at": f.reviewed_at, "review_note": f.review_note,
-            "sources": [{"document_id": s.document_id, "page": s.page, "quote": s.quote} for s in f.sources]}
+            "sources": [{"document_id": s.document_id, "page": s.page, "section": s.section, "heading": s.heading,
+                         "quote": s.quote} for s in f.sources]}
 
 
 @app.get("/facts")
@@ -582,8 +590,9 @@ def _calc_out(c: Calc) -> dict:
             "unit": c.unit, "formula": c.formula, "missing": c.missing, "problems": c.problems,
             "inputs": [{"role": i.role, "sign": i.sign, "fact_id": i.fact.id, "metric": i.fact.metric,
                         "period": i.fact.period, "value": str(i.fact.value), "unit": i.fact.unit,
-                        "sources": [{"document_id": s.document_id, "page": s.page, "quote": s.quote}
-                                    for s in i.fact.sources]} for i in c.inputs]}
+                        "sources": [{"document_id": s.document_id, "page": s.page, "section": s.section,
+                                     "heading": s.heading, "quote": s.quote} for s in i.fact.sources]}
+                       for i in c.inputs]}
 
 
 @app.get("/facts/conflicts")
@@ -857,8 +866,9 @@ def checklist_list(name: str, db: Db, who: Who):
 
 
 @app.post("/deals/{name}/checklist", status_code=201)
-def checklist_add(name: str, body: ChecklistIn, db: Db, who: Writer):
+def checklist_add(name: str, body: ChecklistIn, db: Db, who: Who):
     _visible_deal_or_404(db, who, name)
+    _require(who, "write", "edit the checklist", deal=name)
     r = DealChecklistItem(tenant_id=who.tenant, deal=name, title=body.title.strip(), done=False, updated_at=_now_iso())
     db.add(r)
     db.commit()
@@ -867,7 +877,7 @@ def checklist_add(name: str, body: ChecklistIn, db: Db, who: Writer):
 
 
 @app.patch("/deals/{name}/checklist/{item_id}")
-def checklist_update(name: str, item_id: int, body: ChecklistUpdate, db: Db, who: Writer):
+def checklist_update(name: str, item_id: int, body: ChecklistUpdate, db: Db, who: Who):
     _visible_deal_or_404(db, who, name)
     r = db.query(DealChecklistItem).filter_by(tenant_id=who.tenant, deal=name, id=item_id).first()
     if r is None:
@@ -883,7 +893,7 @@ def checklist_update(name: str, item_id: int, body: ChecklistUpdate, db: Db, who
 
 
 @app.delete("/deals/{name}/checklist/{item_id}", status_code=204)
-def checklist_delete(name: str, item_id: int, db: Db, who: Writer):
+def checklist_delete(name: str, item_id: int, db: Db, who: Who):
     _visible_deal_or_404(db, who, name)
     r = db.query(DealChecklistItem).filter_by(tenant_id=who.tenant, deal=name, id=item_id).first()
     if r is None:
@@ -900,11 +910,11 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
         raise HTTPException(404, "deal not found")
     # Compliance may hold and flag a deal without being able to change its analysis.
     if body.stage is not None or body.note is not None:
-        _require(who, "write", "edit deal stage or notes")
+        _require(who, "write", "edit deal stage or notes", deal=name)
     if body.legal_hold is not None:
-        _require(who, "govern", "change a legal hold")
+        _require(who, "govern", "change a legal hold", deal=name)
     if body.mnpi is not None:
-        _require(who, "govern", "change the MNPI flag")
+        _require(who, "govern", "change the MNPI flag", deal=name)
         d.mnpi = body.mnpi
         if body.mnpi and d.created_by is None:
             d.created_by = who.key_id or None
@@ -929,7 +939,7 @@ def deal_delete(name: str, db: Db, who: Writer):
         raise HTTPException(404, "deal not found")
     # Holds and linked documents are refused rather than cascaded: deleting evidence the team
     # still relies on is the one step here that cannot be walked back.
-    _require(who, "govern", "delete deals")
+    _require(who, "govern", "delete deals", deal=name)
     if d.legal_hold:
         raise HTTPException(409, "deal is under legal hold")
     if db.query(Document).filter_by(tenant_id=who.tenant, deal=name).first():
@@ -2255,6 +2265,22 @@ def sync_connector(name: str, body: SyncBody, db: Db, who: Writer):
         raise HTTPException(502, f"connector failed: {e}") from e
     log_event(db, who.tenant, actor(who), "connector.sync",
               {"connector": name, "deal": body.deal, "ingested": len(out["ingested"])})
+    return out
+
+
+@app.post("/connectors/{name}/stage-sync")
+def stage_sync_connector(name: str, body: SyncBody, db: Db, who: Writer):
+    """Two-way deal-stage sync with a CRM. Unrestricted keys only: it reads and writes stages across deals."""
+    _unrestricted(who)
+    cls = IMPLEMENTED.get(name)
+    if cls is None:
+        raise HTTPException(404, "connector not implemented")
+    try:
+        conn = cls(body.token, CONNECTOR_HTTP, **body.options)
+        out = run_stage_sync(db, who.tenant, conn, max(1, min(body.limit, 500)))
+    except (ConnectorError, ValueError, OSError) as e:
+        raise HTTPException(502, f"stage sync failed: {e}") from e
+    log_event(db, who.tenant, actor(who), "connector.stage_sync", {"connector": name, **out})
     return out
 
 

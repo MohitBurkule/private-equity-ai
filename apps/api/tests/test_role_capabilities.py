@@ -49,3 +49,49 @@ def test_ir_is_read_only():
     ir = _key("ir")
     assert c.get("/deals", headers=ir).status_code == 200
     assert c.post("/deals", headers=ir, json={"name": "IR"}).status_code == 403
+
+
+def test_per_deal_role_overrides_apply_to_that_deal_only():
+    from app.acl import Principal, parse_deal_roles
+    p = Principal("t", "viewer", None, "k", parse_deal_roles("atlas:partner,beta:analyst"))
+    assert p.can("govern", "atlas") and not p.can("govern", "beta") and not p.can("govern")
+    assert p.can("write", "beta") and not p.can("write", "gamma")
+    assert p.can_anywhere("govern") and not p.can_write
+
+
+def test_ir_uploads_but_does_not_write_deal_state():
+    from app.acl import CAPABILITIES
+    assert "ir" in CAPABILITIES["upload"] and "ir" not in CAPABILITIES["write"]
+
+
+def test_override_outside_key_scope_is_refused():
+    import pytest
+
+    from app.acl import format_deal_roles
+    with pytest.raises(ValueError):
+        format_deal_roles({"gamma": "partner"}, ["atlas"])
+    assert format_deal_roles({"atlas": "partner"}, ["atlas", "beta"]) == "atlas:partner"
+
+
+def test_override_and_ir_upload_end_to_end():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    c = TestClient(app)
+    admin_tenant = c.post("/admin/tenants", json={"name": "deal-roles-2"},
+                          headers={"X-Admin-Token": "test-admin"}).json()["tenant_id"]
+    key = lambda body: c.post(f"/admin/tenants/{admin_tenant}/keys", json=body,
+                              headers={"X-Admin-Token": "test-admin"}).json()["api_key"]
+    h = {"Authorization": f"Bearer {key({'role': 'admin'})}"}
+    for name in ("Atlas", "Beta"):
+        assert c.post("/deals", headers=h, json={"name": name}).status_code == 201
+    # viewer on the tenant, partner on Atlas only
+    v = {"Authorization": f"Bearer {key({'role': 'viewer', 'deal_roles': {'Atlas': 'partner'}})}"}
+    assert c.patch("/deals/Atlas", headers=v, json={"stage": "dd"}).status_code == 200
+    assert c.patch("/deals/Beta", headers=v, json={"stage": "dd"}).status_code == 403
+    # IR may upload but not change a deal
+    ir = {"Authorization": f"Bearer {key({'role': 'ir'})}"}
+    assert c.patch("/deals/Atlas", headers=ir, json={"stage": "ic"}).status_code == 403
+    assert c.post("/deals/Atlas/checklist", headers=ir, json={"title": "LP pack"}).status_code == 403
+    assert c.post("/documents", files={"file": ("a.csv", b"a,b\n1,2\n", "text/csv")},
+                  data={"deal": "Atlas"}, headers=ir).status_code == 200

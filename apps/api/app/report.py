@@ -10,13 +10,14 @@ import io
 from sqlalchemy.orm import Session
 
 from app.acl import fact_visible
+from app.citations import locator_label
 from app.firm_knowledge import applied_rules
 from app.models import Fact
 from app.portfolio import Covenant, PortfolioCompany, current_kpis, evaluate_covenant
 
 
 def _src(f: Fact) -> list[dict]:
-    return [{"document_id": s.document_id, "page": s.page, "quote": s.quote} for s in f.sources]
+    return [{"document_id": s.document_id, "page": s.page, "section": s.section, "heading": s.heading, "quote": s.quote} for s in f.sources]
 
 
 def build_report(db: Session, tenant_id: str, scope: set[str] | None = None) -> dict:
@@ -45,7 +46,8 @@ def build_report(db: Session, tenant_id: str, scope: set[str] | None = None) -> 
 
 
 def _cite(sources: list[dict]) -> str:
-    return "; ".join(f"doc {s['document_id'][:8]} p.{s['page']}" for s in sources) or "no source visible"
+    return "; ".join(f"doc {s['document_id'][:8]} {locator_label(s['page'], s.get('section'), s.get('heading'))}"
+                     for s in sources) or "no source visible"
 
 
 def build_report_docx(db: Session, tenant_id: str, scope: set[str] | None = None) -> bytes:
@@ -71,7 +73,7 @@ def build_report_docx(db: Session, tenant_id: str, scope: set[str] | None = None
         d.add_heading("Firm rules applied", level=2)
         for ru in r["rules"]:
             q = ru["source"]
-            d.add_paragraph(f"{ru['label']}: {ru['value']} (doc {q['document_id'][:8]} p.{q['page']}: \"{q['quote'].strip()}\")",
+            d.add_paragraph(f"{ru['label']}: {ru['value']} (doc {q['document_id'][:8]} {locator_label(q['page'])}: \"{q['quote'].strip()}\")",
                             style="List Bullet")
     buf = io.BytesIO()
     d.save(buf)
