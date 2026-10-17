@@ -19,9 +19,9 @@ from sqlalchemy.orm import Session
 from app.citations import quote_in_page, verify_number
 from app.extract.schemas import SCHEMAS
 from app.extract.tables import detect_scale
-from app.facts import is_outflow
+from app.facts import is_outflow, make_source
 from app.llm import LLM
-from app.models import Document, Fact, FactSource, PageRow
+from app.models import Document, Fact, PageRow
 from app.search import PageIndex
 
 SYSTEM = (
@@ -118,7 +118,8 @@ def _check(db: Session, tenant: str, doc: Document, f, p: dict, text: dict[int, 
         else:
             fact = Fact(tenant_id=tenant, entity=entity, metric=f.metric, period=period, value=value,
                         unit=f.unit, basis="extracted", status="auto")
-            fact.sources = [FactSource(document_id=doc.id, page=page, quote=quote)]
+            page_row = db.query(PageRow).filter_by(document_id=doc.id, number=page).one()
+            fact.sources = [make_source(doc, page, quote, page_row)]
             db.add(fact)
             db.commit()
             r.status, r.value, r.fact_id = "accepted", value, fact.id

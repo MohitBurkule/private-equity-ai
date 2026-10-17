@@ -74,7 +74,8 @@ def test_comps_docx_has_sources():
                                                    "period": "FY24", "metrics": ["ebitda"]})
     assert r.status_code == 200
     text = "\n".join(p.text for p in Docx(io.BytesIO(r.content)).paragraphs)
-    assert "EV/ebitda: 475" in text and f"doc {doc[:8]} p.1" in text
+    # Workbook facts are cited by cell, never as a page.
+    assert "EV/ebitda: 475" in text and f"doc {doc[:8]} Sheet!B3" in text and f"doc {doc[:8]} p.1" not in text
 
 
 def test_comps_pptx_three_slides():
