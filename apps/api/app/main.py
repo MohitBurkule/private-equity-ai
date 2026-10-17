@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import tempfile
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from datetime import date as DateT
@@ -99,6 +100,16 @@ from app.auth import (
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
 from app.calendar_events import retag_deals
 from app.chat_alerts import chat_poster
+from app.chat_inbound import (
+    HELP,
+    format_answer,
+    slack_question,
+    slack_reply,
+    teams_question,
+    teams_reply,
+    verify_slack,
+    verify_teams,
+)
 from app.citations import quote_in_page
 from app.comps import EV_METRIC
 from app.connectors import oauth, vault
@@ -181,6 +192,7 @@ from app.models import (
     SyncRun,
     Target,
     TargetContact,
+    TargetNote,
     WorkflowSchedule,
 )
 from app.models import Tenant as TenantRow
@@ -190,8 +202,10 @@ from app.parse import chart_vlm
 from app.parse.sh01 import parse_capital_form
 from app.portfolio import (
     Covenant,
+    KpiObservation,
     PortfolioCompany,
     add_covenant,
+    budget_variance,
     current_kpis,
     evaluate_covenant,
     qoq_change,
@@ -1560,6 +1574,58 @@ def deal_note_edit(name: str, nid: int, body: DealNoteIn, db: Db, who: Writer):
     return _note_out(n)
 
 
+class TargetNoteIn(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+def _target_or_404(db: Session, who: Principal, tid: int) -> Target:
+    """A target the key may see: same tenant, and not the same company as an MNPI deal the key may not see."""
+    t = db.get(Target, tid)
+    if t is None or t.tenant_id != who.tenant or mnpi_name_conflict(db, who, t.name):
+        raise HTTPException(404, "target not found")
+    return t
+
+
+def _target_note_out(n: TargetNote) -> dict:
+    return {"id": n.id, "target_id": n.target_id, "author": n.author, "body": n.body,
+            "created_at": n.created_at, "edited_at": n.edited_at or None}
+
+
+@app.get("/targets/{tid}/notes")
+def target_notes_list(tid: int, db: Db, who: Who):
+    _target_or_404(db, who, tid)
+    rows = db.query(TargetNote).filter_by(tenant_id=who.tenant, target_id=tid).order_by(TargetNote.id).all()
+    return [_target_note_out(r) for r in rows]
+
+
+@app.post("/targets/{tid}/notes", status_code=201)
+def target_notes_add(tid: int, body: TargetNoteIn, db: Db, who: Writer):
+    _target_or_404(db, who, tid)
+    n = TargetNote(tenant_id=who.tenant, target_id=tid, author=actor(who), body=body.body.strip(),
+                   created_at=_now_iso(), edited_at="")
+    db.add(n)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "target.note", {"target": tid, "id": n.id})
+    return _target_note_out(n)
+
+
+@app.patch("/targets/{tid}/notes/{nid}")
+def target_note_edit(tid: int, nid: int, body: TargetNoteIn, db: Db, who: Writer):
+    """Same rule as deal notes: the author edits their own; a whole-tenant key may edit any. Old text is audited."""
+    _target_or_404(db, who, tid)
+    n = db.get(TargetNote, nid)
+    if n is None or n.tenant_id != who.tenant or n.target_id != tid:
+        raise HTTPException(404, "note not found")
+    if n.author != actor(who) and who.restricted:
+        raise HTTPException(403, "only the note's author or a whole-tenant key can edit it")
+    old = n.body
+    n.body = body.body.strip()
+    n.edited_at = _now_iso()
+    db.commit()
+    log_event(db, who.tenant, actor(who), "target.note_edit", {"target": tid, "id": nid, "before": old, "after": n.body})
+    return _target_note_out(n)
+
+
 @app.get("/deals/{name}/checklist")
 def checklist_list(name: str, db: Db, who: Who):
     _visible_deal_or_404(db, who, name)
@@ -2572,16 +2638,17 @@ def create_company(body: CompanyIn, db: Db, who: Writer):
 
 
 @app.post("/portfolio/companies/{company_id}/observations", status_code=201)
-def add_observation(company_id: int, fact_id: int, db: Db, who: Writer):
+def add_observation(company_id: int, fact_id: int, db: Db, who: Writer,
+                    kind: Literal["actual", "budget"] = "actual"):
     tenant = who.tenant
     f = db.get(Fact, fact_id)
     if f is not None and f.tenant_id == tenant and not fact_visible(f, visible_doc_ids(db, who)):
         raise HTTPException(422, "observation requires a verified, cited fact")
     try:
-        o = record_observation(db, tenant, company_id, fact_id)
+        o = record_observation(db, tenant, company_id, fact_id, kind)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
-    log_event(db, tenant, actor(who), "kpi.record", {"observation_id": o.id, "fact_id": fact_id})
+    log_event(db, tenant, actor(who), "kpi.record", {"observation_id": o.id, "fact_id": fact_id, "kind": kind})
     return {"id": o.id, "metric": o.metric, "period": o.period, "value": str(o.value)}
 
 
@@ -2591,6 +2658,36 @@ def kpis(company_id: int, db: Db, who: Who):
     return [{"metric": o.metric, "period": o.period, "value": str(o.value), "unit": o.unit,
              "fact_id": o.fact_id} for o in current_kpis(db, who.tenant, company_id)
             if fact_visible(db.get(Fact, o.fact_id), scope)]
+
+
+@app.get("/portfolio/companies/{company_id}/budget-vs-actual")
+def budget_vs_actual(company_id: int, period: str, db: Db, who: Who):
+    """Each metric with an actual or a budget figure for the period, side by side. Both figures are cited. A metric
+    where either side cites a document the caller may not see is left out, so no hidden figure shows through the
+    other side or the variance."""
+    scope = visible_doc_ids(db, who)
+    sides: dict[str, dict[str, KpiObservation]] = {}
+    for o in current_kpis(db, who.tenant, company_id) + current_kpis(db, who.tenant, company_id, "budget"):
+        if o.period == period:
+            sides.setdefault(o.metric, {})[o.kind] = o
+    rows = []
+    for metric in sorted(sides):
+        pair = sides[metric]
+        act, bud = pair.get("actual"), pair.get("budget")
+        if any(not fact_visible(db.get(Fact, o.fact_id), scope) for o in (act, bud) if o is not None):
+            continue
+        row = {"metric": metric, "unit": (act or bud).unit, "actual": None, "budget": None,
+               "variance": None, "variance_pct": None}
+        if act is not None:
+            row["actual"] = {"value": str(act.value), "fact_id": act.fact_id}
+        if bud is not None:
+            row["budget"] = {"value": str(bud.value), "fact_id": bud.fact_id}
+        if act is not None and bud is not None:
+            diff, pct = budget_variance(act.value, bud.value)
+            row["variance"] = str(diff)
+            row["variance_pct"] = None if pct is None else str(round(pct, 2))
+        rows.append(row)
+    return {"period": period, "metrics": rows}
 
 
 @app.get("/portfolio/submissions")
@@ -3756,6 +3853,44 @@ def ask(body: AskIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_dependenc
     cite = lambda c: {"text": c.text, "document_id": c.doc_id, "page": c.page, "quote": c.quote}
     return {"status": a.status, "detail": a.detail, "claims": [cite(c) for c in a.claims],
             "rejected": [{**cite(c), "reason": c.reason} for c in a.rejected]}
+
+
+@app.post("/chat/{kind}/inbound")
+async def chat_inbound(kind: str, request: Request, db: Db):
+    """A Slack slash command or Teams outgoing webhook asks a question. The request must carry the chat app's
+    signature; the question runs as that app's configured key, so its scope and MNPI walls apply."""
+    if kind not in ("slack", "teams"):
+        raise HTTPException(404, "unknown chat app")
+    body = await request.body()
+    if kind == "slack":
+        secret, token = os.environ.get("SLACK_SIGNING_SECRET"), os.environ.get("SLACK_INBOUND_API_KEY")
+    else:
+        secret, token = os.environ.get("TEAMS_SECURITY_TOKEN"), os.environ.get("TEAMS_INBOUND_API_KEY")
+    if not secret or not token:
+        raise HTTPException(503, f"{kind} inbound is not configured")
+    if kind == "slack":
+        ok = verify_slack(secret, request.headers.get("X-Slack-Request-Timestamp", ""),
+                          request.headers.get("X-Slack-Signature", ""), body, int(time.time()))
+        question = slack_question(body)
+    else:
+        ok = verify_teams(secret, request.headers.get("Authorization"), body)
+        question = teams_question(body)
+    if not ok:
+        raise HTTPException(401, "bad signature")
+    reply = slack_reply if kind == "slack" else teams_reply
+    if not question:
+        return reply(HELP)
+    who = principal_for_key(db, token)
+    if who is None:
+        raise HTTPException(503, f"{kind} inbound key is not valid")
+    bind_tenant(db, who.tenant)
+    a = answer_question(db, who.tenant, llm_dependency(), question, scope=visible_doc_ids(db, who))
+    filenames = {d.id: d.filename for d in db.query(Document).filter(
+        Document.tenant_id == who.tenant, Document.id.in_([c.doc_id for c in a.claims] or [""]))}
+    log_event(db, who.tenant, f"chat:{kind}", "chat.ask", {"question": question, "status": a.status,
+                                                          "claims": len(a.claims), "rejected": len(a.rejected)})
+    db.commit()
+    return reply(format_answer(a, filenames))
 
 
 class FKExtractIn(BaseModel):

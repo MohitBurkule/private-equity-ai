@@ -182,3 +182,4 @@ Gaps: 5 decks, not 10; 26 labelled items, not 50. Charts: one vector waterfall o
 Existing golden sets, same run (`pdf_benchmark.py`): pdftotext_layout is worse than router on sh01 (4/18 page vs 16/18) and has no bbox. So it is not a router replacement. Using it only as a fallback keeps the existing sets as they are.
 
 Open: a layout-only hit has no bbox, so it cannot cite a location. It must not auto-verify. OCR chart fallback and the other 5 decks are not done.
+
