@@ -191,6 +191,20 @@ class DDQuestion(Base):
     answered_at: Mapped[str | None] = mapped_column(String(40), default=None)
 
 
+class ICDecision(Base):
+    """Append-only record of an investment decision: outcome, rationale, and any dissent on the record. Rows are
+    never edited or deleted, so a later change of mind is a new row, not a rewrite of the old one."""
+    __tablename__ = "ic_decision"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    deal: Mapped[str] = mapped_column(String(128), index=True)
+    outcome: Mapped[str] = mapped_column(String(32))  # proceed | pass | hold | more_diligence
+    rationale: Mapped[str] = mapped_column(Text)
+    dissent: Mapped[str | None] = mapped_column(Text, default=None)
+    dissenter: Mapped[str | None] = mapped_column(String(128), default=None)
+    recorded_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 # Ordered deal pipeline. Order matters for reporting; "closed" and "passed" end a deal and gate retention.
 STAGES = ["sourcing", "screening", "nda", "cim", "ioi", "loi", "dd", "ic", "signed", "closed", "passed"]
 
