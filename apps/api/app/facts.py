@@ -106,17 +106,28 @@ def review_fact(db: Session, fact: Fact, *, action: str, reviewer: str, note: st
         new_page = page if page is not None else src.page
         new_quote = quote if quote is not None else src.quote
         new_value = value if value is not None else fact.value
-        row = db.query(PageRow).filter_by(document_id=src.document_id, number=new_page).one_or_none()
-        if row is None:
-            raise CitationError(f"page {new_page} not found in the cited document")
-        if not quote_in_page(new_quote, row.text):
-            raise CitationError("quote not found on cited page")
+        doc = db.get(Document, src.document_id)
+        if doc.kind == "html":
+            # For HTML the number is the text block's index; the citation is that block's locator.
+            row = db.query(HtmlUnit).filter_by(document_id=src.document_id, idx=new_page).one_or_none()
+            if row is None:
+                raise CitationError(f"block {new_page} not found in the cited document")
+            if not quote_in_page(new_quote, row.text):
+                raise CitationError("quote not found in cited block")
+            fresh = FactSource(document_id=doc.id, page=0, quote=new_quote, kind="html", section=row.section,
+                               heading=row.heading, anchor=row.anchor, offset=row.offset)
+        else:
+            row = db.query(PageRow).filter_by(document_id=src.document_id, number=new_page).one_or_none()
+            if row is None:
+                raise CitationError(f"page {new_page} not found in the cited document")
+            if not quote_in_page(new_quote, row.text):
+                raise CitationError("quote not found on cited page")
+            fresh = make_source(doc, new_page, new_quote, row)
         if not verify_number(new_value, new_quote, scale, outflow=is_outflow(fact.metric)):
             raise CitationError("value does not match any number in the quote")
-        doc = db.get(Document, src.document_id)
-        fresh = make_source(doc, new_page, new_quote, row)
-        fact.value, src.page, src.quote = new_value, new_page, new_quote
+        fact.value, src.page, src.quote = new_value, fresh.page, new_quote
         src.kind, src.heading, src.anchor, src.section = fresh.kind, fresh.heading, fresh.anchor, fresh.section
+        src.offset = fresh.offset
     fact.status = "rejected" if action == "reject" else "verified"
     fact.reviewed_by, fact.reviewed_at, fact.review_note = reviewer, datetime.now(UTC).isoformat(), note
     db.commit()
