@@ -52,6 +52,7 @@ class RowResult:
     status: str  # accepted | rejected
     reason: str = ""
     fact_ids: list[int] = field(default_factory=list)
+    bridge: tuple[str, str, Decimal] | None = None  # (period, kind, amount) of an accepted bridge line
 
 
 def _facts_for(schema: str, row: BaseModel) -> list[tuple[str, str, str, Decimal, str]]:
@@ -82,7 +83,7 @@ def _facts_for(schema: str, row: BaseModel) -> list[tuple[str, str, str, Decimal
 
 
 def extract_rows(db: Session, tenant: str, llm: LLM, doc: Document, schema: str, period: str,
-                 text: dict[int, str]) -> tuple[list[RowResult], str]:
+                 text: dict[int, str]) -> tuple[list[RowResult], str, list[dict]]:
     """Runs the model once over the page text, validates every proposed row and stores the accepted ones.
     Returns per-row results and a detail string when the model output was unusable."""
     model = _ROWS[schema]
@@ -91,11 +92,42 @@ def extract_rows(db: Session, tenant: str, llm: LLM, doc: Document, schema: str,
         raw = llm.complete(SYSTEM, f"Schema: {schema} ({model.__name__})\n\n{ctx}")
         proposed = list(json.loads(raw[raw.index("{"): raw.rindex("}") + 1]).get("rows", []))
     except (ValueError, TypeError, AttributeError) as e:
-        return [], f"model returned unusable output: {e}"
+        return [], f"model returned unusable output: {e}", []
     results = []
     for p in proposed:
         results.append(_accept(db, tenant, doc, schema, model, p, text, period))
-    return results, ""
+    checks = bridge_checks(results) if schema == "ebitda_bridge" else []
+    return results, "", checks
+
+
+def bridge_checks(results: list[RowResult]) -> list[dict]:
+    """Re-adds each period's accepted bridge: reported + add-backs - deductions, against the adjusted total as
+    stated. Management tables are often rounded, so a difference inside 0.1% (or 0.5 absolute) passes; anything
+    larger is flagged for a person to check the lines, and the stated total is kept either way."""
+    by_period: dict[str, dict] = {}
+    for r in results:
+        if r.status != "accepted" or r.bridge is None:
+            continue
+        period, kind, amount = r.bridge
+        b = by_period.setdefault(period, {"reported": Decimal(0), "adjustments": Decimal(0), "stated": None})
+        if kind == "reported":
+            b["reported"] += amount
+        elif kind == "add_back":
+            b["adjustments"] += amount
+        elif kind == "deduction":
+            b["adjustments"] -= amount
+        else:
+            b["stated"] = amount
+    out = []
+    for period, b in by_period.items():
+        if b["stated"] is None:
+            continue
+        expected = b["reported"] + b["adjustments"]
+        diff = expected - b["stated"]
+        tolerance = max(Decimal("0.5"), abs(b["stated"]) * Decimal("0.001"))
+        out.append({"period": period, "expected": str(expected), "stated": str(b["stated"]),
+                    "difference": str(diff), "status": "match" if abs(diff) <= tolerance else "mismatch"})
+    return out
 
 
 def _accept(db: Session, tenant: str, doc: Document, schema: str, model: type[BaseModel], p: dict,
@@ -125,4 +157,5 @@ def _accept(db: Session, tenant: str, doc: Document, schema: str, model: type[Ba
         db.flush()
         ids.append(fact.id)
     db.commit()
-    return RowResult(schema, page, "accepted", fact_ids=ids)
+    bridge = (row.period, row.kind, Decimal(row.amount)) if schema == "ebitda_bridge" else None
+    return RowResult(schema, page, "accepted", fact_ids=ids, bridge=bridge)

@@ -2743,13 +2743,14 @@ def extract_row_table(doc_id: str, body: RowExtractIn, db: Db, who: Writer,
     if body.schema_name not in ROW_SCHEMAS:
         raise HTTPException(422, f"schema must be one of {sorted(ROW_SCHEMAS)}")
     text = {r.number: r.text for r in db.query(PageRow).filter_by(document_id=doc.id).all()}
-    results, detail = extract_rows(db, who.tenant, llm, doc, body.schema_name, body.period, text)
+    results, detail, checks = extract_rows(db, who.tenant, llm, doc, body.schema_name, body.period, text)
     log_event(db, who.tenant, actor(who), "extract_rows",
               {"document_id": doc.id, "schema": body.schema_name,
                "accepted": sum(r.status == "accepted" for r in results)})
     return {"schema": body.schema_name, "detail": detail,
             "rows": [{"status": r.status, "page": r.page, "reason": r.reason, "fact_ids": r.fact_ids}
-                     for r in results]}
+                     for r in results],
+            "bridge_checks": checks}
 
 
 class DDQIn(BaseModel):

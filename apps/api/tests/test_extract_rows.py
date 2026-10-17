@@ -105,3 +105,21 @@ def test_ebitda_bridge_rows_keep_each_line_as_stated():
     assert "not printed" in out["rows"][1]["reason"]
     facts = c.get("/facts", headers=h).json()
     assert [f["metric"] for f in facts if f["metric"].startswith("ebitda_bridge")] == ["ebitda_bridge reported"]
+
+
+def test_bridge_recheck_flags_mismatch_and_keeps_stated_total():
+    h = new_tenant(c, "rows6")
+    doc = upload(h, {"A1": "EBITDA", "B1": 100, "C1": 20, "D1": 130, "E1": 120})
+    q = "Sheet!{}1: {} | row: EBITDA"
+
+    def line(col, num, kind, amount):
+        return {"page": 1, "quote": q.format(col, num),
+                "fields": {"period": "FY24", "item": kind, "kind": kind, "amount": amount}}
+
+    bad = run(h, doc, "ebitda_bridge", [line("B", "100", "reported", 100), line("C", "20", "add_back", 20),
+                                        line("D", "130", "adjusted", 130)])
+    assert bad["bridge_checks"] == [{"period": "FY24", "expected": "120", "stated": "130",
+                                     "difference": "-10", "status": "mismatch"}]
+    good = run(h, doc, "ebitda_bridge", [line("B", "100", "reported", 100), line("C", "20", "add_back", 20),
+                                         line("E", "120", "adjusted", 120)])
+    assert good["bridge_checks"][0]["status"] == "match"
