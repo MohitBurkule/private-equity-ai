@@ -1473,9 +1473,20 @@ def retention_documents(body: RetentionIn, db: Db, who: Writer):
     return {"dry_run": False, "deleted": deleted, "skipped": skipped}
 
 
+def _memo_comps(db: Session, who, entity: str, peers: str, period: str) -> dict | None:
+    """Optional comps section: peers (comma-separated entity names) at a period, EV / revenue. None when not asked."""
+    names = [n.strip() for n in peers.split(",") if n.strip()]
+    if not names or not period:
+        return None
+    if len(names) > 50:
+        raise HTTPException(422, "too many peers")
+    return comps_mod.run(db, who.tenant, entity, names, period, ["revenue"], visible_doc_ids(db, who))
+
+
 @app.get("/memo")
-def memo(entity: str, db: Db, who: Who):
-    return {"entity": entity, "markdown": build_memo(db, who.tenant, entity, visible_doc_ids(db, who))}
+def memo(entity: str, db: Db, who: Who, peers: str = "", period: str = ""):
+    comps = _memo_comps(db, who, entity, peers, period)
+    return {"entity": entity, "markdown": build_memo(db, who.tenant, entity, visible_doc_ids(db, who), comps)}
 
 
 @app.get("/memo/sections")
@@ -1976,9 +1987,10 @@ def lp_capital_call(body: CapitalCallIn, who: Writer, db: Db, format: str = "jso
 
 
 @app.get("/memo.docx")
-def memo_docx(entity: str, db: Db, who: Who):
+def memo_docx(entity: str, db: Db, who: Who, peers: str = "", period: str = ""):
     log_event(db, who.tenant, actor(who), "memo.export", {"entity": entity, "format": "docx"})
-    return Response(build_memo_docx(db, who.tenant, entity, visible_doc_ids(db, who)), headers={
+    comps = _memo_comps(db, who, entity, peers, period)
+    return Response(build_memo_docx(db, who.tenant, entity, visible_doc_ids(db, who), comps), headers={
         "Content-Disposition": 'attachment; filename="memo.docx"'},
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
