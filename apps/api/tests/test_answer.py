@@ -101,3 +101,19 @@ def test_ask_endpoint(monkeypatch):
         assert c.post("/ask", json={"question": "q", "doc_id": "nope"}, headers=h).status_code == 404
     finally:
         m.app.dependency_overrides.clear()
+
+
+def test_right_number_from_a_different_row_is_rejected(db):
+    # 262 is on the page, but the quote is "Proceeds from sale of PP&E", not capex.
+    other = "Proceeds from sale of PP&E and other assets 262 49"
+    page = PAGE + other + "\n"
+    db.query(PageRow).filter_by(document_id="d" * 64).one().text = page
+    db.commit()
+    a = ask(db, Fake([claim("Capex was 262 million.", quote=other)]))
+    assert a.status == "not_found"
+    assert "line item" in a.rejected[0].reason
+
+
+def test_quote_naming_the_asked_line_item_still_passes(db):
+    a = ask(db, Fake([claim("Capex was 1,577 million in FY2018.")]))
+    assert a.status == "answered"
