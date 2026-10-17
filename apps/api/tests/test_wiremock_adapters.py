@@ -100,3 +100,26 @@ def test_hubspot_deals_and_contacts_through_wiremock(wm):
     assert [i.external_id for i in items] == ["hubspot:deals", "hubspot:contacts"]
     assert items[0].data.splitlines()[0] == b"id,dealname,amount,dealstage"
     assert b"jane@acme.test" in items[1].data
+
+
+def test_digest_posts_to_slack_and_teams_webhooks(wm):
+    from app.chat_alerts import post_chat
+
+    http = rewrite_http({"https://hooks.slack.com/": wm.base + "/", "https://outlook.office.com/": wm.base + "/"})
+    wm.stub("POST", {"urlPath": "/services/T1/B1/xyz", "bodyPatterns": [{"contains": "[CRITICAL] Acme"}]},
+            body="ok")
+    wm.stub("POST", {"urlPath": "/webhookb2/abc/IncomingWebhook", "bodyPatterns": [{"contains": "[CRITICAL] Acme"}]},
+            body="1")
+    sent = post_chat("[IC daily] [CRITICAL] Acme: leverage breaches covenant",
+                     slack_url="https://hooks.slack.com/services/T1/B1/xyz",
+                     teams_url="https://outlook.office.com/webhookb2/abc/IncomingWebhook", http=http)
+    assert sent == ["slack", "teams"]
+
+
+def test_digest_refuses_unknown_webhook_hosts():
+    from app.chat_alerts import post_chat
+
+    with pytest.raises(ValueError, match="webhook"):
+        post_chat("x", slack_url="https://evil.example.com/hook", http=lambda u, h: b"")
+    with pytest.raises(ValueError, match="webhook"):
+        post_chat("x", teams_url="http://outlook.office.com/webhook", http=lambda u, h: b"")
