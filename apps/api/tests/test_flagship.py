@@ -1,9 +1,9 @@
 from decimal import Decimal
 
-from fastapi.testclient import TestClient
-
 from app.flagship import lbo_inputs, lbo_step
 from app.main import app
+from fastapi.testclient import TestClient
+
 from tests.helpers import new_tenant
 
 c = TestClient(app)
@@ -104,7 +104,7 @@ def test_legal_model_reader_keeps_only_quoted_sentences_on_the_page():
                  '{"quote": "A change of control is an event.", "page": 1}'])
     out = legal_reader.read(pages, "credit", absent, llm)
     assert [f["term"] for f in out["findings"]] == ["governing_law"]
-    assert out["findings"][0]["value"] == "State of New York" and out["findings"][0]["page"] == 1
+    assert out["findings"][0]["value"] == "New York" and out["findings"][0]["page"] == 1
     assert out["dropped"] == [{"term": "change_of_control", "reason": "quote is not on the cited page"}]
     assert legal.TERMS["governing_law"]["doc"]
 
@@ -119,3 +119,40 @@ def test_flagship_reads_an_html_exhibit_stored_as_blocks():
     assert steps["intake"]["result"]["pages"] >= 1
     assert steps["legal"]["status"] == "ok"
     assert "gov_law_absent" not in [f["rule"] for f in steps["legal"]["result"]["red_flags"]]
+
+
+VERIFYME = ("This Amendment, and all claims or causes of action based upon, arising out of, or related to the Agreement "
+            "or the transactions contemplated hereby, shall be governed by, and construed in accordance with, the Laws "
+            "of the State of Delaware, without giving effect to principles or rules of conflict of laws. The statutory, "
+            "fiduciary and other duties of the directors of the Company shall in each case be governed by the laws of "
+            "the Cayman Islands.")
+
+
+def test_governing_law_anchors_on_the_clause_and_returns_the_named_law():
+    from app import legal
+    out = legal.extract([(1, "Notices shall go to Austin, Texas. " + VERIFYME)], "spa")
+    assert [f["value"] for f in out["findings"] if f["term"] == "governing_law"][0] == "Delaware"
+    bare = legal.extract([(1, "The Company is organised in the Cayman Islands and its office is in Texas.")], "spa")
+    assert "governing_law" in bare["absent"]
+
+
+def test_reader_flags_a_rule_model_disagreement_for_review_without_picking():
+    from app import legal, legal_reader
+
+    class Local:
+        def __init__(self, replies):
+            self.replies = list(replies)
+
+        def complete(self, system, prompt):
+            return self.replies.pop(0)
+    pages = [(1, VERIFYME)]
+    rule = [{"term": "governing_law", "value": "Cayman Islands"}]
+    out = legal_reader.read(pages, "spa", [], Local(
+        ['{"quote": "This Amendment, and all claims or causes of action based upon, arising out of, or related to the '
+         'Agreement or the transactions contemplated hereby, shall be governed by, and construed in accordance with, the '
+         'Laws of the State of Delaware, without giving effect to principles or rules of conflict of laws.", "page": 1}']),
+        found=rule)
+    assert out["findings"] == []
+    assert out["review"][0]["status"] == "conflict"
+    assert out["review"][0]["rule_value"] == "Cayman Islands" and out["review"][0]["model_value"] == "Delaware"
+    assert legal.TERMS["governing_law"]["doc"]

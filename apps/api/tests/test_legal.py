@@ -12,7 +12,7 @@ CREDIT = [(3, "The Total Net Leverage Ratio shall not exceed 4.50 to 1.00 as of 
 def test_nda_terms_cited_and_absent_listed():
     r = extract(NDA, "nda")
     by = {f["term"]: f for f in r["findings"]}
-    assert by["governing_law"]["value"].startswith("State of New York") and by["governing_law"]["page"] == 1
+    assert by["governing_law"]["value"] == "New York" and by["governing_law"]["page"] == 1
     assert by["term_years"]["page"] == 1 and by["confidentiality_survival_years"]["page"] == 2
     assert by["non_solicit_months"]["value"] == "12"
     assert all(f["quote"] for f in r["findings"])
