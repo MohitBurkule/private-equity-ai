@@ -2,11 +2,13 @@ import { FileUp, Search } from "lucide-react";
 import { useState } from "react";
 import { api, DocumentInfo, Hit } from "./api";
 import { useLoad } from "./hooks";
+import { filterDocs } from "./libraryFilter";
 import { SourceChip } from "./source";
 import { Button, Card, CardHead, Empty, ErrorLine, Input } from "./ui";
 
 export function Documents() {
   const docs = useLoad<DocumentInfo[]>(api.documents);
+  const [libQ, setLibQ] = useState("");
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [entity, setEntity] = useState("");
@@ -27,8 +29,14 @@ export function Documents() {
               onChange={(e) => { const f = e.target.files?.[0]; if (f) { setBusy(true); void run(async () => { await api.upload(f); docs.reload(); }).finally(() => setBusy(false)); } }} />
           </label>} />
         {docs.data?.length === 0 && <Empty>No documents yet. Upload a CIM, a 10-K or a spreadsheet to begin.</Empty>}
+        {docs.data && docs.data.length > 0 && (
+          <div className="px-4 pt-3">
+            <Input className="w-full" value={libQ} onChange={(e) => setLibQ(e.target.value)} placeholder="Filter by filename" aria-label="Filter documents" />
+          </div>
+        )}
+        {docs.data && docs.data.length > 0 && filterDocs(docs.data, libQ).length === 0 && <Empty>No document name matches "{libQ}".</Empty>}
         <ul className="divide-y divide-line">
-          {docs.data?.map((d) => (
+          {filterDocs(docs.data ?? [], libQ).map((d) => (
             <li key={d.id} className="flex items-center gap-3 px-5 py-2.5 text-sm"><span className="min-w-0 flex-1 truncate font-medium">{d.filename}</span>
               <span className="tnum text-mut">{d.n_pages} pages</span><SourceChip docId={d.id} page={1} quote="" label="Open" /></li>
           ))}
