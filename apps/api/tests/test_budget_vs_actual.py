@@ -34,4 +34,5 @@ def test_budget_does_not_supersede_actual_and_is_listed_beside_it(monkeypatch):
     body = c.get(f"/portfolio/companies/{co}/budget-vs-actual", params={"period": "2026-08"}, headers=h).json()
     row = next(m for m in body["metrics"] if m["metric"] == rev["metric"])
     assert row["actual"]["fact_id"] == row["budget"]["fact_id"] == rev["fact_id"]
+    assert row["actual"]["source"] == "ACME-monthly.xlsx"  # every figure names the document it came from
     assert Decimal(row["variance"]) == 0 and Decimal(row["variance_pct"]) == 0
