@@ -1,8 +1,9 @@
 //! Port of GET /documents and GET /documents/{id}/pages/{n} (app/main.py). Upload and extraction are not ported.
 
+use crate::audit::log_event;
 use crate::auth::principal;
 use crate::error::ApiError;
-use crate::scope::{ensure_no_walls, require_unrestricted};
+use crate::visibility::Visibility;
 use crate::AppState;
 use axum::{
     extract::{Path, State},
@@ -11,13 +12,13 @@ use axum::{
 };
 use serde_json::{json, Value};
 
+/// Same rule as Python list_documents: the deal wall applies, the source ACL does not (kept as the app does it).
 pub async fn list_documents(
     State(s): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, ApiError> {
     let (p, mut tx) = principal(&s.pool, &headers).await?;
-    require_unrestricted(&p)?;
-    ensure_no_walls(&mut tx).await?;
+    let vis = Visibility::load(&mut tx, &p).await?;
     let rows: Vec<(String, String, i32, Option<String>)> =
         sqlx::query_as("SELECT id, filename, n_pages, deal FROM document ORDER BY id")
             .fetch_all(&mut *tx)
@@ -25,6 +26,7 @@ pub async fn list_documents(
     tx.commit().await?;
     let out: Vec<Value> = rows
         .into_iter()
+        .filter(|(_, _, _, deal)| vis.deal_allows(deal.as_deref()))
         .map(|(id, filename, n_pages, deal)| json!({ "id": id, "filename": filename, "n_pages": n_pages, "deal": deal }))
         .collect();
     Ok(Json(Value::Array(out)))
@@ -36,15 +38,28 @@ pub async fn get_page(
     Path((doc_id, number)): Path<(String, i32)>,
 ) -> Result<Json<Value>, ApiError> {
     let (p, mut tx) = principal(&s.pool, &headers).await?;
-    require_unrestricted(&p)?;
-    ensure_no_walls(&mut tx).await?;
-    // _own_doc: missing and other-tenant documents look the same (RLS hides the row).
-    let doc: Option<(String,)> = sqlx::query_as("SELECT id FROM document WHERE id = $1")
-        .bind(&doc_id)
-        .fetch_optional(&mut *tx)
-        .await?;
-    if doc.is_none() {
+    let vis = Visibility::load(&mut tx, &p).await?;
+    // _own_doc: missing, other-tenant, walled and ACL-hidden documents all get the same 404.
+    let doc: Option<(String, Option<String>)> =
+        sqlx::query_as("SELECT id, deal FROM document WHERE id = $1")
+            .bind(&doc_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let Some((_, deal)) = doc else {
         return Err(ApiError::new(StatusCode::NOT_FOUND, "document not found"));
+    };
+    if !vis.deal_allows(deal.as_deref()) || !vis.acl_allows(&doc_id) {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "document not found"));
+    }
+    if let Some(d) = deal.as_deref().filter(|d| vis.visible_mnpi.contains(*d)) {
+        log_event(
+            &mut tx,
+            &p.tenant,
+            &format!("key:{}", p.key_id),
+            "document.mnpi_access",
+            &json!({ "doc_id": doc_id, "deal": d }),
+        )
+        .await?;
     }
     let row: Option<(String, String, Option<f64>)> = sqlx::query_as(
         "SELECT text, method, ocr_confidence FROM page WHERE document_id = $1 AND number = $2",

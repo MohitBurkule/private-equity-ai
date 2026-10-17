@@ -8,6 +8,7 @@ mod documents;
 mod error;
 mod facts;
 mod scope;
+mod visibility;
 
 use axum::{extract::State, http::HeaderMap, routing::get, Json, Router};
 use serde_json::{json, Value};

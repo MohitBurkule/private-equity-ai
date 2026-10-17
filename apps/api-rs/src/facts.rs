@@ -1,12 +1,12 @@
-//! Port of GET /facts and POST /facts (app/main.py) with the citation gate from citations.rs.
-//! Scope of this slice: unrestricted keys only. Deal-scoped or ACL-restricted keys get 501 until the deal wall
-//! and source ACL are ported, so nothing is shown or written past a wall by accident.
+//! Port of GET /facts and POST /facts (app/main.py) with the citation gate from citations.rs and the deal wall and
+//! source ACL from visibility.rs.
 
 use crate::audit::log_event;
 use crate::auth::principal;
 use crate::citations::{is_outflow, locator_label, quote_in_page, verify_number, xlsx_location};
 use crate::error::ApiError;
-use crate::scope::{ensure_no_walls, require_unrestricted, require_writer};
+use crate::scope::require_writer;
+use crate::visibility::Visibility;
 use crate::AppState;
 use axum::{
     extract::{Query, State},
@@ -91,8 +91,7 @@ pub async fn list_facts(
     Query(q): Query<ListQuery>,
 ) -> Result<Json<Value>, ApiError> {
     let (p, mut tx) = principal(&s.pool, &headers).await?;
-    require_unrestricted(&p)?;
-    ensure_no_walls(&mut tx).await?;
+    let vis = Visibility::load(&mut tx, &p).await?;
     let facts: Vec<FactRow> = sqlx::query_as(
         "SELECT id, entity, metric, period, value, unit, basis, status, reviewed_by, reviewed_at, review_note
          FROM fact WHERE ($1::text IS NULL OR status = $1) AND ($2::text IS NULL OR entity = $2) ORDER BY id",
@@ -109,9 +108,13 @@ pub async fn list_facts(
     .await?;
     let mut out = Vec::with_capacity(facts.len());
     for f in &facts {
-        let srcs: Vec<Value> = sources
+        let mine: Vec<&SourceRow> = sources.iter().filter(|s| s.0 == f.0).collect();
+        let doc_ids: Vec<&str> = mine.iter().map(|s| s.1.as_str()).collect();
+        if !vis.fact_visible(&doc_ids) {
+            continue;
+        }
+        let srcs: Vec<Value> = mine
             .iter()
-            .filter(|s| s.0 == f.0)
             .map(|s| {
                 json!({
                     "document_id": s.1,
@@ -137,19 +140,31 @@ pub async fn create_fact(
     Json(body): Json<FactIn>,
 ) -> Result<impl IntoResponse, ApiError> {
     let (p, mut tx) = principal(&s.pool, &headers).await?;
-    require_unrestricted(&p)?;
     require_writer(&p)?;
-    ensure_no_walls(&mut tx).await?;
+    let vis = Visibility::load(&mut tx, &p).await?;
 
-    // _own_doc: same 404 for missing and for another tenant (RLS hides the row either way).
-    let doc: Option<(String, String)> =
-        sqlx::query_as("SELECT id, kind FROM document WHERE id = $1")
+    // _own_doc: the document must be visible to this key (deal wall and ACL), or it is a 404.
+    let doc: Option<(String, String, Option<String>)> =
+        sqlx::query_as("SELECT id, kind, deal FROM document WHERE id = $1")
             .bind(&body.document_id)
             .fetch_optional(&mut *tx)
             .await?;
-    let Some((doc_id, kind)) = doc else {
+    let Some((doc_id, kind, deal)) = doc else {
         return Err(ApiError::new(StatusCode::NOT_FOUND, "document not found"));
     };
+    if !vis.deal_allows(deal.as_deref()) || !vis.acl_allows(&doc_id) {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "document not found"));
+    }
+    if let Some(d) = deal.as_deref().filter(|d| vis.visible_mnpi.contains(*d)) {
+        log_event(
+            &mut tx,
+            &p.tenant,
+            &format!("key:{}", p.key_id),
+            "document.mnpi_access",
+            &json!({ "doc_id": doc_id, "deal": d }),
+        )
+        .await?;
+    }
 
     // add_verified_fact: page, quote and number must all check out before anything is stored.
     let page: Option<(String, Option<String>, String)> = sqlx::query_as(
