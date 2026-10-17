@@ -149,6 +149,7 @@ from app.models import (
     AgentRun,
     Alert,
     ApiKey,
+    CalendarEvent,
     Connection,
     DDQuestion,
     DDRequest,
@@ -2055,6 +2056,18 @@ def email_links(db: Db, who: Who):
 
 class EmailAttachIn(BaseModel):
     deal: str = Field(min_length=1, max_length=128)
+
+
+@app.get("/deals/{name}/meetings")
+def deal_meetings(name: str, db: Db, who: Who):
+    """Calendar meetings whose title names this deal or one of its aliases, soonest first. A deal the key cannot
+    see, or an MNPI deal the key is not cleared for, answers 404 as if it did not exist."""
+    d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
+    if d is None or deal_hidden(d, who) or (who.deals is not None and name not in who.deals):
+        raise HTTPException(404, "no such deal")
+    rows = db.query(CalendarEvent).filter_by(tenant_id=who.tenant, deal=name).order_by(CalendarEvent.starts_at).all()
+    return {"meetings": [{"title": r.title, "starts_at": r.starts_at, "url": r.url, "board": r.board,
+                          "source": r.source} for r in rows]}
 
 
 @app.get("/email/review")

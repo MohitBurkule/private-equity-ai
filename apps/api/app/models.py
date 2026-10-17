@@ -559,6 +559,8 @@ class CalendarEvent(Base):
     url: Mapped[str] = mapped_column(Text, default="")
     company: Mapped[str | None] = mapped_column(String(256), default=None, index=True)
     board: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # The deal whose name or alias the title names, when exactly one does (app/calendar_events.py)
+    deal: Mapped[str | None] = mapped_column(String(128), default=None, index=True)
 
 
 class Connection(Base):
