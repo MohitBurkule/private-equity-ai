@@ -123,3 +123,16 @@ def test_bridge_recheck_flags_mismatch_and_keeps_stated_total():
     good = run(h, doc, "ebitda_bridge", [line("B", "100", "reported", 100), line("C", "20", "add_back", 20),
                                          line("E", "120", "adjusted", 120)])
     assert good["bridge_checks"][0]["status"] == "match"
+
+
+def test_bridge_mismatch_raises_one_inbox_item():
+    h = new_tenant(c, "rows7")
+    doc = upload(h, {"A1": "EBITDA", "B1": 100, "C1": 20, "D1": 130})
+    q = "Sheet!{}1: {} | row: EBITDA"
+    lines = [{"page": 1, "quote": q.format("B", "100"), "fields": {"period": "FY24", "item": "r", "kind": "reported", "amount": 100}},
+             {"page": 1, "quote": q.format("C", "20"), "fields": {"period": "FY24", "item": "a", "kind": "add_back", "amount": 20}},
+             {"page": 1, "quote": q.format("D", "130"), "fields": {"period": "FY24", "item": "t", "kind": "adjusted", "amount": 130}}]
+    run(h, doc, "ebitda_bridge", lines)
+    run(h, doc, "ebitda_bridge", lines)
+    alerts = [a for a in c.get("/alerts", headers=h).json() if a["kind"] == "bridge_mismatch"]
+    assert len(alerts) == 1 and "does not re-add" in alerts[0]["title"]
