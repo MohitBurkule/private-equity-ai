@@ -5,7 +5,7 @@
 use crate::auth::principal;
 use crate::error::ApiError;
 use crate::names::normalise;
-use crate::visibility::Visibility;
+use crate::visibility::{require_visible_deal, Visibility};
 use crate::AppState;
 use axum::{
     extract::{Path, State},
@@ -26,13 +26,7 @@ pub async fn list_deal_notes(
 ) -> Result<Json<Value>, ApiError> {
     let (p, mut tx) = principal(&s, &headers).await?;
     let vis = Visibility::load(&mut tx, &p).await?;
-    let exists: Option<(String,)> = sqlx::query_as("SELECT name FROM deal WHERE name = $1")
-        .bind(&name)
-        .fetch_optional(&mut *tx)
-        .await?;
-    if exists.is_none() || !vis.deal_allows(Some(&name)) {
-        return Err(ApiError::new(StatusCode::NOT_FOUND, "deal not found"));
-    }
+    require_visible_deal(&mut tx, &vis, &name).await?;
     let rows: Vec<DealNoteRow> = sqlx::query_as(
         "SELECT id, deal, author, body, created_at, source_url, edited_at \
          FROM deal_note WHERE deal = $1 ORDER BY id",

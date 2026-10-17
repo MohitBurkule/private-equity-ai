@@ -116,3 +116,22 @@ impl Visibility {
         }
     }
 }
+
+/// _visible_deal_or_404: the deal exists in the tenant and the key may see it (deal scope and MNPI wall).
+pub async fn require_visible_deal(
+    tx: &mut Transaction<'_, Postgres>,
+    vis: &Visibility,
+    name: &str,
+) -> Result<(), ApiError> {
+    let exists: Option<(String,)> = sqlx::query_as("SELECT name FROM deal WHERE name = $1")
+        .bind(name)
+        .fetch_optional(&mut **tx)
+        .await?;
+    if exists.is_none() || !vis.deal_allows(Some(name)) {
+        return Err(ApiError::new(
+            axum::http::StatusCode::NOT_FOUND,
+            "deal not found",
+        ));
+    }
+    Ok(())
+}
