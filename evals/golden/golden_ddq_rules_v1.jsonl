@@ -1,0 +1,14 @@
+{"id": "q01", "question": "How often do portfolio company boards meet?", "expect": "board_meeting_frequency"}
+{"id": "q02", "question": "What is the minimum frequency of board meetings for portfolio companies?", "expect": "board_meeting_frequency"}
+{"id": "q03", "question": "How frequently is the board of a portfolio company convened?", "expect": "board_meeting_frequency"}
+{"id": "q04", "question": "Do portfolio boards meet at least quarterly?", "expect": "board_meeting_frequency"}
+{"id": "q05", "question": "Above what equity investment must partners sign off?", "expect": "partner_signoff_threshold"}
+{"id": "q06", "question": "What leverage level triggers partner approval of a deal?", "expect": "partner_signoff_threshold"}
+{"id": "q07", "question": "Which deals require named partners to approve before we proceed?", "expect": "partner_signoff_threshold"}
+{"id": "q08", "question": "What is the minimum revenue a target needs for us to review it?", "expect": "deal_screening_criteria"}
+{"id": "q09", "question": "Which countries must a target operate in for us to review it?", "expect": "deal_screening_criteria"}
+{"id": "q10", "question": "What EBITDA margin do we require before reviewing a deal?", "expect": "deal_screening_criteria"}
+{"id": "a01", "question": "What is the fund's management fee?", "expect": null}
+{"id": "a02", "question": "Describe the firm's cybersecurity policy.", "expect": null}
+{"id": "a03", "question": "Is the fund registered in Luxembourg?", "expect": null}
+{"id": "a04", "question": "What is the target return (IRR) for each deal?", "expect": null}
