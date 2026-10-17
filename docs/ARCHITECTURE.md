@@ -118,7 +118,8 @@ Repo name; deployment target (cloud/on-prem); which vendor licences user holds (
 ## 13. Measured baselines
 - **Retrieval, 14 FinanceBench questions (first run, n tiny):** BM25 recall@1/3/5/10 0.14/0.29/0.50/0.57; hybrid (BM25+trigram) 0.14/0.43/0.43/0.50; dense bge-small 0.29/0.43/0.50/0.57; hybrid+dense 0.21/0.43/0.57/0.71; hybrid+dense+rerank 0.14/0.36/0.43/0.71.
 - **Answer accuracy, Gemma-2B, 12 numeric FinanceBench questions** (the subset of the first 50 gold rows with a numeric answer; top-2 pages; 160 output tokens): exact numeric match 1/12 (0.08; Wilson 95% CI about 0.00 to 0.29), abstained 7/12, model output unparseable 4/12, verified-wrong 0/12. Abstain when not correct 7/11. The 2B model is weak here; this is not a measure of the 9B model.
-- **Not yet run:** the 150-question dense comparison (the run stalled on this box), the 9B answer accuracy, and the citation-trace eval. Those numbers go here once they finish.
+- **Answer accuracy, Gemma-2-9B (Q4_K_M), same 12 questions, same settings:** exact numeric match 0/12, verified-wrong 1/12, abstained 11/12, errors 0/12. Abstain when not correct 11/12. Both models stay weak on this set; the 9B model abstains more and is wrong in one case where the verifier let a claim through. Run in checkpointed chunks on CPU, about 2 to 4 minutes per question.
+- **Not yet run:** the 150-question dense comparison (the run stalled on this box) and the citation-trace eval. Those numbers go here once they finish.
 - Retrieval (BM25 + finance synonym expansion, scoped to the gold document), 14 FinanceBench open-source questions on 10 sample filings: recall@1 0.14, @3 0.36, @5 0.50, @10 0.57 (`evals/run_retrieval_eval.py`). Without synonym expansion: @10 0.29. Small n and synonyms were tuned on these questions, so treat as an upper-biased baseline. Next steps: dense embeddings + cross-encoder rerank, statement-page classifier, and a held-out question set.
 
 ## 14. Excel ingest (implemented)
