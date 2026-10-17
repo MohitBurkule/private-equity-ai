@@ -50,6 +50,8 @@ def _deal_rule(d: Deal, q: str, raw: str, sic: str | None) -> str | None:
     for alias in (a.strip() for a in (d.aliases or "").split(",")):
         if alias and _match(q, alias):
             return "alias"
+    if d.sponsor and _match(q, d.sponsor):
+        return "sponsor"
     return "sic" if sic and d.sic == sic else None
 
 
@@ -72,6 +74,6 @@ def lookup(db: Session, tenant: str, query: str, deal_scope: set[str] | None = N
         rule = _deal_rule(d, q, query.strip(), sic)
         if rule:
             hits.append({"kind": "deal", "id": d.id, "name": d.name, "rule": rule, "stage": d.stage})
-    order = {"cik": 0, "lei": 0, "exact": 0, "alias": 1, "contains": 2, "sic": 3}
+    order = {"cik": 0, "lei": 0, "exact": 0, "alias": 1, "contains": 2, "sponsor": 2, "sic": 3}
     hits.sort(key=lambda h: (order[h["rule"]], h["kind"], h["name"]))
     return {"query": query, "normalised": q, "seen": bool(hits), "hits": hits}
