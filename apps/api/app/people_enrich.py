@@ -9,7 +9,10 @@ source is never returned, and nothing beyond the source's own words is inferred.
 the SEC URL must be on sec.gov, so this cannot be pointed at an arbitrary host."""
 from __future__ import annotations
 
+import html
+import os
 import re
+import urllib.request
 from collections.abc import Callable
 from urllib.parse import urlparse
 
@@ -26,7 +29,70 @@ _NEXT_ITEM = re.compile(r"\bItem\s+\d", re.IGNORECASE)
 _EXEC = re.compile(r"([A-Z][A-Za-z.'\-]+(?:\s+[A-Z][A-Za-z.'\-]+){1,3}),\s*(\d{2})\s*[,.]?\s*([^.]{3,120})\.")
 
 
-def companies_house_people(number: str, fetch: chfeed.Fetch = chfeed.default_fetch) -> list[dict]:
+_CH_HOST = "find-and-update.company-information.service.gov.uk"
+_BLOCK = re.compile(r'<div class="appointment-\d+">')
+
+
+def _text(fragment: str) -> str:
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", fragment))).strip()
+
+
+def parse_ch_officers_page(page: str, number: str) -> list[dict]:
+    """Active officers from the keyless Companies House officers page. Blocks with a resignation are dropped."""
+    url = CH_OFFICERS.format(n=number)
+    out = []
+    for block in _BLOCK.split(page)[1:]:
+        name = re.search(r'id="officer-name-\d+">(.*?)</span>', block, re.DOTALL)
+        role = re.search(r'id="officer-role-\d+"[^>]*>(.*?)</dd>', block, re.DOTALL)
+        if not name or "Resigned on" in block:
+            continue
+        who = _text(name.group(1))
+        if not who:
+            continue
+        r = _text(role.group(1)) if role else "officer"
+        out.append({"name": who, "role": r, "source": "Companies House officers (page)", "url": url,
+                    "quote": f"{who}, {r}"})
+    return out
+
+
+def parse_ch_psc_page(page: str, number: str) -> list[dict]:
+    """Individual PSCs from the keyless PSC page. Corporate entries (they show a legal form) are dropped."""
+    url = CH_PSC.format(n=number)
+    out = []
+    for block in _BLOCK.split(page)[1:]:
+        name = re.search(r'id="psc-name-\d+">(.*?)</span>', block, re.DOTALL)
+        if not name or "Legal form" in block or "Ceased on" in block:
+            continue
+        who = _text(name.group(1))
+        if not who:
+            continue
+        notified = re.search(r'id="psc-notified-on-\d+"[^>]*>(.*?)</dd>', block, re.DOTALL)
+        when = _text(notified.group(1)) if notified else "unknown"
+        out.append({"name": who, "role": "person with significant control", "source": "Companies House PSC (page)",
+                    "url": url, "quote": f"{who}, notified {when}"})
+    return out
+
+
+def _page(url: str) -> bytes:
+    if urlparse(url).scheme != "https" or urlparse(url).hostname != _CH_HOST:
+        raise ValueError("keyless Companies House pages only")
+    req = urllib.request.Request(url, headers={"User-Agent": "pe-ai people enrichment (research)"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.read()
+
+
+def companies_house_people_keyless(number: str, fetch: Callable[[str], bytes] = _page) -> list[dict]:
+    n = chfeed.normalise_number(number)
+    officers = fetch(CH_OFFICERS.format(n=n)).decode("utf-8", errors="replace")
+    psc = fetch(CH_PSC.format(n=n)).decode("utf-8", errors="replace")
+    return parse_ch_officers_page(officers, n) + parse_ch_psc_page(psc, n)
+
+
+def companies_house_people(number: str, fetch: chfeed.Fetch | None = None) -> list[dict]:
+    """Keyed (REST API) when COMPANIES_HOUSE_API_KEY is set, else the keyless public pages."""
+    if fetch is None and not os.environ.get("COMPANIES_HOUSE_API_KEY"):
+        return companies_house_people_keyless(number)
+    fetch = fetch or chfeed.default_fetch
     n = chfeed.normalise_number(number)
     out = []
     for o in chfeed.officers(n, fetch):
