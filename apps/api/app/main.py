@@ -210,6 +210,7 @@ from app.portfolio import (
     PortfolioCompany,
     add_covenant,
     budget_variance,
+    compliance_summary,
     current_kpis,
     evaluate_covenant,
     qoq_change,
@@ -2801,7 +2802,7 @@ def covenant_status(company_id: int, db: Db, who: Who):
     scope = visible_doc_ids(db, who)
     covs = db.query(Covenant).filter_by(tenant_id=who.tenant, company_id=company_id).all()
     out = [{"id": c.id, "kpi_metric": c.kpi_metric, "operator": c.operator,
-            "tests": evaluate_covenant(db, c, scope)} for c in covs]
+            "tests": (tests := evaluate_covenant(db, c, scope)), "compliance": compliance_summary(tests)} for c in covs]
     breaches = [{"covenant_id": c["id"], "kpi_metric": c["kpi_metric"], **t}
                 for c in out for t in c["tests"] if t["status"] in ("breach", "unit_mismatch")]
     return {"covenants": out, "breaches": breaches}
