@@ -148,13 +148,13 @@ for metric, period, value, doc_key, page, quote in ROWS:
 print(f"xpo facts: {seeded} accepted, {failed} rejected")
 
 s, q = call("POST", "/dd/questions", {"deal": "Project Orchard",
-            "question": "What were XPO's adjusted EBITDA and total current liabilities at year end 2025?"})
+            "question": "What was XPO's total adjusted EBITDA for 2025?"})
 if s == 201:
-    call("PATCH", f"/dd/questions/{q['id']}", {
-        "answer": ("Total adjusted EBITDA was $1,272 million in 2025 (Note 3 reconciliation, p. 65 of the FY2025 "
-                   "10-K). Total current liabilities were $1,555 million at December 31, 2025 (balance sheet, p. 47)."),
-        "document_id": docs["F25"]})
-    print("dd question answered")
+    # An answer is stored with one document, page and quote, and /dd/questions checks the quote on that page.
+    s2, _ = call("PATCH", f"/dd/questions/{q['id']}", {
+        "answer": "Total adjusted EBITDA was $1,272 million in 2025.",
+        "document_id": docs["F25"], "page": 65, "quote": "Total Adjusted EBITDA 1,272 1,266 996"})
+    print("dd question answered" if s2 == 200 else f"dd answer rejected: {s2}")
 
 raw, ctype = multipart_file("file", "lbo_model_SYNTHETIC.xlsx", synthetic_workbook(),
                             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
