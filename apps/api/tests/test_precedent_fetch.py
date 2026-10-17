@@ -91,3 +91,38 @@ def test_proxy_form_scanned_and_unknown_form_refused():
         raise AssertionError
     except ValueError:
         pass
+
+
+SAAS_DOC = (
+    b"<p>Acme Software entered an agreement and plan of merger with Thoma Bravo, a private equity firm. "
+    b"The enterprise value of approximately $900 million. The price represents 6.0x LTM revenue.</p>"
+)
+MFG_DOC = (
+    b"<p>Widget Mfg agreed to be acquired by Thoma Bravo, a private equity firm, for $400 million. "
+    b"The price represents 5.0x LTM revenue.</p>"
+)
+
+
+def theme_fake(url):
+    if "efts" in url:
+        return INDEX
+    if "999999" in url or "0002" in url:
+        return MFG_DOC
+    return SAAS_DOC
+
+
+def test_theme_keeps_sponsor_software_deals_with_cited_sentences():
+    r = build("2026-01-01", "2026-12-31", fetch=theme_fake, theme="vertical_saas_take_private")
+    assert [d["name"].split(" (")[0] for d in r["deals"]] == ["Acme Corp"]
+    th = r["deals"][0]["theme"]
+    assert "Thoma Bravo" in th["buyer"]["sentence"] and "Software" in th["target"]["sentence"]
+    assert th["buyer"]["source_url"].startswith("https://www.sec.gov/Archives/edgar/data/123456/")
+    assert r["skipped"] == [{"name": "Beta Inc (2026-04-01)", "url": r["skipped"][0]["url"],
+                             "reason": "theme not stated: vertical_saas_take_private"}]
+
+
+def test_unknown_theme_refused():
+    import pytest
+
+    with pytest.raises(ValueError):
+        build("2026-01-01", "2026-12-31", fetch=theme_fake, theme="nope")
