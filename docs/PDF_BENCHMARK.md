@@ -119,3 +119,18 @@ Caveat: these rows were selected from the same text layer that the router and py
 | router | 63/63 | 63/63 | 63 | 0.34 |
 
 The router keeps every row with a bbox, at about 0.34 s/page. pdfplumber misses 7 rows, mostly where the value sits in a separate cell.
+
+## Table golden set v1, hand-checked (78 rows)
+
+Hand check: each of the 63 text-layer rows was rendered as a tight crop of its row from the cited page and read against the golden label and value. 62 of 63 match. One fails: `tb17` (AMD FY2022, `Net income for diluted earnings per share`, $1,320). The crop is the basic-EPS line, so the golden label is wrong. Row kept, marked `hand_read: false`, to be corrected.
+
+Scanned rows: 15 more rows point at image-only copies of the same pages (`data/sec_scan/`, rasterised at 200 dpi, no text layer). These rows were located on the text-layer original but not read on the scan, so they are `hand_read: false`.
+
+| Engine | Text rows (63) | Scanned rows (15) | Bbox on row | s/page |
+|---|---|---|---|---|
+| pypdf | 62/63 | 0/15 | 0 | 0.10 |
+| pymupdf_text | 63/63 | 0/15 | 0 | 0.03 |
+| pdfplumber | 56/63 | 0/15 | 73 total | 0.22 |
+| router | 63/63 | 14/15 | 105 total | 0.67 |
+
+The scanned rows split the engines: only the router, which OCRs pages with no text layer, reads them. The router takes about 0.67 s/page, up from 0.34 s/page on text-only rows, because of the OCR pages.
