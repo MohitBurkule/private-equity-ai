@@ -62,6 +62,11 @@ export interface DDQuestionRow {
   answer: string | null; document_id: string | null; page: number | null; quote: string | null;
   asked_at: string; answered_at: string | null;
 }
+export interface LboTieRow {
+  cell: string | null; value: string | null; reason: string | null; tie: "tied" | "untied" | "no_value";
+  fact_ids: number[]; is_lbo_input: boolean;
+}
+export interface LboTiesOut { inputs: Record<string, LboTieRow>; untied: string[]; lbo_missing: string[] }
 export interface EvalRunRow { id: number; suite: string; ran_at: string; note: string | null; metrics: Record<string, unknown> }
 /** Cited input: a verified fact id, as /lbo/returns requires. Multiples are inputs too, so they must be cited. */
 export interface LboAssumption { value: string; set_by: string; set_on: string; reason: string }
@@ -204,6 +209,12 @@ export const api2 = {
   syncConnector: (name: string, token: string, deal: string) =>
     call<{ ingested: unknown[]; skipped?: unknown[] }>(`/connectors/${name}/sync`, "POST", { token, deal: deal || null, limit: 50 }),
   comps: (body: { target: string; peers: string[]; period: string; metrics: string[] }) => call<CompsOut>("/calc/comps", "POST", body),
+  /** Named inputs of an LBO workbook, each tied to verified facts with the same concept and value. */
+  lboWorkbookTies: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return fetch("/api/lbo/workbook/ties", { method: "POST", body: fd, headers: auth() }).then((r) => j<LboTiesOut>(r));
+  },
   qoeEbitda: (entity: string, period: string) =>
     call<QoeCalc>(`/calc/normalized-ebitda?entity=${encodeURIComponent(entity)}&period=${encodeURIComponent(period)}`),
   nwcPeg: (entity: string, periods: string) =>
