@@ -1153,6 +1153,7 @@ def legal_terms(doc_id: str, doc_type: str, db: Db, who: Who):
         raise HTTPException(422, str(e)) from e
     for f in out["findings"]:
         f["document_id"] = doc_id
+    out["red_flags"] = legal_mod.red_flags(out)
     return out
 
 
