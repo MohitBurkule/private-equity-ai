@@ -8,7 +8,24 @@ def test_parentheses_negative():
 
 
 def test_sign_flip_allowed_for_outflow():
-    assert verify_number(Decimal(1577), "Purchases of PP&E (1,577) (1,488)")
+    assert verify_number(Decimal(1577), "Purchases of PP&E (1,577) (1,488)", outflow=True)
+
+
+def test_sign_flip_rejected_for_profit_shown_in_parentheses():
+    # A printed loss must not be stored as a profit.
+    assert not verify_number(Decimal(747), "Net income (loss) $ ( 747 ) $ ( 2,862 )")
+
+
+def test_loss_asked_as_negative_with_loss_label():
+    assert verify_number(Decimal(-747), "Net income (loss) 747 2,862")
+
+
+def test_loss_asked_as_negative_without_loss_label_rejected():
+    assert not verify_number(Decimal(-747), "Net income 747 2,862")
+
+
+def test_printed_loss_matches_signed_claim():
+    assert verify_number(Decimal(-747), "Net income (loss) $ ( 747 ) $ ( 2,862 )")
 
 
 def test_wrong_number_rejected():

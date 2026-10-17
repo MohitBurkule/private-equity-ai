@@ -16,4 +16,4 @@ def test_3m_capex_on_cited_page():
     # FinanceBench gold page index 59 is 0-based -> PDF page 60
     p = pages[60 - 1]
     assert quote_in_page("Purchases of property, plant and equipment", p.text)
-    assert verify_number(Decimal(1577), p.text)
+    assert verify_number(Decimal(1577), p.text, outflow=True)

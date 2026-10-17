@@ -1,6 +1,7 @@
 """Fact creation gate: a fact is stored only if its citation verifies in code."""
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -9,9 +10,18 @@ from sqlalchemy.orm import Session
 from app.citations import quote_in_page, verify_number
 from app.models import Document, Fact, FactSource, PageRow
 
+# Labels for money paid out. Their tables print the amount in parentheses, so a positive claim
+# is the same figure, not a sign error.
+_OUTFLOW = re.compile(r"capex|capital.?expend|purchase|repay|payment|dividend|distribution|buyback|"
+                      r"repurchase|acquisition|outflow|paid", re.IGNORECASE)
+
 
 class CitationError(ValueError):
     pass
+
+
+def is_outflow(metric: str) -> bool:
+    return bool(_OUTFLOW.search(metric))
 
 
 def add_verified_fact(
@@ -26,7 +36,7 @@ def add_verified_fact(
         raise CitationError(f"page {page} not found in document {document_id[:8]}")
     if not quote_in_page(quote, row.text):
         raise CitationError("quote not found on cited page")
-    if not verify_number(value, quote, scale):
+    if not verify_number(value, quote, scale, outflow=is_outflow(metric)):
         raise CitationError("value does not match any number in the quote")
     fact = Fact(tenant_id=tenant_id, entity=entity, metric=metric, period=period, value=value, unit=unit,
                 basis=basis,
@@ -54,7 +64,7 @@ def review_fact(db: Session, fact: Fact, *, action: str, reviewer: str, note: st
             raise CitationError(f"page {new_page} not found in the cited document")
         if not quote_in_page(new_quote, row.text):
             raise CitationError("quote not found on cited page")
-        if not verify_number(new_value, new_quote, scale):
+        if not verify_number(new_value, new_quote, scale, outflow=is_outflow(fact.metric)):
             raise CitationError("value does not match any number in the quote")
         fact.value, src.page, src.quote = new_value, new_page, new_quote
     fact.status = "rejected" if action == "reject" else "verified"
