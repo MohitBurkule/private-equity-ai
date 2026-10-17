@@ -41,6 +41,7 @@ from app import ddq as ddq_mod
 from app import ddq_llm as ddq_llm_mod
 from app import debt_parse as debt_parse_mod
 from app import derived as derived_mod
+from app import edgar as edgar_mod
 from app import firm_knowledge as fk
 from app import flagship as flagship_mod
 from app import html_doc as html_doc_mod
@@ -1678,6 +1679,9 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
     except (OSError, ValueError, RuntimeError) as e:
         steps.append(flagship_mod.Step("precedents", "failed", f"{type(e).__name__}: {e}"))
     steps.append(flagship_mod.legal_step(pages, doc.id, body.legal_doc_type, legal_mod))
+    ext_step = next((s for s in steps if s.name == "extraction"), None)
+    steps.append(flagship_mod.crosscheck_step(ext_step, body.cik, edgar_mod.fetch_companyfacts) if body.extract
+                 else flagship_mod.Step("crosscheck", "skipped", "set extract=true to cross-check its figures"))
     lbo_raw = dict(body.lbo.get("inputs") or {})
     if "ebitda" not in lbo_raw:
         derived = flagship_mod.derive_ebitda(steps, doc.id, doc.filename)

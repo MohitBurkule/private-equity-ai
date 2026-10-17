@@ -83,6 +83,46 @@ def derive_ebitda(steps: list[Step], doc_id: str, filename: str) -> dict | None:
                                             "quote": f"derived: {oi['quote']} + {da['quote']}"}}
 
 
+def crosscheck_step(extraction: Step | None, cik: str | None, fetch) -> Step:
+    """Each extracted figure against the SEC's companyfacts value for the same concept and fiscal year end.
+    A figure that differs is a data conflict: both values are listed, and the step fails until someone reads both."""
+    from app import edgar
+    from app.ixbrl_facts import BALANCE, CONCEPTS
+
+    if extraction is None or extraction.status != "ok":
+        return Step("crosscheck", "skipped", "needs verified extraction figures")
+    if not cik:
+        return Step("crosscheck", "skipped", "needs the entity's CIK to read companyfacts")
+    period_end = extraction.result.get("period_end")
+    try:
+        facts = edgar.fetch_companyfacts(cik, fetch)
+    except (OSError, ValueError) as e:
+        return Step("crosscheck", "failed", f"companyfacts unavailable: {e}")
+    us_gaap = facts.get("facts", {}).get("us-gaap", {})
+    matched, conflicts, unchecked = [], [], []
+    for c in extraction.result.get("created", []):
+        metric = c["metric"]
+        sec = None
+        for concept in CONCEPTS[metric]:
+            for entry in us_gaap.get(concept, {}).get("units", {}).get("USD", []):
+                durational = "start" in entry
+                if entry.get("end") == period_end and entry.get("form") == "10-K" and durational == (metric not in BALANCE):
+                    sec = {"concept": concept, "value": entry["val"], "end": period_end}
+                    break
+            if sec:
+                break
+        if sec is None:
+            unchecked.append({"metric": metric, "reason": f"no 10-K companyfacts value for {period_end}"})
+            continue
+        ours, theirs = Decimal(c["value"]), Decimal(str(sec["value"]))
+        row = {"metric": metric, "extracted": str(ours), "companyfacts": str(theirs), "concept": sec["concept"]}
+        (matched if ours == theirs else conflicts).append(row)
+    if conflicts:
+        return Step("crosscheck", "failed", f"{len(conflicts)} data conflict(s): extracted figures differ from companyfacts",
+                    result={"matched": matched, "conflicts": conflicts, "unchecked": unchecked})
+    return Step("crosscheck", "ok", result={"matched": matched, "conflicts": [], "unchecked": unchecked})
+
+
 def legal_step(pages: list[tuple[int, str]], doc_id: str, doc_type: str | None, legal_mod) -> Step:
     if not doc_type:
         return Step("legal", "skipped", "no document type given (nda, spa or credit)")
