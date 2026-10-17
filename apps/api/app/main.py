@@ -34,6 +34,7 @@ from app import firm_knowledge as fk
 from app import jobs as jobs_mod
 from app import lbo as lbo_mod
 from app import legal as legal_mod
+from app import notify as notify_mod
 from app import outreach as outreach_mod
 from app import precedent_fetch as pfetch_mod
 from app import precedents as prec_mod
@@ -1561,6 +1562,37 @@ def targets_facets(db: Db, who: Who):
     out["total"] = db.query(Target).filter_by(tenant_id=who.tenant).count()
     out["revenue_unknown"] = db.query(Target).filter(Target.tenant_id == who.tenant, Target.revenue.is_(None)).count()
     return out
+
+
+class OutreachSend(BaseModel):
+    target_id: int
+    to: list[str] = Field(min_length=1, max_length=20)
+    sender: str = Field(min_length=1, max_length=120)
+    firm: str = Field(min_length=1, max_length=120)
+
+
+@app.post("/targets/outreach/send", status_code=200)
+def targets_outreach_send(body: OutreachSend, db: Db, who: Writer):
+    """Email one target's outreach draft with its cited research note (.docx) attached."""
+    t = db.get(Target, body.target_id)
+    if t is None or t.tenant_id != who.tenant:
+        raise HTTPException(404, "target not found")
+    try:
+        to = notify_mod.valid_recipients(body.to)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    msg = outreach_mod.draft(t, body.sender, body.firm)
+    data = research_mod.build_docx(db, who.tenant, t, None if who.deals is None else set(who.deals))
+    name = f"research-{t.id}.docx"
+    try:
+        notify_mod.send_email(to, msg["subject"], msg["body"],
+                              (name, data, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"))
+    except notify_mod.MailNotConfigured as e:
+        raise HTTPException(503, str(e)) from e
+    except OSError as e:  # SMTP host unreachable or refused: a gateway failure, not a server bug
+        raise HTTPException(502, f"mail server unreachable: {e}") from e
+    log_event(db, who.tenant, actor(who), "target.outreach_sent", {"id": t.id, "to": len(to)})
+    return {"sent": len(to), "attached": name}
 
 
 @app.get("/targets/{tid}/research.docx")
