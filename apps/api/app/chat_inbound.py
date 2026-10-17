@@ -3,9 +3,9 @@ question, and the reply is that question's cited answer as plain text.
 
 Each request is signed by the chat app and checked before anything else runs: Slack with its signing secret over
 timestamp and body (rejected after five minutes), Teams with its outgoing-webhook security token as an HMAC of the
-body. The question runs as the API key configured for that app (SLACK_INBOUND_API_KEY, TEAMS_INBOUND_API_KEY), so
-that key's deal scope and MNPI walls cap what the channel can read. The chat user is not mapped to a key yet: every
-person who can post to the channel gets the same scope. Slack's answer is ephemeral, so only the asker sees it."""
+body. The question runs as the person who asked: the chat user id is matched to a key whose identity is
+`slack:<user id>` or `teams:<aad object id>`, so that key's deal scope and MNPI walls apply. An unlinked chat user gets
+no answer. Slack's answer is ephemeral, so only the asker sees it."""
 from __future__ import annotations
 
 import base64
@@ -20,6 +20,7 @@ from app.answer import Answer
 SLACK_MAX_AGE = 300  # seconds
 REPLY_LIMIT = 3000  # characters; a longer answer is cut and says so
 HELP = "Ask a question about the documents you can see, e.g. `/ask what was FY24 revenue?`"
+NOT_LINKED = "Your chat account is not linked to a PE AI user yet. Ask an admin to add `slack:<your id>` or `teams:<your AAD id>` as a key's identity."
 TEAMS_MENTION = re.compile(r"<at>.*?</at>")
 
 
@@ -59,6 +60,19 @@ def teams_question(body: bytes) -> str:
     except json.JSONDecodeError:
         return ""
     return TEAMS_MENTION.sub("", str(payload.get("text", ""))).strip()
+
+
+def chat_identity(kind: str, body: bytes) -> str:
+    """The external id the chat app sent for the person who asked, in the form keys store as their identity."""
+    if kind == "slack":
+        user = parse_qs(body.decode("utf-8", "replace")).get("user_id", [""])[0].strip()
+        return f"slack:{user}" if user else ""
+    try:
+        sender = json.loads(body or b"{}").get("from") or {}
+    except json.JSONDecodeError:
+        return ""
+    oid = str(sender.get("aadObjectId") or "").strip()
+    return f"teams:{oid}" if oid else ""
 
 
 def format_answer(a: Answer, filenames: dict[str, str]) -> str:

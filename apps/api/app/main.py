@@ -94,6 +94,7 @@ from app.auth import (
     hash_key,
     key_id,
     list_keys,
+    principal_for_identity,
     principal_for_key,
     revoke_key,
 )
@@ -102,6 +103,8 @@ from app.calendar_events import retag_deals
 from app.chat_alerts import chat_poster
 from app.chat_inbound import (
     HELP,
+    NOT_LINKED,
+    chat_identity,
     format_answer,
     slack_question,
     slack_reply,
@@ -3929,11 +3932,8 @@ async def chat_inbound(kind: str, request: Request, db: Db):
     if kind not in ("slack", "teams"):
         raise HTTPException(404, "unknown chat app")
     body = await request.body()
-    if kind == "slack":
-        secret, token = os.environ.get("SLACK_SIGNING_SECRET"), os.environ.get("SLACK_INBOUND_API_KEY")
-    else:
-        secret, token = os.environ.get("TEAMS_SECURITY_TOKEN"), os.environ.get("TEAMS_INBOUND_API_KEY")
-    if not secret or not token:
+    secret = os.environ.get("SLACK_SIGNING_SECRET" if kind == "slack" else "TEAMS_SECURITY_TOKEN")
+    if not secret:
         raise HTTPException(503, f"{kind} inbound is not configured")
     if kind == "slack":
         ok = verify_slack(secret, request.headers.get("X-Slack-Request-Timestamp", ""),
@@ -3947,15 +3947,15 @@ async def chat_inbound(kind: str, request: Request, db: Db):
     reply = slack_reply if kind == "slack" else teams_reply
     if not question:
         return reply(HELP)
-    who = principal_for_key(db, token)
+    who = principal_for_identity(db, chat_identity(kind, body))
     if who is None:
-        raise HTTPException(503, f"{kind} inbound key is not valid")
+        return reply(NOT_LINKED)
     bind_tenant(db, who.tenant)
     a = answer_question(db, who.tenant, llm_dependency(), question, scope=visible_doc_ids(db, who))
     filenames = {d.id: d.filename for d in db.query(Document).filter(
         Document.tenant_id == who.tenant, Document.id.in_([c.doc_id for c in a.claims] or [""]))}
-    log_event(db, who.tenant, f"chat:{kind}", "chat.ask", {"question": question, "status": a.status,
-                                                          "claims": len(a.claims), "rejected": len(a.rejected)})
+    log_event(db, who.tenant, who.identity or f"chat:{kind}", "chat.ask", {"question": question, "status": a.status,
+                                                                         "claims": len(a.claims), "rejected": len(a.rejected)})
     db.commit()
     return reply(format_answer(a, filenames))
 
