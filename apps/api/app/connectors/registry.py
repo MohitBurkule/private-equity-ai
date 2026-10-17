@@ -10,13 +10,14 @@ from app.connectors.files import Box, Dropbox, GoogleDrive
 from app.connectors.gmail import Gmail
 from app.connectors.graph import OneDriveSharePoint, Outlook
 from app.connectors.gsheets import GoogleSheets
+from app.connectors.mailpit import Mailpit
 from app.connectors.slack import Slack
 
-IMPLEMENTED: dict[str, type[Connector]] = {c.name: c for c in (Gmail, Outlook, OneDriveSharePoint, GoogleDrive, Box, Dropbox, GoogleSheets,
+IMPLEMENTED: dict[str, type[Connector]] = {c.name: c for c in (Gmail, Outlook, OneDriveSharePoint, GoogleDrive, Box, Dropbox, GoogleSheets, Mailpit,
                                                                      Salesforce, HubSpot, Affinity, DealCloud, Slack, Intralinks, Datasite)}
 
 CATALOG = [  # (name, label, category, auth)
-    ("gmail", "Gmail", "email", "OAuth2"), ("outlook", "Outlook / Exchange", "email", "OAuth2 (Graph)"),
+    ("gmail", "Gmail", "email", "OAuth2"), ("mailpit", "Mailpit (dev inbox)", "email", "none, local only"), ("outlook", "Outlook / Exchange", "email", "OAuth2 (Graph)"),
     ("gdrive", "Google Drive", "files", "OAuth2"), ("gsheets", "Google Sheets (two-way)", "files", "OAuth2"), ("sharepoint", "SharePoint / OneDrive", "files", "OAuth2 (Graph)"),
     ("box", "Box", "files", "OAuth2"), ("dropbox", "Dropbox", "files", "OAuth2"),
     ("salesforce", "Salesforce", "crm", "OAuth2"), ("dealcloud", "DealCloud", "crm", "OAuth2 client credentials"),
