@@ -117,6 +117,7 @@ from app.ixbrl_full import read_filing
 from app.kpi_workbook import ingest_kpi_pack as kpi_pack_ingest
 from app.llm import LLM, NoLLMConfigured, get_llm
 from app.memo import build_memo, build_memo_docx, build_memo_pptx
+from app.memo_templates import TEMPLATES, build_memo_sections
 from app.migrate import migrate
 from app.model_audit import audit
 from app.models import (
@@ -1291,6 +1292,15 @@ def retention_documents(body: RetentionIn, db: Db, who: Writer):
 @app.get("/memo")
 def memo(entity: str, db: Db, who: Who):
     return {"entity": entity, "markdown": build_memo(db, who.tenant, entity, visible_doc_ids(db, who))}
+
+
+@app.get("/memo/sections")
+def memo_sections(entity: str, db: Db, who: Who, template: str = "ic"):
+    """Memo with the sections a named template selects, in its order. Unknown templates are refused."""
+    if template not in TEMPLATES:
+        raise HTTPException(422, f"unknown template; choose one of {sorted(TEMPLATES)}")
+    return {"entity": entity, "template": template,
+            "markdown": build_memo_sections(db, who.tenant, entity, template, visible_doc_ids(db, who))}
 
 
 class MemoDiffBody(BaseModel):
