@@ -7,6 +7,7 @@ mod citations;
 mod documents;
 mod error;
 mod facts;
+mod proxy;
 mod scope;
 mod visibility;
 
@@ -17,6 +18,9 @@ use sqlx::PgPool;
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
+    /// FastAPI base URL for routes not ported here. None means unported routes return 404.
+    pub upstream: Option<String>,
+    pub http: reqwest::Client,
 }
 
 async fn health() -> Json<Value> {
@@ -40,6 +44,8 @@ pub fn app(state: AppState) -> Router {
         .route("/facts", get(facts::list_facts).post(facts::create_fact))
         .route("/documents", get(documents::list_documents))
         .route("/documents/:doc_id/pages/:number", get(documents::get_page))
+        .fallback(proxy::forward)
+        .method_not_allowed_fallback(proxy::forward)
         .with_state(state)
 }
 
@@ -47,8 +53,20 @@ pub fn app(state: AppState) -> Router {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let url = std::env::var("DATABASE_URL")?;
     let pool = PgPool::connect(&url).await?;
+    let upstream = std::env::var("FASTAPI_UPSTREAM")
+        .ok()
+        .filter(|u| !u.is_empty());
     let addr = std::env::var("RS_BIND").unwrap_or_else(|_| "0.0.0.0:8001".into());
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app(AppState { pool })).await?;
+    let http = reqwest::Client::new();
+    axum::serve(
+        listener,
+        app(AppState {
+            pool,
+            upstream,
+            http,
+        }),
+    )
+    .await?;
     Ok(())
 }
