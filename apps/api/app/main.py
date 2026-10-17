@@ -41,7 +41,6 @@ from app import ddq as ddq_mod
 from app import ddq_llm as ddq_llm_mod
 from app import debt_parse as debt_parse_mod
 from app import derived as derived_mod
-from app import edgar as edgar_mod
 from app import firm_knowledge as fk
 from app import flagship as flagship_mod
 from app import html_doc as html_doc_mod
