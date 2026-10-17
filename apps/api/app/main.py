@@ -464,21 +464,28 @@ def lbo_returns(body: dict, db: Db, who: Who, xlsx: bool = False):
             if not src.get("document_id") or not src.get("quote") or not src.get("page"):
                 raise HTTPException(422, f"{name}: citation needs document_id, page and quote")
             cited[name] = lbo_mod.Cited(Decimal(str(spec["value"])), src)
+    unknown = set(cited) - set(lbo_mod.REQUIRED) - set(lbo_mod.OPTIONAL)
+    if unknown:
+        raise HTTPException(422, f"unknown inputs: {', '.join(sorted(unknown))}")
     if lbo_mod.missing(cited):
         raise HTTPException(422, f"missing inputs: {', '.join(lbo_mod.missing(cited))}")
     try:
         res = lbo_mod.run(cited)
+        grid = None
+        if body.get("entry_multiples") and body.get("exit_multiples"):
+            grid = lbo_mod.sensitivity(cited, [Decimal(str(x)) for x in body["entry_multiples"]],
+                                       [Decimal(str(x)) for x in body["exit_multiples"]])
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     if xlsx:
-        return Response(lbo_mod.build_xlsx(cited, res), headers={
+        return Response(lbo_mod.build_xlsx(cited, res, grid), headers={
             "Content-Disposition": 'attachment; filename="lbo_returns.xlsx"'},
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     return {"entry_ev": str(res.entry_ev), "debt": str(res.debt), "fees": str(res.fees),
             "equity": str(res.equity), "exit_ev": str(res.exit_ev), "exit_net_debt": str(res.exit_net_debt),
             "exit_equity": str(res.exit_equity), "moic": str(res.moic.quantize(Decimal("0.01"))),
             "irr": None if res.irr is None else str(res.irr.quantize(Decimal("0.0001"))),
-            "schedule": res.schedule}
+            "dividends": str(res.dividends), "schedule": res.schedule, "sensitivity": grid}
 
 
 @app.get("/calc/ltm")
