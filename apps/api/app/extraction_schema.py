@@ -72,3 +72,14 @@ class ContractTerms(BaseModel):
     exclusivity: bool | None = None
     mfn: bool | None = None
     termination_notice_days: int | None = Field(default=None, ge=0, le=3650)
+
+
+class EbitdaBridgeRow(BaseModel):
+    """One line of a management EBITDA bridge: reported EBITDA, each add-back or deduction, adjusted EBITDA.
+    The adjusted line is kept as stated; code does not re-add the lines, because management tables often
+    carry rounding and a footnoted item that a sum would hide."""
+    period: str = Field(min_length=1)
+    item: str = Field(min_length=1)
+    kind: Literal["reported", "add_back", "deduction", "adjusted"]
+    amount: Decimal
+
