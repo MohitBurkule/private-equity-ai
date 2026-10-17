@@ -149,3 +149,30 @@ def test_cohort_rows_keep_each_measure_and_reject_empty_rows():
     assert [r["status"] for r in out["rows"]] == ["accepted", "rejected"]
     metrics = sorted(f["metric"] for f in c.get("/facts", headers=h).json() if f["metric"].startswith("cohort_"))
     assert metrics == ["cohort_arr"]
+
+
+
+HTML_FILING = """<html><body>
+<p>3.2. Capitalization.</p>
+<p>The following table sets out our shareholders and their holdings.</p>
+<table><tr><td>Acme Holdings LLC</td><td>Class A common stock</td><td>1,000,000</td></tr></table>
+<p id="ex">Borrower may not assign this agreement without consent. Termination requires 90 days notice.</p>
+</body></html>"""
+
+
+def test_html_filing_rows_cite_section_and_block_not_page():
+    h = new_tenant(c, "rows10")
+    r = c.post("/documents", files={"file": ("10k.htm", HTML_FILING.encode(), "text/html")}, headers=h)
+    doc = r.json()[0]["id"] if isinstance(r.json(), list) else r.json()["id"]
+    # Block 2 is the table row; its text is its cells joined by spaces.
+    good = {"page": 2, "quote": "Acme Holdings LLC Class A common stock 1,000,000",
+            "fields": {"holder": "Acme Holdings LLC", "share_class": "Class A common stock", "shares": 1000000}}
+    wrong_block = {"page": 3, "quote": "Acme Holdings LLC Class A common stock 1,000,000",
+                   "fields": good["fields"]}
+    out = run(h, doc, "cap_table", [good, wrong_block])
+    assert [r["status"] for r in out["rows"]] == ["accepted", "rejected"]
+    assert out["rows"][1]["reason"] == "quote not found on cited page"
+    shares = [f for f in c.get("/facts", headers=h).json() if f["metric"] == "shares Class A common stock"]
+    assert len(shares) == 1 and shares[0]["status"] == "auto"
+    locator = shares[0]["sources"][0]["locator"]
+    assert "3.2" in locator and "p.0" not in locator and "p." not in locator
