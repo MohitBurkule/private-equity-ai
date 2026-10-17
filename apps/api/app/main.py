@@ -1673,6 +1673,8 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
     ok, skipped or failed with its reason; the memo is downloaded from /memo.pptx?entity=..."""
     doc = _own_doc(db, who, body.document_id)
     pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc.id).order_by(PageRow.number)]
+    if not pages:  # an HTML exhibit is stored as text blocks, not pages; each block numbers as one page
+        pages = [(u.idx + 1, u.text) for u in db.query(HtmlUnit).filter_by(document_id=doc.id).order_by(HtmlUnit.idx)]
     steps = [flagship_mod.Step("intake", "ok", result={"document": doc.filename, "pages": len(pages)})]
     if body.extract:
         blob = db.get(DocumentFile, doc.id)
@@ -2038,12 +2040,14 @@ class CompsIn(BaseModel):
 
 
 @app.post("/calc/comps")
-def calc_comps(body: CompsIn, db: Db, who: Who):
+def calc_comps(body: CompsIn, db: Db, who: Who, fetch: Annotated[Callable, Depends(get_market_fetch)]):
     """Trading comps (or precedents: peers are deal entities with enterprise_value facts) and implied range."""
     if len(body.peers) > 200 or len(body.metrics) > 10:
         raise HTTPException(422, "too many peers or metrics")
+    from app.macrodata import EcbFxProvider, fx_rate
+    fx = (lambda frm, to: fx_rate(EcbFxProvider(fetch), frm, to)) if fetch is not None else None
     return comps_mod.run(db, who.tenant, body.target, body.peers, body.period, body.metrics,
-                         visible_doc_ids(db, who), body.target_period, body.ev_period)
+                         visible_doc_ids(db, who), body.target_period, body.ev_period, fx)
 
 
 @app.post("/calc/comps.docx")

@@ -107,3 +107,15 @@ def test_legal_model_reader_keeps_only_quoted_sentences_on_the_page():
     assert out["findings"][0]["value"] == "State of New York" and out["findings"][0]["page"] == 1
     assert out["dropped"] == [{"term": "change_of_control", "reason": "quote is not on the cited page"}]
     assert legal.TERMS["governing_law"]["doc"]
+
+
+def test_flagship_reads_an_html_exhibit_stored_as_blocks():
+    c = TestClient(app)
+    h = new_tenant(c, "html-legal")
+    html = b"<html><body><p>This Agreement is governed by the laws of the State of New York.</p></body></html>"
+    up = c.post("/documents", files={"file": ("exhibit.htm", html, "text/html")}, headers=h).json()
+    r = c.post("/flagship/run", headers=h, json={"document_id": up["id"], "entity": "X", "legal_doc_type": "credit"})
+    steps = steps_of(r.json())
+    assert steps["intake"]["result"]["pages"] >= 1
+    assert steps["legal"]["status"] == "ok"
+    assert "gov_law_absent" not in [f["rule"] for f in steps["legal"]["result"]["red_flags"]]
