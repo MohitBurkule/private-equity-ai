@@ -29,6 +29,11 @@ def main(data: Path) -> dict:
                    (("FixedAssets", "fixed_assets"), ("TotalAssetsLessCurrentLiabilities",
                     "total_assets_less_current_liabilities"), ("Equity", "equity"))
                    if a.get(g) is not None and k in r.facts)
+        if "turnover" in a:  # full accounts: the tagged P&L lines, period and basis must match too
+            f_ok = f_ok and (float(r.pnl.get("Turnover", -1)) == a["turnover"]
+                             and float(r.pnl.get("GrossProfit", -1)) == a["gross_profit"]
+                             and float(r.pnl.get("OperatingProfit", -1)) == a["operating_profit"]
+                             and r.pnl_period == a["pnl_period"] and r.pnl_consolidated == a["pnl_consolidated"])
         fig_ok += f_ok
         if not (c_ok and r.reliable == a["reliable"] and f_ok):
             bad.append({"id": it["id"], "gold": [a["reliable"], gold_checks], "got": [r.reliable, got]})

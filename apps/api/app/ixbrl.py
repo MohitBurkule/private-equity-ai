@@ -25,6 +25,7 @@ class Ctx:
     start: str | None = None
     end: str | None = None
     dimensional: bool = False
+    consolidated: bool = False  # the only dimension is the group's consolidated figures
 
 
 class _Parser(HTMLParser):
@@ -37,6 +38,7 @@ class _Parser(HTMLParser):
         self._cur: dict | None = None
         self._buf: list[str] = []
         self._depth = 0
+        self._member = ""
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
@@ -48,6 +50,10 @@ class _Parser(HTMLParser):
             self._buf = []
         elif tag.startswith("xbrldi:") and self._ctx_id:
             self.contexts[self._ctx_id].dimensional = True
+            if tag == "xbrldi:explicitmember":
+                self._member = a.get("dimension") or ""
+                self._tag_text = tag
+                self._buf = []
         elif tag == "ix:nonfraction":
             if self._cur is None:
                 self._cur, self._buf, self._depth = a, [], 0
@@ -65,6 +71,11 @@ class _Parser(HTMLParser):
                 c.start = v
             else:
                 c.end = v
+            self._tag_text = None
+        elif tag == "xbrldi:explicitmember" and self._ctx_id:
+            c = self.contexts[self._ctx_id]
+            if self._member.endswith("GroupCompanyDataDimension") and "".join(self._buf).strip().endswith("Consolidated"):
+                c.consolidated = True
             self._tag_text = None
         elif tag == "ix:nonfraction" and self._cur is not None:
             if self._depth:
@@ -112,6 +123,7 @@ class Report:
     reliable: bool = True
     pnl: dict[str, Decimal] = field(default_factory=dict)  # tagged P&L lines for the latest 12-month period
     pnl_period: str | None = None  # "start to end"; None when no P&L line is tagged
+    pnl_consolidated: bool = False  # the P&L is the group's consolidated figures, not the company's own
 
 
 def read_ixbrl(html: str) -> Report:
@@ -151,7 +163,7 @@ def _read_pnl(p: _Parser, rep: Report) -> None:
     from datetime import date
 
     def months(c: Ctx) -> int | None:
-        if not (c.start and c.end) or c.dimensional:
+        if not (c.start and c.end) or (c.dimensional and not c.consolidated):
             return None
         days = (date.fromisoformat(c.end) - date.fromisoformat(c.start)).days
         return days if 350 <= days <= 380 else None
@@ -166,10 +178,12 @@ def _read_pnl(p: _Parser, rep: Report) -> None:
     if best is None:
         return
     rep.pnl_period = f"{best[0]} to {best[1]}"
-    for f in p.facts:
+    # the company's own figures win over the group's consolidated ones when a filing tags both
+    for f in sorted(p.facts, key=lambda f: p.contexts[f.context].consolidated if f.context in p.contexts else True):
         c = p.contexts.get(f.context)
         if c is None or (c.start, c.end) != best or months(c) is None:
             continue
         for line, names in PNL.items():
-            if f.name in names:
-                rep.pnl.setdefault(line, f.value)
+            if f.name in names and line not in rep.pnl:
+                rep.pnl[line] = f.value
+                rep.pnl_consolidated = c.consolidated

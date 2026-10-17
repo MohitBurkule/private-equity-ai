@@ -81,3 +81,13 @@ def test_pnl_read_for_latest_twelve_month_period_only():
 def test_no_tagged_pnl_leaves_pnl_empty_and_does_not_touch_reliability():
     r = read_ixbrl(doc())
     assert r.pnl == {} and r.pnl_period is None and r.reliable
+
+
+def test_consolidated_group_pnl_read_when_only_dimension_is_group_basis():
+    html = """<html><body>
+<xbrli:context id="g"><xbrli:entity><xbrli:segment><xbrldi:explicitMember dimension="bus:GroupCompanyDataDimension">bus:Consolidated</xbrldi:explicitMember></xbrli:segment></xbrli:entity>
+<xbrli:period><xbrli:startDate>2024-11-01</xbrli:startDate><xbrli:endDate>2025-10-31</xbrli:endDate></xbrli:period></xbrli:context>
+<ix:nonFraction name="core:TurnoverRevenue" contextRef="g" scale="3">24,607</ix:nonFraction>
+</body></html>"""
+    r = read_ixbrl(html)
+    assert r.pnl == {"Turnover": Decimal(24607000)} and r.pnl_consolidated is True
