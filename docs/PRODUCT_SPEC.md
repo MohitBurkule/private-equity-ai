@@ -55,7 +55,7 @@ Target modules: `firm_knowledge.py` (profile), `agent.py` (tool registry, workfl
 | 19 | Source transparency | BUILT | Citations verified, source viewer, audit chain | - |
 | 20 | Financial calculation toolkit | BUILT | LTM, net debt, NWC, IRR/TVPI/DPI, waterfall, share ledger | - |
 | 21 | Due-diligence request tracking | BUILT | DD requests, summary, DDQ | - |
-| 22 | Outreach emails at scale | MISSING | Needs mail connector (draft only, human sends) | integrations |
+| 22 | Outreach emails at scale | PARTIAL | Drafts from known fields only (`POST /targets/outreach`). Send is human-only: `POST /targets/outreach/send` needs a senior unrestricted key and `confirm_subject` matching the reviewed draft; agents, workflows and schedules cannot reach it. Missing: batch review queue | integrations |
 
 ## 3. Firm knowledge: what the terms mean
 
