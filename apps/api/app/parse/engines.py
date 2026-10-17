@@ -161,6 +161,26 @@ def _camelot(path, pages):
         yield PageResult("camelot", p, lines)
 
 
+_marker = None
+
+
+def _marker_engine(path, pages):
+    """Marker (layout + OCR models, Apache-2.0 code; weights are separately licensed). One page per
+    conversion via page_range; text is markdown, so one line per block."""
+    global _marker
+    from marker.config.parser import ConfigParser
+    from marker.converters.pdf import PdfConverter
+    from marker.models import create_model_dict
+    if _marker is None:
+        _marker = create_model_dict()
+    for p in pages:
+        cfg = ConfigParser({"output_format": "markdown", "page_range": str(p - 1)})
+        conv = PdfConverter(config=cfg.generate_config_dict(), artifact_dict=_marker)
+        md = conv(str(path)).markdown
+        lines = [Line(x.strip(), None, "marker") for x in md.splitlines() if x.strip()]
+        yield PageResult("marker", p, lines)
+
+
 _docling = None
 
 
@@ -199,6 +219,7 @@ ENGINES = {
     "pypdf": (_pypdf, lambda: _has("pypdf")),
     "pdfium": (_pdfium, lambda: _has("pypdfium2")),
     "camelot": (_camelot, lambda: _has("camelot")),
+    "marker": (_marker_engine, lambda: _has("marker")),
     "docling": (_docling_engine, lambda: _has("docling")),
     "rapidocr": (_rapidocr, lambda: _has("rapidocr_onnxruntime") and _has("pypdfium2")),
 }
