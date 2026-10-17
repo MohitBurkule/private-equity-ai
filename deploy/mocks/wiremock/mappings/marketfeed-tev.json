@@ -12,7 +12,7 @@
           "Content-Type": "application/json"
         },
         "transformers": ["response-template"],
-        "body": "{\"data\": [{\"id\": \"{{request.query.symbol}}\", \"tev\": 4321.5, \"currency\": \"usd\", \"date\": \"2026-10-15\"}, {\"id\": \"{{request.query.symbol}}\", \"tev\": 4480, \"currency\": \"usd\", \"date\": \"2026-10-16\"}]}"
+        "body": "{\"data\": [{\"id\": \"{{request.query.symbol}}\", \"tev\": 4321500000, \"currency\": \"usd\", \"date\": \"2026-10-15\"}, {\"id\": \"{{request.query.symbol}}\", \"tev\": 4480000000, \"currency\": \"usd\", \"date\": \"2026-10-16\"}]}"
       },
       "metadata": {
         "note": "SYNTHETIC mock: enterprise value feed shape from app/marketfeed_facts.py. Not a vendor response."

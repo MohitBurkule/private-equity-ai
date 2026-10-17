@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -97,7 +98,7 @@ if tenk.exists():
     if comps.get("status") == "ok":
         for peer in comps["result"]["peers"]:
             call("POST", "/market/tev-sync", {"entity": peer["name"], "period": "LTM", "source": "market-feed",
-                                              "url": tmpl.format(name=peer["name"]), "token": token})
+                                              "url": tmpl.format(name=urllib.parse.quote(peer["name"])), "token": token})
         flag = call("POST", "/flagship/run", {**base, "document_id": doc["id"]})
         (DEMO / "flagship_run.json").write_text(json.dumps(flag, indent=1))
         print("flagship with peer EV:", {s["step"]: s["status"] for s in flag.get("steps", [])} or flag)

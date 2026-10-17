@@ -78,6 +78,6 @@ def test_tev_sync_over_https_with_the_synthetic_mock_cert(wm_tls):
         url = "https://localhost/v2/tev?symbol=ACME"
         out = c.post("/market/tev-sync", json={"entity": "ACME", "period": "LTM", "source": "capiq", "url": url,
                                                "token": "tok"}, headers=h).json()
-        assert out["value"] == "4480" and "tev=4480" in out["quote"]
+        assert out["value"] == "4480000000" and "tev=4480000000" in out["quote"]
     finally:
         app.dependency_overrides.clear()

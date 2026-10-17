@@ -29,7 +29,10 @@ def sync_tev(db: Session, tenant_id: str, *, entity: str, period: str, source: s
              fetch: Fetch) -> Fact:
     if not url.startswith("https://"):
         raise NoData("feed url must be https")
-    doc = json.loads(fetch(url, {"Authorization": f"Bearer {token}", "Accept": "application/json"}))
+    try:
+        doc = json.loads(fetch(url, {"Authorization": f"Bearer {token}", "Accept": "application/json"}))
+    except (OSError, ValueError) as e:  # unreachable host, HTTP error, bad URL or a body that is not JSON
+        raise NoData(f"{source}: feed could not be read: {e}") from e
     rows = [r for r in (doc.get("data") or []) if r.get("tev") is not None and r.get("currency") and r.get("date")]
     if not rows:
         raise NoData(f"{source}: no enterprise value for {entity}")
