@@ -183,3 +183,14 @@ Existing golden sets, same run (`pdf_benchmark.py`): pdftotext_layout is worse t
 
 Open: a layout-only hit has no bbox, so it cannot cite a location. It must not auto-verify. OCR chart fallback and the other 5 decks are not done.
 
+
+## Real decks, round 2 (Lands' End p12, Healthpeak p24 added)
+
+Labels: 13 more rows (Lands' End FY totals, Adjusted EBITDA and net loss from the stacked bars; Healthpeak development table, total spend per project). PGT's PDF in the set is the 8-K cover, not the release, so it is not labelled.
+
+- Router, all table rows: 36/124 values on the row line, 16 of 38 rows (38 includes 6 KPI tiles). Lands' End and Healthpeak rows hit on the router alone.
+- Router + layout fallback (`real_deck_table_engines.py`): 118/118 table values, 32/32 table rows. Text-only hits; the fallback has no bbox.
+- Chart waterfall with OCR fallback when the VLM returns no labels: 9/9 landed with bbox (ocr_unverified). The VLM still returned nothing on that crop; OCR did the work.
+
+Still open: the larger text-only tables in the other decks are not labelled; the PGT release is not in the set.
+

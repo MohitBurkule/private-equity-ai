@@ -77,3 +77,16 @@ def test_misread_label_not_on_chart_stays_unverified():
     ocr = [ocr_label(-3.25), ocr_label(-2.5)]
     out = chart_vlm.verify(["-2.25"], ocr, set(), page=2)
     assert len(out) == 1 and not out[0].verified and out[0].bbox is None
+
+
+def test_empty_vlm_reply_falls_back_to_ocr_labels(tmp_path, monkeypatch):
+    # The model returns nothing usable; OCR labels on the chart still come through, with their bbox.
+    monkeypatch.setenv("CHART_VLM", "1")
+    monkeypatch.setenv("CHART_VLM_MODEL", "x.gguf")
+    monkeypatch.setattr(chart_vlm, "chart_regions", lambda path, page: [(0.0, 0.0, 10.0, 10.0)])
+    monkeypatch.setattr(chart_vlm, "render_region", lambda path, page, box: __import__("PIL.Image", fromlist=["Image"]).new("RGB", (4, 4)))
+    monkeypatch.setattr(chart_vlm, "read_region", lambda path, page, box: [ocr_label(120.0), ocr_label(80.0, (200.0, 100.0, 250.0, 120.0))])
+    monkeypatch.setattr(chart_vlm, "ask_vlm", lambda png: [])
+    monkeypatch.setattr(chart_vlm, "page_text_numbers", lambda path, page: set())
+    out = chart_vlm.extract_vlm_values(tmp_path / "deck.pdf", 2)
+    assert {v.value for v in out if v.verified and v.bbox} == {120.0, 80.0}

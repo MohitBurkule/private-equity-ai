@@ -24,3 +24,16 @@
 {"id": "rd24", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Change in fair value of warrant liability", "raw": "(1.4); 2.1; (1.6); (4.7)", "hand_read": true, "kind": "table"}
 {"id": "rd25", "doc": "real_decks/daseke_2023Q1_earnings_presentation", "pdf_page_1based": 23, "row_label": "Interest income", "raw": "(1.0); (0.6); (0.3); (2.8); (4.1)", "hand_read": true, "kind": "table"}
 {"id": "rd27", "doc": "real_decks/daseke_2023Q3_earnings_presentation", "pdf_page_1based": 7, "row_label": "", "raw": "153.4; 91.8; (20.0); (7.9); (67.1); (73.0); 77.2; 112.2; 189.4", "hand_read": true, "kind": "chart_waterfall", "chart_box_pt": [33, 308, 700, 459]}
+{"id": "rd28", "doc": "real_decks/lands_end_2025_investor_presentation", "pdf_page_1based": 12, "row_label": "Total", "raw": "1.56; 1.47; 1.44", "hand_read": true, "kind": "table"}
+{"id": "rd29", "doc": "real_decks/lands_end_2025_investor_presentation", "pdf_page_1based": 12, "row_label": "Adjusted EBITDA", "raw": "71; 84; 81", "hand_read": true, "kind": "table"}
+{"id": "rd30", "doc": "real_decks/lands_end_2025_investor_presentation", "pdf_page_1based": 12, "row_label": "Net Loss", "raw": "13; 131; 21", "hand_read": true, "kind": "table"}
+{"id": "rd31", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "The Shore Phases II & III", "raw": "433", "hand_read": true, "kind": "table"}
+{"id": "rd32", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "The Boardwalk", "raw": "179", "hand_read": true, "kind": "table"}
+{"id": "rd33", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Total Non-Stabilized", "raw": "612", "hand_read": true, "kind": "table"}
+{"id": "rd34", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "101 CambridgePark Drive", "raw": "176", "hand_read": true, "kind": "table"}
+{"id": "rd35", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Nexus on Grand", "raw": "162", "hand_read": true, "kind": "table"}
+{"id": "rd36", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Sorrento Gateway", "raw": "117", "hand_read": true, "kind": "table"}
+{"id": "rd37", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Callan Ridge", "raw": "140", "hand_read": true, "kind": "table"}
+{"id": "rd38", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Vantage Phase I", "raw": "438", "hand_read": true, "kind": "table"}
+{"id": "rd39", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Total Active", "raw": "1,033", "hand_read": true, "kind": "table"}
+{"id": "rd40", "doc": "real_decks/healthpeak_2022Q4_investor_presentation", "pdf_page_1based": 24, "row_label": "Grand Total", "raw": "1,645", "hand_read": true, "kind": "table"}

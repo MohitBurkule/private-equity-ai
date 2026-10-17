@@ -186,6 +186,8 @@ export type Facets = { sector: { value: string | null; count: number }[]; countr
 
 export interface AlertBrief { since: string; total: number; by_kind: Record<string, number>; by_severity: Record<string, number> }
 
+export interface RefreshOut { checked: number; refreshed: number; failed: number; dissolved: number }
+
 export const api2 = {
   targets: (f: TargetFilter) => {
     const p = new URLSearchParams({ limit: "1000" });
@@ -196,6 +198,7 @@ export const api2 = {
     call<TargetBenchmark>(`/targets/benchmark?target_id=${targetId}&sector=${encodeURIComponent(sector)}`),
   targetFacets: () => call<Facets>("/targets/facets"),
   screen: (body: ScreenBody) => call<ScreenOut>("/targets/screen", "POST", body),
+  refreshTargets: () => call<RefreshOut>("/targets/refresh", "POST"),
   facts: (status?: string) => call<FactRow[]>(`/facts${status ? `?status=${status}` : ""}`),
   review: (id: number, action: "accept" | "reject", note?: string) => call<FactRow>(`/facts/${id}/review`, "POST", { action, note }),
   deals: () => call<DealRow[]>("/deals"),
