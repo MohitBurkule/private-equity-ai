@@ -1227,6 +1227,8 @@ def _wf_out(w) -> dict:
 
 @app.post("/workflows", status_code=201)
 def workflow_create(body: WorkflowIn, db: Db, who: Writer):
+    if body.kind == "alert_digest" and who.restricted:
+        raise HTTPException(403, "alert digests cover the whole tenant; use an unrestricted key")
     try:
         w = wf_mod.create(db, who.tenant, body.name, body.kind, body.every_days, body.params, body.recipients)
     except ValueError as e:
