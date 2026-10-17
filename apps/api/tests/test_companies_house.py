@@ -38,3 +38,11 @@ def test_numbers_import_keeps_active_skips_dissolved_and_unknown():
     assert items[0].source == "companies_house" and items[0].source_ref == "01234567"
     assert items[0].source_url.endswith("/company/01234567")
     assert skipped == ["07654321", "99999999"]
+
+
+def test_unknown_status_is_skipped_not_assumed_active():
+    from app.companies_house import CompanyRecord, company_numbers_to_targets
+
+    no_status = CompanyRecord("02222222", "UNSURE LTD", None, None, None, [], "web")
+    items, skipped = company_numbers_to_targets(["02222222"], fetch=lambda n: no_status)
+    assert items == [] and skipped == ["02222222"]
