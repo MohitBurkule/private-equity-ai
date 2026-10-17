@@ -16,6 +16,8 @@ API_PORT="${API_PORT:-8000}"
 WEB_PORT="${WEB_PORT:-5173}"
 ADMIN_TOKEN="${ADMIN_TOKEN:-demo-admin-token}"
 export ADMIN_TOKEN DATABASE_URL="sqlite:///$DEMO_DIR/demo.db"
+# Scanned pages (no text layer) are read by OCR only when this is on; the demo seeds a scanned page on purpose.
+export OCR_ENABLED=1
 
 # SEC rejects anonymous requests, so live EDGAR search needs a contact string. It is asked for here and never
 # written to the repo. Leave it empty to skip live search; the rest of the demo does not need it.
