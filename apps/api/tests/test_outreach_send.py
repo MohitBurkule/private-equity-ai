@@ -14,14 +14,28 @@ def test_outreach_send_attaches_research_docx_and_checks_tenant(monkeypatch):
                                          "revenue_url": "http://sec/x"}])
     tid = c.get("/targets", headers=h).json()["items"][0]["id"]
     sent = {}
-    monkeypatch.setattr(notify, "send_email", lambda to, subject, body, attachment=None: sent.update(
-        to=to, subject=subject, attachment=attachment))
+    monkeypatch.setattr(notify, "send_email", lambda to, subject, body, attachments=(): sent.update(
+        to=to, subject=subject, attachments=list(attachments)))
     body = {"target_id": tid, "to": ["ceo@example.com"], "sender": "Sam", "firm": "Fund I"}
     r = c.post("/targets/outreach/send", headers=h, json=body)
-    assert r.status_code == 200 and r.json() == {"sent": 1, "attached": f"research-{tid}.docx"}
-    filename, data, mime = sent["attachment"]
+    assert r.status_code == 200 and r.json() == {"sent": 1, "attached": [f"research-{tid}.docx"]}
+    [(filename, data, mime)] = sent["attachments"]
     assert filename == f"research-{tid}.docx" and data[:2] == b"PK"  # a real .docx is a zip
     assert mime.endswith("wordprocessingml.document")
     assert sent["to"] == ["ceo@example.com"] and sent["subject"] == "Introduction from Fund I"
     assert c.post("/targets/outreach/send", headers=other, json=body).status_code == 404
     assert c.post("/targets/outreach/send", headers=h, json={**body, "to": ["not-an-address"]}).status_code == 422
+
+
+def test_outreach_send_can_attach_ic_memo_deck(monkeypatch):
+    h = new_tenant(c, "os3")
+    c.post("/targets", headers=h, json=[{"name": "Acme", "source_ref": "a", "sector": "Software"}])
+    tid = c.get("/targets", headers=h).json()["items"][0]["id"]
+    sent = {}
+    monkeypatch.setattr(notify, "send_email", lambda to, subject, body, attachments=(): sent.update(
+        attachments=list(attachments)))
+    body = {"target_id": tid, "to": ["ceo@example.com"], "sender": "Sam", "firm": "Fund I",
+            "memo_entity": "Acme"}
+    r = c.post("/targets/outreach/send", headers=h, json=body)
+    assert r.status_code == 200 and r.json()["attached"] == [f"research-{tid}.docx", "memo.pptx"]
+    assert sent["attachments"][1][0] == "memo.pptx" and sent["attachments"][1][1][:2] == b"PK"
