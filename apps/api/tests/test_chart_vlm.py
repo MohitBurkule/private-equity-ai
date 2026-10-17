@@ -65,3 +65,15 @@ def test_vlm_bar_labels_verified_end_to_end(tmp_path, monkeypatch):
     vals = chart_vlm.extract_vlm_values(pdf, 1)
     verified = {v.value for v in vals if v.verified}
     assert {1234.0, 567.0, 890.0} <= verified
+
+
+def test_parse_labels_keeps_labels_from_a_reply_cut_off_mid_repeat():
+    text = ':["12.5%","12.5","12.5","12.5","12.5","12.'
+    assert chart_vlm.parse_labels(text) == ["12.5%", "12.5"]
+
+
+def test_misread_label_not_on_chart_stays_unverified():
+    # the model read "(3.25)" as -2.25; OCR reads -3.25 and -2.5, so -2.25 matches nothing
+    ocr = [ocr_label(-3.25), ocr_label(-2.5)]
+    out = chart_vlm.verify(["-2.25"], ocr, set(), page=2)
+    assert len(out) == 1 and not out[0].verified and out[0].bbox is None

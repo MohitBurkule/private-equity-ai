@@ -8,7 +8,6 @@ returned unverified with no bbox, so a reader can see it came from the model alo
 from __future__ import annotations
 
 import base64
-import json
 import os
 import re
 from dataclasses import dataclass
@@ -28,7 +27,7 @@ PROMPT = (
     "Reply with only a JSON array of strings, each exactly as printed. Do not estimate values."
 )
 PAGE_NUM = re.compile(r"\(?-?\$?£?€?\d[\d,]*(?:\.\d+)?%?\)?")
-JSON_ARRAY = re.compile(r"\[.*\]", re.DOTALL)
+QUOTED = re.compile(r'"([^"\n]{1,40})"')
 
 _llm = None
 
@@ -54,12 +53,27 @@ def _load():
         from llama_cpp.llama_chat_format import Qwen25VLChatHandler
         handler = Qwen25VLChatHandler(clip_model_path=os.environ["CHART_VLM_MMPROJ"], verbose=False)
         _llm = Llama(model_path=os.environ["CHART_VLM_MODEL"], chat_handler=handler,
-                     n_ctx=4096, verbose=False)
+                     n_ctx=2048, n_threads=os.cpu_count(), verbose=False)
     return _llm
+
+
+MAX_SIDE = 672  # CPU prefill cost grows with image tokens; chart labels stay legible at this size
+
+
+def shrink(png: bytes) -> bytes:
+    from PIL import Image
+    img = Image.open(BytesIO(png))
+    if max(img.size) <= MAX_SIDE:
+        return png
+    img.thumbnail((MAX_SIDE, MAX_SIDE))
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def ask_vlm(png: bytes) -> list[str]:
     """Labels the model reads off one chart image. Malformed output gives an empty list, not an error."""
+    png = shrink(png)
     uri = "data:image/png;base64," + base64.b64encode(png).decode()
     out = _load().create_chat_completion(
         messages=[{"role": "user", "content": [
@@ -67,14 +81,15 @@ def ask_vlm(png: bytes) -> list[str]:
             {"type": "text", "text": PROMPT},
         ]}],
         temperature=0,
-        max_tokens=400,
+        max_tokens=200,
     )
-    m = JSON_ARRAY.search(out["choices"][0]["message"]["content"] or "")
-    try:
-        vals = json.loads(m.group(0)) if m else []
-    except json.JSONDecodeError:
-        return []
-    return [str(v) for v in vals if isinstance(v, (str, int, float))]
+    return parse_labels(out["choices"][0]["message"]["content"] or "")
+
+
+def parse_labels(text: str) -> list[str]:
+    """Quoted strings in the model's reply, in order, without repeats. Works on a reply cut off mid-array,
+    which the model produces when it repeats a label until the token cap."""
+    return list(dict.fromkeys(QUOTED.findall(text)))
 
 
 def page_text_numbers(path: Path, page: int) -> set[float]:
