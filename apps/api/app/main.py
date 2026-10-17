@@ -599,13 +599,13 @@ def documents_bulk_deal(body: BulkDealIn, db: Db, who: Writer):
         moved.append(doc_id)
         moves.append((doc_id, before))
     db.commit()
-    # Sent after the commit, so a slow or failing receiver cannot undo a move. One post per source deal.
+    # Queued after the commit, so a slow or failing receiver cannot undo a move. One post per source deal.
     pii = outbound.pii_on(db, who.tenant)
     by_source: dict[str | None, list[str]] = {}
     for doc_id, before in moves:
         by_source.setdefault(before, []).append(doc_id)
     for before, ids in by_source.items():
-        webhooks.emit(db, who.tenant, "document.moved", ids, before, body.deal, pii=pii)
+        webhooks.enqueue(SessionLocal, who.tenant, "document.moved", ids, before, body.deal, pii=pii)
     return {"moved": moved, "refused": refused}
 
 
