@@ -126,7 +126,7 @@ def main():
             ("/memo/templates", None),
         ]
         for name in ["admin", "scoped_other", "zeta", "analyst"]:
-            for path in ["/dd/requests", "/dd/requests?deal=Other", "/dd/requests?status=open",
+            for path in ["/alerts/brief", "/dd/summary", "/dd/requests", "/dd/requests?deal=Other", "/dd/requests?status=open",
                          "/dd/questions", "/dd/questions?deal=Zeta", "/dd/summary?deal=Other",
                          "/dd/summary?deal=Zeta", "/dd/summary?deal=Nope"]:
                 requests.append((path, name))

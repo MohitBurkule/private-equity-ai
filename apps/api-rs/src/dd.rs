@@ -12,7 +12,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Python _dd_scope_ok: unscoped keys see every deal; scoped keys see their own list.
 fn in_scope(p: &Principal, deal: &str) -> bool {
@@ -133,25 +133,24 @@ pub async fn list_questions(
     Ok(Json(Value::Array(out)))
 }
 
-#[derive(Deserialize)]
-pub struct SummaryQuery {
-    deal: String,
-}
-
 pub async fn dd_summary(
     State(s): State<AppState>,
     headers: HeaderMap,
-    Query(q): Query<SummaryQuery>,
+    Query(q): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, ApiError> {
     let (p, mut tx) = principal(&s, &headers).await?;
-    if !in_scope(&p, &q.deal) {
+    let deal = q
+        .get("deal")
+        .cloned()
+        .ok_or_else(|| ApiError::missing_query("deal"))?;
+    if !in_scope(&p, &deal) {
         return Err(ApiError::new(StatusCode::NOT_FOUND, "deal not found"));
     }
     let rows: Vec<RequestRow> = sqlx::query_as(
         "SELECT id, deal, category, title, status, document_id, note, updated_at FROM dd_request \
          WHERE deal = $1 ORDER BY id",
     )
-    .bind(&q.deal)
+    .bind(&deal)
     .fetch_all(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -170,7 +169,7 @@ pub async fn dd_summary(
         .map(request_json)
         .collect();
     Ok(Json(json!({
-        "deal": q.deal,
+        "deal": deal,
         "total": rows.len(),
         "closed": done,
         "pct_complete": pct_complete(done, rows.len() as i64),

@@ -11,7 +11,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// alert row: id, kind, severity, title, detail, fact_ids, status, created_at.
 type AlertRow = (i32, String, String, String, String, String, String, String);
@@ -19,11 +19,6 @@ type AlertRow = (i32, String, String, String, String, String, String, String);
 #[derive(Deserialize)]
 pub struct ListQuery {
     status: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub struct BriefQuery {
-    since: Option<String>,
 }
 
 /// Python alert_dict.
@@ -78,16 +73,15 @@ pub async fn list_alerts(
 pub async fn alerts_brief(
     State(s): State<AppState>,
     headers: HeaderMap,
-    Query(q): Query<BriefQuery>,
+    Query(q): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, ApiError> {
+    // FastAPI resolves the key, then the query, then runs the handler: 401, then 422, then the 403 below.
     let (p, mut tx) = principal(&s, &headers).await?;
+    let since = q
+        .get("since")
+        .cloned()
+        .ok_or_else(|| ApiError::missing_query("since"))?;
     whole_tenant(&p)?;
-    let Some(since) = q.since else {
-        return Err(ApiError::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "since is required",
-        ));
-    };
     let rows: Vec<AlertRow> = sqlx::query_as(
         "SELECT id, kind, severity, title, detail, fact_ids, status, created_at FROM alert \
          WHERE created_at >= $1 ORDER BY id DESC",
