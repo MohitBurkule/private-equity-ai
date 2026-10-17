@@ -262,6 +262,12 @@ export const api2 = {
   peerSets: (deal: string) => call<PeerSet[]>(`/deals/${encodeURIComponent(deal)}/peer-sets`),
   savePeerSet: (deal: string, targetId: number, name: string) => call<PeerSet>(`/deals/${encodeURIComponent(deal)}/peer-sets`, "POST", { target_id: targetId, name }),
   refreshPeerSet: (deal: string, id: number) => call<PeerSet>(`/deals/${encodeURIComponent(deal)}/peer-sets/${id}/refresh`, "POST"),
+  people: (q: string, deal?: string) => {
+    const p = new URLSearchParams({ q });
+    if (deal) p.set("deal", deal);
+    return call<{ query: string; people: PersonRow[] }>(`/people?${p}`);
+  },
+  addPerson: (body: PersonIn) => call<PersonRow>("/people", "POST", body),
   emailAttach: (docId: string, deal: string) => call<{ document_id: string; deal: string }>(`/email/review/${encodeURIComponent(docId)}/attach`, "POST", { deal }),
 };
 
@@ -272,5 +278,8 @@ export interface DealMeeting { title: string; starts_at: string; url: string | n
 export interface PeerItem { cik: string; name: string; revenue?: string; [key: string]: unknown }
 export interface PeerDropped { cik: string; name: string; reason: string }
 export interface PeerSet { id: number; deal: string; name: string; target_id: number; items: PeerItem[]; dropped: PeerDropped[]; refreshed_at: string | null }
+
+export interface PersonRow { id: number; name: string; organisation: string | null; title: string | null; expertise: string[]; deal: string | null; recorded_at: string }
+export interface PersonIn { name: string; organisation?: string; title?: string; expertise?: string[]; deal?: string }
 
 export const STAGES = ["sourcing", "screening", "dd", "ic", "signed", "closed", "passed"];
