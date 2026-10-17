@@ -1680,7 +1680,7 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
         steps.append(flagship_mod.Step("precedents", "failed", f"{type(e).__name__}: {e}"))
     steps.append(flagship_mod.legal_step(pages, doc.id, body.legal_doc_type, legal_mod))
     ext_step = next((s for s in steps if s.name == "extraction"), None)
-    steps.append(flagship_mod.crosscheck_step(ext_step, body.cik, edgar_mod.fetch_companyfacts) if body.extract
+    steps.append(flagship_mod.crosscheck_step(ext_step, body.cik, None) if body.extract
                  else flagship_mod.Step("crosscheck", "skipped", "set extract=true to cross-check its figures"))
     lbo_raw = dict(body.lbo.get("inputs") or {})
     if "ebitda" not in lbo_raw:
