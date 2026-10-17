@@ -3,6 +3,7 @@
 `planned` = not built. Keep in step with design/INTEGRATIONS.md."""
 from __future__ import annotations
 
+from app.connectors import oauth
 from app.connectors.base import Connector
 from app.connectors.crm import Affinity, DealCloud, HubSpot, Salesforce
 from app.connectors.dataroom import Datasite, Intralinks
@@ -12,6 +13,7 @@ from app.connectors.graph import OneDriveSharePoint, Outlook
 from app.connectors.gsheets import GoogleSheets
 from app.connectors.imap import Imap
 from app.connectors.mailpit import Mailpit
+from app.connectors.oauth import OAuthError
 from app.connectors.slack import Slack
 
 IMPLEMENTED: dict[str, type[Connector]] = {c.name: c for c in (Gmail, Outlook, OneDriveSharePoint, GoogleDrive, Box, Dropbox, GoogleSheets, Imap, Mailpit,
@@ -28,10 +30,39 @@ CATALOG = [  # (name, label, category, auth)
     ("capiq", "S&P Capital IQ", "market data", "licensed API"), ("factset", "FactSet", "market data", "licensed API"),
     ("pitchbook", "PitchBook", "market data", "licensed API / export"),
     ("linkedin", "LinkedIn", "people", "member data export (upload)"),
+    ("linkedin-enrichment", "LinkedIn enrichment", "people", "licence key"),
 ]
 
 
 IMPORTS = {"linkedin"}  # upload-only sources: no token sync, see connectors/linkedin.py
+
+
+def _oauth_ready(name: str) -> bool:
+    try:
+        oauth.config_for(name)
+    except OAuthError:
+        return False
+    return True
+
+
+def status(connected: set[str]) -> list[dict]:
+    """Catalog plus each row's state: `connected` (saved connection, or no key needed), `needs_key`
+    (built, but this deployment or tenant has no credentials for it yet) or `stubbed` (not built)."""
+    out = []
+    for c in catalog():
+        n, auth = c["name"], c["auth"].lower()
+        if c["status"] == "planned":
+            state, detail = "stubbed", "not built yet"
+        elif n in connected:
+            state, detail = "connected", "saved connection"
+        elif n in IMPORTS or auth.startswith("none"):
+            state, detail = "connected", "no key needed"
+        elif auth.startswith("oauth") and not _oauth_ready(n):
+            state, detail = "needs_key", f"set OAUTH_{n.upper()}_CLIENT_ID, _CLIENT_SECRET, _AUTH_URL, _TOKEN_URL"
+        else:
+            state, detail = "needs_key", "add a key when you import"
+        out.append({**c, "state": state, "detail": detail})
+    return out
 
 
 def catalog() -> list[dict]:
