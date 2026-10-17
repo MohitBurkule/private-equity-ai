@@ -133,6 +133,26 @@ def deal_hidden(d: Deal, p: Principal) -> bool:
     return d.mnpi and not _may_see_mnpi(d, p)
 
 
+def deal_scope(db: Session, p: Principal) -> set[str] | None:
+    """Deal names this principal may see, for code that reads the deal table. None means no limit.
+    MNPI deals hidden from the principal are left out even when the key is unscoped."""
+    hidden = hidden_deal_names(db, p)
+    if p.deals is None:
+        if not hidden:
+            return None
+        return {d.name for d in db.query(Deal).filter_by(tenant_id=p.tenant) if d.name not in hidden}
+    return set(p.deals) - hidden
+
+
+def mnpi_name_conflict(db: Session, p: Principal, name: str) -> bool:
+    """True when `name` is the same company as a deal this principal may not see (an MNPI deal).
+    Outreach to such a company would reveal the deal, so the caller refuses it."""
+    from app.seen_before import normalise
+
+    target = normalise(name)
+    return any(normalise(h) == target for h in hidden_deal_names(db, p))
+
+
 def visible_mnpi_deal_names(db: Session, p: Principal) -> list[str]:
     return sorted(d.name for d in _mnpi_deals(db, p.tenant) if _may_see_mnpi(d, p))
 
