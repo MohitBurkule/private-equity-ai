@@ -12,7 +12,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.acl import fact_visible
-from app.calc import Calc, Input
+from app.calc import Calc, Input, nwc
 from app.models import Fact
 
 ONE_OFF_PCT = Decimal(10)
@@ -56,3 +56,27 @@ def one_off_flags(c: Calc) -> list[dict]:
     return [{"fact_id": i.fact.id, "amount": str(i.fact.value), "quote": i.fact.sources[0].quote,
              "locator": i.fact.sources[0].locator} for i in c.inputs
             if i.role == "add_back" and i.fact.value > limit]
+
+
+def nwc_peg(db: Session, tenant: str, entity: str, periods: list[str],
+            scope: set[str] | None = None) -> Calc:
+    """Peg = average trade NWC over the given periods. A single period's NWC swings with year-end timing, so the
+    peg is a trailing average, not the closing balance. Every period must be complete: a peg built from a
+    partial set would move silently when a missing period is later loaded."""
+    c = Calc("NWC peg", entity, formula=f"average of trade NWC over {', '.join(periods)}", unit="USD")
+    if not periods:
+        c.missing.append("no periods given for the peg")
+        return c
+    values = []
+    for p in periods:
+        n = nwc(db, tenant, entity, p, scope)
+        if not n.ok:
+            c.missing.extend(f"{p} {m}" for m in n.missing or n.problems)
+        elif n.unit != "USD":
+            c.problems.append(f"{p} NWC is in {n.unit}, expected USD")
+        else:
+            values.append(n.value)
+    if c.missing or c.problems:
+        return c
+    c.value = (sum(values, Decimal(0)) / len(values)).quantize(Decimal("0.01"))
+    return c

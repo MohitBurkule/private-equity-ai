@@ -156,7 +156,7 @@ from app.portfolio import (
     qoq_change,
     record_observation,
 )
-from app.qoe import normalized_ebitda, one_off_flags
+from app.qoe import normalized_ebitda, nwc_peg, one_off_flags
 from app.ratelimit import make_limiter
 from app.report import build_report, build_report_docx
 from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
@@ -815,6 +815,16 @@ def calc_ltm(entity: str, metric: str, fy: str, ytd: str, ytd_prior: str, db: Db
 @app.get("/calc/net-debt")
 def calc_net_debt(entity: str, period: str, db: Db, who: Who, include_leases: bool = True):
     return _calc_out(net_debt(db, who.tenant, entity, period, visible_doc_ids(db, who), include_leases))
+
+
+@app.get("/calc/nwc-peg")
+def calc_nwc_peg(entity: str, periods: str, db: Db, who: Who):
+    """Trailing-average NWC peg. `periods` is comma-separated, e.g. FY22,FY23,FY24."""
+    wanted = [p.strip() for p in periods.split(",") if p.strip()]
+    scope = visible_doc_ids(db, who)
+    out = _calc_out(nwc_peg(db, who.tenant, entity, wanted, scope))
+    out["per_period"] = {p: _calc_out(nwc(db, who.tenant, entity, p, scope)) for p in wanted}
+    return out
 
 
 @app.get("/calc/nwc")
