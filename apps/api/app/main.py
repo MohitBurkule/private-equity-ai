@@ -2410,6 +2410,22 @@ def kpis(company_id: int, db: Db, who: Who):
             if fact_visible(db.get(Fact, o.fact_id), scope)]
 
 
+@app.get("/portfolio/submissions")
+def kpi_submissions(period: str, db: Db, who: Who):
+    """Which portfolio companies have filed any KPI for the period and which have not, so the missing ones can be
+    chased. Only observations whose citing document the caller may see count as a submission."""
+    scope = visible_doc_ids(db, who)
+    submitted, missing = [], []
+    for c in db.query(PortfolioCompany).filter_by(tenant_id=who.tenant).order_by(PortfolioCompany.name).all():
+        obs = [o for o in current_kpis(db, who.tenant, c.id) if o.period == period
+               and fact_visible(db.get(Fact, o.fact_id), scope)]
+        row = {"company_id": c.id, "name": c.name, "metrics": sorted({o.metric for o in obs})}
+        (submitted if obs else missing).append(row)
+    return {"period": period, "submitted": submitted, "missing": missing,
+            "pct_submitted": round(100 * len(submitted) / (len(submitted) + len(missing)), 1)
+            if submitted or missing else None}
+
+
 class CovenantIn(BaseModel):
     kpi_metric: str
     operator: str
