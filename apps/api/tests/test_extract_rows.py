@@ -91,3 +91,17 @@ def test_customer_concentration_rows_keep_their_own_period():
     facts = c.get("/facts", headers=h).json()
     pct = [f for f in facts if f["metric"] == "revenue_pct"]
     assert len(pct) == 1 and pct[0]["period"] == "FY24" and pct[0]["entity"] == "Acme Corp"
+
+
+def test_ebitda_bridge_rows_keep_each_line_as_stated():
+    h = new_tenant(c, "rows5")
+    doc = upload(h, {"A1": "Reported EBITDA", "B1": 100, "C1": "FY24"})
+    rep = {"page": 1, "quote": "Sheet!B1: 100 | row: Reported EBITDA",
+           "fields": {"period": "FY24", "item": "Reported EBITDA", "kind": "reported", "amount": 100}}
+    bad = {"page": 1, "quote": "Sheet!B1: 100 | row: Reported EBITDA",
+           "fields": {"period": "FY24", "item": "Restructuring", "kind": "add_back", "amount": 7}}
+    out = run(h, doc, "ebitda_bridge", [rep, bad])
+    assert [r["status"] for r in out["rows"]] == ["accepted", "rejected"]
+    assert "not printed" in out["rows"][1]["reason"]
+    facts = c.get("/facts", headers=h).json()
+    assert [f["metric"] for f in facts if f["metric"].startswith("ebitda_bridge")] == ["ebitda_bridge reported"]

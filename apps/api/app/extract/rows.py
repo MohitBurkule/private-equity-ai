@@ -16,7 +16,12 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
 from app.citations import quote_in_page, verify_number
-from app.extraction_schema import CapTableRow, ContractTerms, CustomerShare
+from app.extraction_schema import (
+    CapTableRow,
+    ContractTerms,
+    CustomerShare,
+    EbitdaBridgeRow,
+)
 from app.facts import make_source
 from app.llm import LLM
 from app.models import Document, Fact, PageRow
@@ -35,8 +40,9 @@ _ROWS = {
     "cap_table": CapTableRow,
     "contract_terms": ContractTerms,
     "customer_concentration": CustomerShare,
+    "ebitda_bridge": EbitdaBridgeRow,
 }
-_NUMERIC_UNITS = {"shares", "%", "days"}
+_NUMERIC_UNITS = {"shares", "%", "days", "USD"}
 
 
 @dataclass
@@ -53,6 +59,9 @@ def _facts_for(schema: str, row: BaseModel) -> list[tuple[str, str, str, Decimal
     run's, since one customer table carries several periods."""
     data = row.model_dump()
     out = []
+    if schema == "ebitda_bridge":
+        out.append((data["item"], data["period"], f"ebitda_bridge {data['kind']}", Decimal(data["amount"]), "USD"))
+        return out
     if schema == "customer_concentration":
         out.append((data["customer"], data["period"], "revenue_pct", Decimal(data["revenue_pct"]), "%"))
         return out
