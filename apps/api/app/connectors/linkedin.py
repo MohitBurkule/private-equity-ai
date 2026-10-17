@@ -37,3 +37,20 @@ class LinkedInExport(Connector):
             yield Item(f"linkedin:{base}", f"linkedin-{base}", payload, "https://www.linkedin.com/",
                        hashlib.sha256(payload).hexdigest()[:16])
             n += 1
+
+
+class LinkedInEnrichment:
+    """STUB, not live. Enriching a company or person from LinkedIn needs a licensed partner API (LinkedIn's
+    Marketing and Recruiter APIs are not available to a PE firm, and scraping breaks its terms). Until a
+    licence exists, this refuses instead of returning guessed data. Firms get LinkedIn facts through the
+    member export above, or by pasting a company page URL into the website enrichment, which is cited."""
+
+    name = "linkedin-enrichment"
+
+    def __init__(self, licence_key: str | None = None):
+        self.licence_key = licence_key
+
+    def company(self, name: str) -> dict:
+        if not self.licence_key:
+            raise ConnectorError("LinkedIn enrichment is not licensed for this deployment; use the data export import")
+        raise NotImplementedError("licensed LinkedIn adapter not built yet")
