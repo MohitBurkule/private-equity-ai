@@ -38,6 +38,7 @@ from app import precedent_fetch as pfetch_mod
 from app import precedents as prec_mod
 from app import research as research_mod
 from app import seen_before as seen_mod
+from app import sourcing_search as ss_mod
 from app import targets as tg_mod
 from app import workflows as wf_mod
 from app.acl import (
@@ -2154,3 +2155,29 @@ def oauth_callback(name: str, code: str, state: str, db: Db):
     log_event(db, claims["tenant"], claims["key"], "connection.create",
               {"id": row.id, "connector": name, "deal": row.deal, "auth": "oauth"})
     return {"id": row.id, "connector": name, "deal": row.deal, "interval_minutes": row.interval_minutes}
+
+
+class EdgarSearchIn(BaseModel):
+    query: str
+    forms: list[str] = ["10-K"]
+    since: str
+    until: str
+    limit: int = 50
+
+
+@app.post("/targets/search/edgar")
+def targets_search_edgar(body: EdgarSearchIn, db: Db, who: Writer):
+    """Candidates from EDGAR full-text search, cited to the filing. Not imported; see already_imported."""
+    if not body.query.strip() or len(body.forms) > 5:
+        raise HTTPException(422, "give a query and at most 5 forms")
+    if not os.environ.get("SEC_USER_AGENT"):
+        raise HTTPException(503, "set SEC_USER_AGENT (SEC rejects anonymous requests)")
+    try:
+        cands = ss_mod.search(body.query, body.forms, body.since, body.until)
+    except Exception as e:  # network or SEC error: report, never guess
+        raise HTTPException(502, f"EDGAR search failed: {e}") from e
+    have = {r[0] for r in db.query(Target.source_ref).filter_by(tenant_id=who.tenant, source="sec").all()}
+    items = [{"name": c.name, "cik": c.cik, "sic": c.sic, "form": c.form, "file_date": c.file_date,
+              "source_url": c.filing_url, "company_url": c.company_url, "already_imported": c.cik in have}
+             for c in cands[:min(max(body.limit, 1), 200)]]
+    return {"total": len(cands), "items": items}
