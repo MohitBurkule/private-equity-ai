@@ -16,7 +16,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
 from app.citations import quote_in_page, verify_number
-from app.extraction_schema import CapTableRow, ContractTerms
+from app.extraction_schema import CapTableRow, ContractTerms, CustomerShare
 from app.facts import make_source
 from app.llm import LLM
 from app.models import Document, Fact, PageRow
@@ -34,6 +34,7 @@ SYSTEM = (
 _ROWS = {
     "cap_table": CapTableRow,
     "contract_terms": ContractTerms,
+    "customer_concentration": CustomerShare,
 }
 _NUMERIC_UNITS = {"shares", "%", "days"}
 
@@ -47,23 +48,27 @@ class RowResult:
     fact_ids: list[int] = field(default_factory=list)
 
 
-def _facts_for(schema: str, row: BaseModel) -> list[tuple[str, str, Decimal, str]]:
-    """(entity, metric, value, unit) tuples for one validated row."""
+def _facts_for(schema: str, row: BaseModel) -> list[tuple[str, str, str, Decimal, str]]:
+    """(entity, period, metric, value, unit) tuples for one validated row. A row's own period wins over the
+    run's, since one customer table carries several periods."""
     data = row.model_dump()
     out = []
+    if schema == "customer_concentration":
+        out.append((data["customer"], data["period"], "revenue_pct", Decimal(data["revenue_pct"]), "%"))
+        return out
     if schema == "cap_table":
         cls = data["share_class"]
-        out.append((data["holder"], f"shares {cls}", Decimal(data["shares"]), "shares"))
+        out.append((data["holder"], None, f"shares {cls}", Decimal(data["shares"]), "shares"))
         if data.get("ownership_pct") is not None:
-            out.append((data["holder"], f"ownership_pct {cls}", Decimal(data["ownership_pct"]), "%"))
+            out.append((data["holder"], None, f"ownership_pct {cls}", Decimal(data["ownership_pct"]), "%"))
     else:
         cp = data["counterparty"]
         for flag in ("change_of_control", "exclusivity", "mfn"):
             if data.get(flag) is not None:
-                out.append((cp, flag, Decimal(1 if data[flag] else 0), "flag"))
+                out.append((cp, None, flag, Decimal(1 if data[flag] else 0), "flag"))
         if data.get("termination_notice_days") is not None:
             n = data["termination_notice_days"]
-            out.append((cp, "termination_notice_days", Decimal(n), "days"))
+            out.append((cp, None, "termination_notice_days", Decimal(n), "days"))
     return out
 
 
@@ -101,10 +106,10 @@ def _accept(db: Session, tenant: str, doc: Document, schema: str, model: type[Ba
         return RowResult(schema, page, "rejected", f"row failed validation: {e.errors()[0]['msg']}")
     page_row = db.query(PageRow).filter_by(document_id=doc.id, number=page).one()
     ids = []
-    for ent, metric, value, unit in _facts_for(schema, row):
+    for ent, row_period, metric, value, unit in _facts_for(schema, row):
         if unit in _NUMERIC_UNITS and not verify_number(value, quote):
             return RowResult(schema, page, "rejected", f"{metric} is not printed in the quote")
-        fact = Fact(tenant_id=tenant, entity=ent, metric=metric, period=period, value=value,
+        fact = Fact(tenant_id=tenant, entity=ent, metric=metric, period=row_period or period, value=value,
                     unit=unit, basis="extracted", status="auto")
         fact.sources = [make_source(doc, page, quote, page_row)]
         db.add(fact)
