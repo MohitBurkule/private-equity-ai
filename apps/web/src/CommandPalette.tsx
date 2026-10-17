@@ -41,7 +41,7 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
               if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(s + 1, shown.length - 1)); }
               if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
             }}
-            aria-label="Search commands" placeholder="Jump to a section or deal..."
+            aria-label="Search commands" placeholder="Jump to a section..."
             className="min-w-0 flex-1 bg-transparent py-3 text-sm outline-none placeholder:text-mut" />
           <Button type="button" onClick={() => setOpen(false)} aria-label="Close">Esc</Button>
         </form>
