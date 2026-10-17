@@ -1,12 +1,17 @@
+import os
+
 from fastapi.testclient import TestClient
 
+from app import workflows as wf_mod
 from app.main import app
 from tests.helpers import new_tenant
 
 c = TestClient(app)
 
 
-def test_schedule_runs_when_due_then_waits_and_isolates_tenants():
+def test_schedule_runs_when_due_then_waits_and_isolates_tenants(monkeypatch):
+    if not os.environ.get("MAILPIT_API_URL"):  # no mail server here: keep results in the outbox, not SMTP
+        monkeypatch.setattr(wf_mod, "smtp_mailer", lambda: None)
     h = new_tenant(c, "wf1")
     other = new_tenant(c, "wf2")
     assert c.post("/workflows", headers=h, json={"name": "x", "kind": "bad", "every_days": 7}).status_code == 422
