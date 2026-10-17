@@ -20,3 +20,5 @@ Companies House SH01/SH02/SH19/SH20 share-capital forms (Monzo, Revolut), mostly
 
 Update 10: golden_text now 37 (t36-t37 Firefly preferred) (t33-t35 Klaviyo cohort/NRR/$50k-ARR), golden_xbrl now 122 (x136-x140: Ares revenue = segment vs GAAP trap, consolidating-column arithmetic, companyfacts Revenues vs contract-revenue concept divergence). Total golden: 18+122+45+35+8 = 230.
 Update 11: golden_text 41 (t38-t41 Carlyle fund metrics). Total golden: 18+122+45+41+8 = 234 (+3 Fidus t42-t44, +4 Blackstone t45-t48 = 241).
+
+Update 12 (hand-check batch): x060 Apollo 10-K total liabilities 418,434 (consolidated row), x038 KKR 10-K cash+restricted cash end of period 17,151,790, x069 Apollo 10-Q cash+restricted cash end of period 28,417 (the 10-Q total row, VIE cash included), x102 Sotera 10-K total liabilities 2,657,155. All four match the rendered filing text. Hand-read XBRL total is now 19 of 122 (x042,x043,x076,x078,x079,x084,x090,x094,x097,x099,x118,x121,x128,x129,x130 + these four + x060/x038/x069/x102 counted once each; the four-item batch adds 4 to the earlier 15).
