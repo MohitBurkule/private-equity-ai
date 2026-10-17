@@ -13,9 +13,21 @@ DOC_A = (
 DOC_B = b"<p>Filing has no price terms.</p>"
 
 
+NO_HITS = b'{"hits":{"hits":[]}}'
+PROXY = (
+    b'{"hits":{"hits":[{"_id":"0003-26-000003:proxy.htm","_source":{"ciks":["0000999999"],'
+    b'"display_names":["Acme Corp"],"file_date":"2026-05-01","form":"DEFM14A"}}]}}'
+)
+DOC_PROXY = b"<p>The merger values Acme at an enterprise value of approximately $1.5 billion.</p>"
+
+
 def fake(url):
+    if "efts" in url and "ciks=" in url:
+        return PROXY if "DEFM14A" in url and "0000999999" in url else NO_HITS
     if "efts" in url:
         return INDEX
+    if "proxy" in url:
+        return DOC_PROXY
     if "0001" in url or "000123456" in url or "000000123456" in url:
         return DOC_A
     if "999999" in url or "0002" in url:
@@ -30,13 +42,12 @@ def test_filing_text_strips_script_and_keeps_sentences():
 
 def test_build_cites_filing_url_and_skips_terms_free_filings():
     r = build("2026-01-01", "2026-12-31", fetch=fake)
-    assert len(r["deals"]) == 1
+    assert len(r["deals"]) == 2 and r["skipped"] == []  # Beta's 8-K has no terms, its proxy does
     deal = r["deals"][0]
     assert deal["terms"]["multiples"][0]["source_url"].startswith(
         "https://www.sec.gov/Archives/edgar/data/123456/"
     )
     assert deal["terms"]["ev_musd"]["value"] == "1200.0"
-    assert r["skipped"][0]["reason"] == "no stated EV or multiple"
     assert (
         r["stats"]["revenue"]["n"] == 1
         and r["stats"]["revenue"]["range_shown"] is False
@@ -126,3 +137,12 @@ def test_unknown_theme_refused():
 
     with pytest.raises(ValueError):
         build("2026-01-01", "2026-12-31", fetch=theme_fake, theme="nope")
+
+
+def test_proxy_fallback_when_8k_states_no_value():
+    r = build("2026-01-01", "2026-12-31", fetch=fake)
+    beta = [d for d in r["deals"] if d["name"].startswith("Beta")]
+    assert len(beta) == 1
+    assert beta[0]["terms_from"].startswith("merger proxy")
+    assert beta[0]["terms"]["ev_musd"]["source_url"].endswith("proxy.htm")
+    assert not [d for d in r["deals"] if d["name"].startswith("Acme") and "terms_from" in d]

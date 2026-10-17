@@ -11,7 +11,6 @@ from openpyxl.styles import Font
 from sqlalchemy.orm import Session
 
 from app.acl import fact_visible
-from app.citations import locator_label
 from app.models import Document, Fact
 
 HEADERS = ["Entity", "Metric", "Period", "Value", "Unit", "Basis", "Status", "Reviewed by"]
@@ -46,7 +45,7 @@ def build_facts_xlsx(db: Session, tenant_id: str, entity: str | None, scope: set
     ws.freeze_panes = "A2"
     for i, f in enumerate(facts, start=2):
         ws.append([f.entity, f.metric, f.period, float(f.value), f.unit, f.basis, f.status, f.reviewed_by or ""])
-        cited = [f"{names.get(s.document_id, s.document_id)} {locator_label(s.page, s.section, s.heading)}: {s.quote}"
+        cited = [f"{names.get(s.document_id, s.document_id)} {s.locator}: {s.quote}"
                  for s in f.sources]
         if cited:
             text = "\n".join(cited)

@@ -18,8 +18,8 @@ from app.ixbrl_full import read_filing
 from app.models import Document, DocumentFile, HtmlUnit, PageRow
 from app.parse.eml import parse_eml
 from app.parse.office import RawPage, extract_docx, extract_pptx
-from app.parse.pdf import extract_pages
-from app.parse.xlsx import extract_sheets
+from app.parse.pdf import doc_id_for, extract_pages
+from app.parse.xlsx import iter_sheet_chunks
 
 
 def tenant_doc_id(tenant_id: str, content_sha: str) -> str:
@@ -46,19 +46,33 @@ def ingest_pdf(db: Session, tenant_id: str, path: Path, filename: str | None = N
 
 
 def ingest_xlsx(db: Session, tenant_id: str, path: Path, filename: str | None = None) -> Document:
-    sheets = extract_sheets(path)
-    if not sheets:
-        raise ValueError("workbook has no sheets")
-    sha = sheets[0].doc_id
+    """Chunks are written as they are read, one commit each, so memory stays bounded by the chunk size. A
+    failure part-way removes what was written; a half-stored workbook is never left behind."""
+    sha = doc_id_for(path)
     doc_id = tenant_doc_id(tenant_id, sha)
     existing = db.get(Document, doc_id)
     if existing:
         return existing
-    doc = Document(id=doc_id, tenant_id=tenant_id, sha256=sha, filename=filename or path.name,
-                   n_pages=len(sheets), kind="xlsx")
-    doc.pages = [PageRow(number=s.number, text=s.text, label=s.name) for s in sheets]
+    doc = Document(id=doc_id, tenant_id=tenant_id, sha256=sha, filename=filename or path.name, n_pages=0,
+                   kind="xlsx")
     db.add(doc)
     db.commit()
+    try:
+        written = 0
+        for chunk in iter_sheet_chunks(path):
+            db.add(PageRow(document_id=doc_id, number=chunk.number, text=chunk.text, label=chunk.name))
+            db.commit()
+            written = chunk.number
+        if written == 0:
+            raise ValueError("workbook has no sheets")
+        doc.n_pages = written
+        db.commit()
+    except Exception:
+        db.rollback()
+        db.query(PageRow).filter_by(document_id=doc_id).delete()
+        db.query(Document).filter_by(id=doc_id).delete()
+        db.commit()
+        raise
     return doc
 
 

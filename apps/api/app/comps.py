@@ -14,7 +14,6 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.calc import _find
-from app.citations import locator_label
 from app.models import Fact
 
 MIN_PEERS = 3
@@ -142,7 +141,7 @@ def _cite(db: Session, fact_id: int | None) -> str:
     f = db.get(Fact, fact_id) if fact_id else None
     if f is None or not f.sources:
         return "no source"
-    return "; ".join(f"doc {s.document_id[:8]} {locator_label(s.page, s.section, s.heading)}" for s in f.sources)
+    return "; ".join(f"doc {s.document_id[:8]} {s.locator}" for s in f.sources)
 
 
 def to_docx(db: Session, result: dict) -> bytes:

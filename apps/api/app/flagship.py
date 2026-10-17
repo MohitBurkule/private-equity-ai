@@ -68,6 +68,21 @@ def lbo_step(raw: dict, doc_id: str) -> Step:
         "inputs": {k: {"value": str(c.value), "source": c.source} for k, c in inputs.items()}})
 
 
+def derive_ebitda(steps: list[Step], doc_id: str, filename: str) -> dict | None:
+    """EBITDA = verified operating income + verified depreciation and amortization, both from this filing's own tags.
+    Returned as an LBO input spec whose quote names the two rows it was added from. None unless both are verified."""
+    ext = next((s for s in steps if s.name == "extraction" and s.status == "ok"), None)
+    if ext is None:
+        return None
+    got = {c["metric"]: c for c in ext.result.get("created", [])}
+    if "operating_income" not in got or "depreciation_amortization" not in got:
+        return None
+    oi, da = got["operating_income"], got["depreciation_amortization"]
+    value = Decimal(oi["value"]) + Decimal(da["value"])
+    return {"value": str(value), "source": {"document_id": doc_id, "filename": filename, "page": oi["page"],
+                                            "quote": f"derived: {oi['quote']} + {da['quote']}"}}
+
+
 def legal_step(pages: list[tuple[int, str]], doc_id: str, doc_type: str | None, legal_mod) -> Step:
     if not doc_type:
         return Step("legal", "skipped", "no document type given (nda, spa or credit)")

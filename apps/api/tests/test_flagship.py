@@ -1,9 +1,9 @@
 from decimal import Decimal
 
-from fastapi.testclient import TestClient
-
 from app.flagship import lbo_inputs, lbo_step
 from app.main import app
+from fastapi.testclient import TestClient
+
 from tests.helpers import new_tenant
 
 c = TestClient(app)
@@ -38,3 +38,14 @@ def test_run_reports_each_step_and_skips_what_it_cannot_do():
     assert s["legal"]["status"] == "ok" and "red_flags" in s["legal"]["result"]
     assert s["lbo"]["status"] == "skipped" and s["memo"]["status"] == "skipped"  # no verified facts for Acme
     assert c.post("/flagship/run", headers=h, json={"document_id": "nope", "entity": "A"}).status_code == 404
+
+
+def test_ebitda_is_operating_income_plus_da_from_verified_extraction():
+    from app.flagship import Step, derive_ebitda
+    ext = Step("extraction", "ok", result={"created": [
+        {"metric": "operating_income", "value": "1000", "page": 3, "quote": "Operating income 1,000"},
+        {"metric": "depreciation_amortization", "value": "250", "page": 4, "quote": "Depreciation 250"}]})
+    spec = derive_ebitda([ext], "doc-1", "10k.htm")
+    assert spec["value"] == "1250" and spec["source"]["document_id"] == "doc-1"
+    assert spec["source"]["quote"] == "derived: Operating income 1,000 + Depreciation 250"
+    assert derive_ebitda([Step("extraction", "ok", result={"created": []})], "doc-1", "10k.htm") is None

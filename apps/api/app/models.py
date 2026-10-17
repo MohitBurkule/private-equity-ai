@@ -17,6 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.citations import locator_label
 from app.db import Base
 
 
@@ -96,13 +97,19 @@ class FactSource(Base):
     fact_id: Mapped[int] = mapped_column(ForeignKey("fact.id"), nullable=False)
     document_id: Mapped[str] = mapped_column(ForeignKey("document.id"), nullable=False)
     # PDF citations use page. HTML filings have no pages: page is 0 and the location is section/anchor/offset.
+    # Workbooks: page is the stored text chunk, and the location is heading (sheet), anchor (cell), section (row).
     page: Mapped[int] = mapped_column(Integer, nullable=False)
     quote: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(String(8), default="pdf", server_default="pdf")  # pdf | html | xlsx
     section: Mapped[str | None] = mapped_column(String(32), default=None)
     heading: Mapped[str | None] = mapped_column(String(256), default=None)
     anchor: Mapped[str | None] = mapped_column(String(128), default=None)
     offset: Mapped[int | None] = mapped_column(Integer, default=None)
     fact: Mapped[Fact] = relationship(back_populates="sources")
+
+    @property
+    def locator(self) -> str:
+        return locator_label(self.page, self.section, self.heading, kind=self.kind, anchor=self.anchor)
 
 
 class HtmlUnit(Base):
@@ -342,6 +349,24 @@ class MemoComment(Base):
     author: Mapped[str] = mapped_column(String(64), default="")
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(String(40), default="")
+
+
+class OutreachItem(Base):
+    """One outreach draft in the review queue. The text is frozen at queueing; sending re-drafts and refuses if it moved."""
+    __tablename__ = "outreach_item"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("target.id"), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending | approved | rejected | sent
+    sender: Mapped[str] = mapped_column(String(120))
+    firm: Mapped[str] = mapped_column(String(120))
+    thesis: Mapped[str | None] = mapped_column(Text, default=None)
+    subject: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    reviewed_by: Mapped[str | None] = mapped_column(String(64), default=None)
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+    sent_at: Mapped[str | None] = mapped_column(String(40), default=None)
 
 
 class DigestPref(Base):

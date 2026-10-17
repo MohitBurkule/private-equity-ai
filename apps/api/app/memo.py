@@ -115,7 +115,7 @@ def build_memo_data(db: Session, tenant_id: str, entity: str, scope: set[str] | 
         note_no[f.id] = n
         src = f.sources[0]
         doc = db.get(Document, src.document_id)
-        where = locator_label(src.page, src.section, src.heading)
+        where = src.locator
         memo.notes.append(f'[{n}] {doc.filename if doc else src.document_id[:8]}, {where}: '
                           f'"{src.quote.strip()}"')
         memo.lines.append(f"{f.metric} ({f.period}, {f.basis}): {_gloss(f.value)} {f.unit} [{n}]")

@@ -41,3 +41,9 @@ def scan(since: str, until: str, phrase: str = "agreement and plan of merger", f
          fetch: Fetch = default_fetch) -> list[Lead]:
     q = urllib.parse.urlencode({"q": f'"{phrase}"', "forms": form, "startdt": since, "enddt": until})
     return parse(json.loads(fetch(f"https://efts.sec.gov/LATEST/search-index?{q}")))
+
+
+def scan_cik(cik: str, form: str, since: str, until: str, fetch: Fetch = default_fetch) -> list[Lead]:
+    """Filings of one form by one company in a window (the efts `ciks` filter; undocumented, like scan)."""
+    q = urllib.parse.urlencode({"ciks": str(cik).zfill(10), "forms": form, "startdt": since, "enddt": until})
+    return parse(json.loads(fetch(f"https://efts.sec.gov/LATEST/search-index?{q}")))

@@ -132,7 +132,7 @@ def find_conflicts(db: Session, tenant: str, scope: set[str] | None = None,
         names = {d.id: d.filename for d in db.query(Document).filter(
             Document.id.in_({s.document_id for f in fs for s in f.sources}))} if fs else {}
         srcs = [{"fact_id": f.id, "value": str(f.value), "documents": [
-            {"document_id": s.document_id, "filename": names.get(s.document_id), "page": s.page, "section": s.section, "heading": s.heading, "quote": s.quote}
+            {"document_id": s.document_id, "filename": names.get(s.document_id), "page": s.page, "locator": s.locator, "quote": s.quote}
             for s in f.sources]} for f in sorted(fs, key=lambda x: (x.value, x.id))]
         docs_per_value = {v: {s.document_id for f in fs if f.value == v for s in f.sources} for v, _ in vals}
         cross = len({frozenset(d) for d in docs_per_value.values()}) > 1

@@ -31,3 +31,5 @@ Update 15 (fund-metric check, t38-t48 Carlyle/Fidus/Blackstone): all 14 quoted r
 
 ## golden_ddq_v1.jsonl (3, d01-d03)
 LP DDQ-style Q&A on fund terms, quoted from Carlyle and Blackstone 10-K text: Key Person Event definition (d01), Blackstone key-person consequences (d02, excerpt cut off, answer says so), Carlyle incentive fee range and base (d03). Every quote matched the filing text with whitespace collapsed. No arithmetic in these items.
+
+Update 16 (hand-check batch): x050 Carlyle 10-K diluted EPS 2025 2.18 (income statement, first column); x090 DunBrad 10-K diluted EPS 2024 -0.07 (shown as "( 0.07 )"; sign attribute "-" applied, so the golden sign is right); x034 KKR 10-K net income attributable 2,370,463 (USD thousands, scale 3); x046 Carlyle 10-K net income attributable 808.7 (USD millions); x020 Blackstone 10-K net income attributable 3,019,214 (USD thousands); x116 Hertz 10-K total liabilities 22,770 (USD millions). All six match rendered text. Hand-read XBRL count now 37 of 122.

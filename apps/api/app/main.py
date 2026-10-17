@@ -133,6 +133,7 @@ from app.models import (
     LboRun,
     MemoComment,
     MemoVersion,
+    OutreachItem,
     PageRow,
     SyncRun,
     Target,
@@ -566,7 +567,7 @@ def _fact_out(f: Fact) -> dict:
     return {"id": f.id, "entity": f.entity, "metric": f.metric, "period": f.period, "value": str(f.value),
             "unit": f.unit, "basis": f.basis, "status": f.status, "reviewed_by": f.reviewed_by,
             "reviewed_at": f.reviewed_at, "review_note": f.review_note,
-            "sources": [{"document_id": s.document_id, "page": s.page, "section": s.section, "heading": s.heading,
+            "sources": [{"document_id": s.document_id, "page": s.page, "locator": s.locator,
                          "quote": s.quote} for s in f.sources]}
 
 
@@ -612,8 +613,8 @@ def _calc_out(c: Calc) -> dict:
             "unit": c.unit, "formula": c.formula, "missing": c.missing, "problems": c.problems,
             "inputs": [{"role": i.role, "sign": i.sign, "fact_id": i.fact.id, "metric": i.fact.metric,
                         "period": i.fact.period, "value": str(i.fact.value), "unit": i.fact.unit,
-                        "sources": [{"document_id": s.document_id, "page": s.page, "section": s.section,
-                                     "heading": s.heading, "quote": s.quote} for s in i.fact.sources]}
+                        "sources": [{"document_id": s.document_id, "page": s.page, "locator": s.locator,
+                                     "quote": s.quote} for s in i.fact.sources]}
                        for i in c.inputs]}
 
 
@@ -1658,7 +1659,7 @@ class FlagshipIn(BaseModel):
     extract: bool = False  # read the filing's inline XBRL tags into verified facts (no LLM)
     sic: str | None = Field(default=None, max_length=8)  # the entity's SIC code, for peers
     cik: str | None = Field(default=None, max_length=12)  # the entity's own CIK, left out of its peers
-    peers_pages: int = Field(default=1, ge=1, le=3)
+    peers_pages: int = Field(default=1, ge=1, le=10)
     precedents: dict | None = None  # {"since": "YYYY-MM-DD", "until": "YYYY-MM-DD", "limit": 5}
 
 
@@ -1689,7 +1690,12 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
     except (OSError, ValueError, RuntimeError) as e:
         steps.append(flagship_mod.Step("precedents", "failed", f"{type(e).__name__}: {e}"))
     steps.append(flagship_mod.legal_step(pages, doc.id, body.legal_doc_type, legal_mod))
-    steps.append(flagship_mod.lbo_step(body.lbo.get("inputs") or {}, doc.id))
+    lbo_raw = dict(body.lbo.get("inputs") or {})
+    if "ebitda" not in lbo_raw:
+        derived = flagship_mod.derive_ebitda(steps, doc.id, doc.filename)
+        if derived:
+            lbo_raw["ebitda"] = derived
+    steps.append(flagship_mod.lbo_step(lbo_raw, doc.id))
     verified = db.query(Fact).filter_by(tenant_id=who.tenant, entity=body.entity, status="verified").count()
     if verified:
         steps.append(flagship_mod.Step("memo", "ok", result={
@@ -2335,6 +2341,110 @@ def targets_outreach_send(body: OutreachSend, db: Db, who: Writer):
     except OSError as e:  # SMTP host unreachable or refused: a gateway failure, not a server bug
         raise HTTPException(502, f"mail server unreachable: {e}") from e
     log_event(db, who.tenant, actor(who), "target.outreach_sent", {"id": t.id, "to": len(to)})
+    return {"sent": len(to), "attached": [f[0] for f in files]}
+
+
+class OutreachQueueIn(BaseModel):
+    target_ids: list[int] = Field(min_length=1, max_length=200)
+    sender: str = Field(min_length=1, max_length=120)
+    firm: str = Field(min_length=1, max_length=120)
+    thesis: str | None = Field(default=None, max_length=2000)
+
+
+class OutreachReviewIn(BaseModel):
+    decision: Literal["approve", "reject"]
+
+
+class OutreachQueueSend(BaseModel):
+    to: list[str] = Field(min_length=1, max_length=20)
+    memo_entity: str | None = Field(default=None, max_length=200)
+
+
+def _queue_item(db: Session, who: Principal, item_id: int) -> OutreachItem:
+    it = db.get(OutreachItem, item_id)
+    if it is None or it.tenant_id != who.tenant:
+        raise HTTPException(404, "queued draft not found")
+    return it
+
+
+@app.post("/targets/outreach/queue", status_code=201)
+def outreach_queue(body: OutreachQueueIn, db: Db, who: Writer):
+    """Put drafts in the review queue. Nothing is sent; a senior person approves each one, then sends it."""
+    rows = db.query(Target).filter(Target.tenant_id == who.tenant, Target.id.in_(body.target_ids)).all()
+    missing = sorted(set(body.target_ids) - {t.id for t in rows})
+    if missing:
+        raise HTTPException(404, f"targets not found: {missing}")
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+    items = []
+    for t in rows:
+        d = outreach_mod.draft(t, body.sender, body.firm, body.thesis)
+        it = OutreachItem(tenant_id=who.tenant, target_id=t.id, status="pending", sender=body.sender, firm=body.firm,
+                          thesis=body.thesis, subject=d["subject"], body=d["body"], created_by=actor(who), created_at=now)
+        db.add(it)
+        items.append(it)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "target.outreach_queued", {"count": len(items)})
+    return {"items": [{"id": it.id, "target_id": it.target_id, "status": it.status, "subject": it.subject} for it in items]}
+
+
+@app.get("/targets/outreach/queue")
+def outreach_queue_list(db: Db, who: Who, status: str | None = None):
+    q = db.query(OutreachItem).filter_by(tenant_id=who.tenant)
+    if status:
+        q = q.filter_by(status=status)
+    return {"items": [{"id": it.id, "target_id": it.target_id, "status": it.status, "subject": it.subject,
+                       "created_by": it.created_by, "reviewed_by": it.reviewed_by} for it in q.order_by(OutreachItem.id).all()]}
+
+
+@app.post("/targets/outreach/queue/{item_id}/review")
+def outreach_review(item_id: int, body: OutreachReviewIn, db: Db, who: Writer):
+    """Approve or reject a pending draft. Only a senior, unrestricted person's key may decide."""
+    if who.role not in OUTREACH_SENDERS or who.restricted:
+        raise HTTPException(403, "reviewing outreach needs a senior, unrestricted person's key")
+    it = _queue_item(db, who, item_id)
+    if it.status != "pending":
+        raise HTTPException(409, f"draft is {it.status}, not pending")
+    it.status = "approved" if body.decision == "approve" else "rejected"
+    it.reviewed_by = actor(who)
+    db.commit()
+    return {"id": it.id, "status": it.status}
+
+
+@app.post("/targets/outreach/queue/{item_id}/send")
+def outreach_queue_send(item_id: int, body: OutreachQueueSend, db: Db, who: Writer):
+    """Send an approved draft. The text must still match what was queued, or it goes back for review."""
+    if who.role not in OUTREACH_SENDERS or who.restricted:
+        raise HTTPException(403, "sending outreach needs a senior, unrestricted person's key")
+    it = _queue_item(db, who, item_id)
+    if it.status != "approved":
+        raise HTTPException(409, f"draft is {it.status}; only an approved draft is sent")
+    t = db.get(Target, it.target_id)
+    if t is None:
+        raise HTTPException(404, "target not found")
+    try:
+        to = notify_mod.valid_recipients(body.to)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    now_draft = outreach_mod.draft(t, it.sender, it.firm, it.thesis)
+    if now_draft["subject"] != it.subject or now_draft["body"] != it.body:
+        it.status = "pending"
+        it.reviewed_by = None
+        db.commit()
+        raise HTTPException(409, "the draft changed since it was approved; it is back in the queue for review")
+    scope = None if who.deals is None else set(who.deals)
+    files = [(f"research-{t.id}.docx", research_mod.build_docx(db, who.tenant, t, scope), DOCX_MIME)]
+    if body.memo_entity:
+        files.append(("memo.pptx", build_memo_pptx(db, who.tenant, body.memo_entity, visible_doc_ids(db, who)), PPTX_MIME))
+    try:
+        notify_mod.send_email(to, it.subject, it.body, files)
+    except notify_mod.MailNotConfigured as e:
+        raise HTTPException(503, str(e)) from e
+    except OSError as e:
+        raise HTTPException(502, f"mail server unreachable: {e}") from e
+    it.status = "sent"
+    it.sent_at = datetime.now(UTC).isoformat(timespec="seconds")
+    db.commit()
+    log_event(db, who.tenant, actor(who), "target.outreach_sent", {"id": t.id, "to": len(to), "queued": it.id})
     return {"sent": len(to), "attached": [f[0] for f in files]}
 
 

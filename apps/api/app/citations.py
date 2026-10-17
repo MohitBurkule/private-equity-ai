@@ -83,11 +83,34 @@ def verify_number(claimed: Decimal, span_text: str, scale: Decimal = Decimal(1),
     return False
 
 
-def locator_label(page: int, section: str | None = None, heading: str | None = None) -> str:
-    """How a citation is shown to a reader. PDFs have pages. HTML filings have none, so they are labelled by
-    section and heading; page 0 is a storage sentinel and must never reach a reader."""
-    if page:
-        return f"p.{page}"
-    if section:
-        return f"§{section}" + (f" {heading}" if heading else "")
-    return "HTML filing"
+_XLSX_CELL = re.compile(r"^(?P<sheet>.+?)!(?P<cell>[A-Z]{1,3}\d+): ")
+_XLSX_ROW = re.compile(r"\| row: (?P<row>.+)$")
+
+
+def xlsx_location(quote: str) -> tuple[str, str, str | None] | None:
+    """(sheet, cell, row label) from a workbook quote such as "P&L!C14: 1,000 | row: Revenue". None when the
+    quote does not start with a cell address, so it cannot be located in a sheet."""
+    m = _XLSX_CELL.match(quote.strip())
+    if m is None:
+        return None
+    row = _XLSX_ROW.search(quote)
+    return m.group("sheet"), m.group("cell"), row.group("row").strip() if row else None
+
+
+def locator_label(page: int, section: str | None = None, heading: str | None = None, *, kind: str = "pdf",
+                  anchor: str | None = None) -> str:
+    """How a citation is shown to a reader. The kind decides the shape, so a stored number is never shown
+    as the wrong kind of location:
+    - pdf: "p.N" (the page).
+    - xlsx: "Sheet!Cell" and, when the row has a label, ", row: label". Heading holds the sheet, anchor the cell,
+      section the row label. Workbooks have no pages.
+    - html: "§section heading", or "HTML filing" when no section was recorded. Page 0 is a storage sentinel and
+      never shown."""
+    if kind == "xlsx":
+        where = f"{heading}!{anchor}" if heading and anchor else "workbook"
+        return f"{where}, row: {section}" if section else where
+    if kind == "html" or not page:
+        if section:
+            return f"§{section}" + (f" {heading}" if heading else "")
+        return "HTML filing"
+    return f"p.{page}"
