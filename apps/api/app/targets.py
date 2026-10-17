@@ -7,6 +7,7 @@ us-gaap revenue figure from a 10-K with a filing link; Companies House bulk data
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
@@ -112,6 +113,38 @@ def ch_targets(csv_text: str) -> list[TargetIn]:
                             uk_sector(sic), sic,
                             "United Kingdom", re.sub(r"\s+\d\w\w$", "", r.postcode or "") or None))
     return out
+
+
+def refresh_universe(db: Session, tenant: str, fetch_sec: Callable, fetch_ch: Callable,
+                     limit: int = 200) -> dict:
+    """Re-pull each stored SEC or Companies House target from its source and update the row in place.
+    A source that fails, or a company that is dissolved or unknown, leaves its row as it was and is counted."""
+    rows = (db.query(Target).filter(Target.tenant_id == tenant, Target.source.in_(["sec", "companies_house"]))
+            .order_by(Target.id).limit(limit).all())
+    refreshed, failed, dissolved = 0, 0, 0
+    for r in rows:
+        try:
+            if r.source == "sec":
+                submissions, facts = fetch_sec(r.source_ref)
+                it = sec_target(submissions, facts)
+            else:
+                rec = fetch_ch(r.source_ref)
+                if rec is None:
+                    failed += 1
+                    continue
+                if rec.status and rec.status.lower() != "active":
+                    dissolved += 1
+                    continue  # dissolved companies are not targets; the row is kept, never silently refreshed
+                sic = rec.sic[0] if rec.sic else None
+                it = TargetIn(rec.name or r.name, "companies_house", rec.number,
+                              f"https://find-and-update.company-information.service.gov.uk/company/{rec.number}",
+                              uk_sector(sic), sic, "United Kingdom", r.region)
+        except (KeyError, ValueError, OSError, RuntimeError):  # one bad source must not stop the rest
+            failed += 1
+            continue
+        upsert(db, tenant, [it])
+        refreshed += 1
+    return {"checked": len(rows), "refreshed": refreshed, "failed": failed, "dissolved": dissolved}
 
 
 def upsert(db: Session, tenant: str, items: list[TargetIn]) -> tuple[int, int]:

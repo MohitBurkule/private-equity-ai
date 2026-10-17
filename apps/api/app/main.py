@@ -87,6 +87,7 @@ from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
 from app.chat_alerts import chat_poster
 from app.connectors import oauth, vault
 from app.connectors.base import ConnectorError, default_http
+from app.connectors.docusign import DocuSign
 from app.connectors.gsheets import GoogleSheets
 from app.connectors.linkedin import LinkedInExport
 from app.connectors.oauth import OAuthError
@@ -97,6 +98,7 @@ from app.db import make_engine, make_session_factory
 from app.dd import STATUSES, TEMPLATE
 from app.edgar import fetch_companyfacts
 from app.email_links import links_for
+from app.envelope_stage import advance
 from app.expert_calls import flags, parse
 from app.extract.rows import _ROWS as ROW_SCHEMAS
 from app.extract.rows import extract_rows
@@ -2378,7 +2380,30 @@ class ChNumbersImport(BaseModel):
     numbers: list[str] = Field(min_length=1, max_length=200)
 
 
-SCREEN_PROFILE_KEYS = ("deal_screening_criteria", "target_ev_range", "target_ebitda_range")
+SCREEN_PROFILE_KEYS = ("deal_screening_criteria", "screening_weights", "target_ev_range", "target_ebitda_range")
+
+
+SCREEN_WEIGHT_KEYS = {"sector", "country", "revenue"}
+
+
+def _screen_weights(raw: dict[str, float]) -> dict[str, float]:
+    """Firm-set weight per criterion. Unlisted criteria weigh 1, so no weights means the plain share of tests passing."""
+    bad = set(raw) - SCREEN_WEIGHT_KEYS
+    if bad:
+        raise HTTPException(422, f"unknown weight keys: {sorted(bad)}; use {sorted(SCREEN_WEIGHT_KEYS)}")
+    if any(not 0 <= w <= 10 for w in raw.values()):
+        raise HTTPException(422, "weights must be between 0 and 10")
+    return {k: float(v) for k, v in raw.items()}
+
+
+def _weighted_score(criteria: dict[str, str], weights: dict[str, float]) -> float | None:
+    """Weighted share of the tests that pass. An unknown test counts as not passed, never as passed."""
+    if not criteria:
+        return None
+    total = sum(weights.get(k, 1.0) for k in criteria)
+    if total == 0:
+        return None
+    return round(sum(weights.get(k, 1.0) for k, v in criteria.items() if v == "pass") / total, 2)
 
 
 class Screen(BaseModel):
@@ -2386,6 +2411,7 @@ class Screen(BaseModel):
     countries: list[str] = []
     min_revenue: Decimal | None = None
     max_revenue: Decimal | None = None
+    weights: dict[str, float] = {}
     limit: int = 200
 
 
@@ -2408,6 +2434,19 @@ def targets_import_sec(body: SecImport, db: Db, who: Writer):
         raise HTTPException(422, f"not a SEC submissions document: {e}") from e
     new, upd = tg_mod.upsert(db, who.tenant, [t])
     return {"new": new, "updated": upd, "revenue_found": t.revenue is not None}
+
+
+def _sec_fetch(cik: str) -> tuple[dict, dict]:
+    """Live SEC submissions and company facts for one CIK, as the SEC import expects them."""
+    from app.secfeed import default_fetch
+    subs = json.loads(default_fetch(f"https://data.sec.gov/submissions/CIK{cik.zfill(10)}.json"))
+    return subs, fetch_companyfacts(cik)
+
+
+@app.post("/targets/refresh")
+def targets_refresh(db: Db, who: Writer, limit: int = Query(200, ge=1, le=1000)):
+    """Re-pull stored SEC and Companies House targets from their sources. Each row keeps its source link."""
+    return tg_mod.refresh_universe(db, who.tenant, _sec_fetch, ch_mod.fetch_company, limit=limit)
 
 
 @app.post("/targets/import/companies-house", status_code=201)
@@ -2723,6 +2762,7 @@ class SavedScreenIn(BaseModel):
     countries: list[str] = []
     min_revenue: Decimal | None = None
     max_revenue: Decimal | None = None
+    weights: dict[str, float] = {}
 
 
 @app.post("/targets/screens", status_code=201)
@@ -2732,7 +2772,8 @@ def saved_screen_save(body: SavedScreenIn, db: Db, who: Writer):
         raise HTTPException(422, "a saved screen needs at least one criterion")
     criteria = {"sectors": body.sectors, "countries": body.countries,
                 "min_revenue": None if body.min_revenue is None else str(body.min_revenue),
-                "max_revenue": None if body.max_revenue is None else str(body.max_revenue)}
+                "max_revenue": None if body.max_revenue is None else str(body.max_revenue),
+                "weights": _screen_weights(body.weights)}
     row = db.query(SavedScreen).filter_by(tenant_id=who.tenant, name=body.name).one_or_none()
     if row is None:
         row = SavedScreen(tenant_id=who.tenant, name=body.name, created_by=actor(who),
@@ -2758,7 +2799,8 @@ def saved_screen_run(screen_id: int, db: Db, who: Who, limit: int = Query(200, g
     c = json.loads(row.criteria)
     body = Screen(sectors=c["sectors"], countries=c["countries"],
                   min_revenue=None if c["min_revenue"] is None else Decimal(c["min_revenue"]),
-                  max_revenue=None if c["max_revenue"] is None else Decimal(c["max_revenue"]), limit=limit)
+                  max_revenue=None if c["max_revenue"] is None else Decimal(c["max_revenue"]),
+                  weights=c.get("weights", {}), limit=limit)
     return {"screen": row.name, **targets_screen(body, db, who)}
 
 
@@ -2774,6 +2816,8 @@ def targets_screen(body: Screen, db: Db, who: Who):
             raise HTTPException(422, "give criteria, or accept a firm deal_screening_criteria rule first")
         source = {"key": rule.key, "value": rule.value, "document_id": rule.document_id, "page": rule.page,
                   "quote": rule.quote}
+    weight_rule = fk.newest_accepted(db, who.tenant, "screening_weights")
+    weights = _screen_weights(body.weights or (al.screening_weights(weight_rule.value) if weight_rule else {}))
     out = []
     for t in db.query(Target).filter_by(tenant_id=who.tenant).order_by(Target.id).all():
         e = tg_mod.evaluate(t, c)
@@ -2782,15 +2826,15 @@ def targets_screen(body: Screen, db: Db, who: Who):
             sources = [{"label": lbl, "url": u} for lbl, u in
                        (("company record", d["source_url"]), ("revenue", d["revenue_url"])) if u]
             # score: share of the criteria that pass; an unknown criterion counts as not passed, never as passed
-            tests = list(e["criteria"].values())
-            score = round(sum(v == "pass" for v in tests) / len(tests), 2) if tests else None
+            score = _weighted_score(e["criteria"], weights)
             out.append({**d, **e, "sources": sources, "score": score})
     out.sort(key=lambda r: (r["verdict"] != "match", -(r["score"] or 0)))
     profile = [fk.row_dict(r) for r in (fk.newest_accepted(db, who.tenant, k)
                                         for k in SCREEN_PROFILE_KEYS) if r is not None]
     return {"matches": sum(r["verdict"] == "match" for r in out), "review": sum(r["verdict"] == "review" for r in out),
             "criteria_profile": profile, "criteria_source": source,
-            "applied": {"sectors": c.sectors, "countries": c.countries,
+            "applied": {"sectors": c.sectors, "countries": c.countries, "weights": weights,
+                        "weights_source": None if body.weights or weight_rule is None else {"key": weight_rule.key, "value": weight_rule.value, "document_id": weight_rule.document_id, "page": weight_rule.page, "quote": weight_rule.quote},
                         "min_revenue": None if c.min_revenue is None else str(c.min_revenue),
                         "max_revenue": None if c.max_revenue is None else str(c.max_revenue)},
             "items": out[:min(max(body.limit, 1), 1000)]}
@@ -3144,6 +3188,40 @@ def sync_connector(name: str, body: SyncBody, db: Db, who: Writer):
     log_event(db, who.tenant, actor(who), "connector.sync",
               {"connector": name, "deal": body.deal, "ingested": len(out["ingested"])})
     return out
+
+
+@app.post("/connectors/docusign/stage-sync")
+def docusign_stage_sync(body: SyncBody, db: Db, who: Writer):
+    """Move one deal's stage on its completed DocuSign envelopes (subject = the deal name, then a space or the end).
+    Only a deal in this key's scope can be moved, and only forward (app/envelope_stage.py)."""
+    deal = (body.deal or "").strip()
+    if not deal:
+        raise HTTPException(422, "deal is required")
+    _require(who, "write", "move a deal stage from DocuSign", deal=deal)
+    if who.restricted and deal not in who.deals:
+        raise HTTPException(403, "deal is required and must be within this key's scope")
+    d = db.query(Deal).filter_by(tenant_id=who.tenant, name=deal).first()
+    if d is None or deal_hidden(d, who):
+        raise HTTPException(404, "deal not found")
+    try:
+        envelopes = DocuSign(body.token, CONNECTOR_HTTP, **body.options).envelopes()
+    except (ConnectorError, ValueError, OSError) as e:
+        raise HTTPException(502, f"docusign failed: {e}") from e
+    before, applied = d.stage, []
+    for e in sorted(envelopes, key=lambda x: x["completedDateTime"]):
+        subject = e["emailSubject"]
+        if subject != deal and not subject.startswith(deal + " "):
+            continue
+        new = advance(d.stage, e["status"])
+        if new != d.stage:
+            d.stage = new
+            applied.append(e["envelopeId"])
+    if applied:
+        d.updated_at = _now_iso()
+        db.commit()
+    log_event(db, who.tenant, actor(who), "docusign.stage_sync",
+              {"deal": deal, "stage_before": before, "stage_after": d.stage, "envelopes": applied})
+    return {"deal": deal, "stage_before": before, "stage_after": d.stage, "envelopes": applied}
 
 
 @app.post("/connectors/{name}/stage-sync")
