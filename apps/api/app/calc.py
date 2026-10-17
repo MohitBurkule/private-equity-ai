@@ -209,3 +209,34 @@ def to_usd(db: Session, tenant: str, c: Calc, rate_metric: str, period: str,
     c.formula += f" x {rate_metric} ({c.unit} to USD)"
     c.unit = "USD"
     return c
+
+
+def ntm(db: Session, tenant: str, entity: str, metric: str, fy0: str, fy1: str, months_elapsed: int,
+        scope: set[str] | None = None) -> Calc:
+    """Next-twelve-months figure, a derived estimate: the forecast for the current fiscal year (fy0) weighted by the
+    months left in it, plus the forecast for the next (fy1) weighted by the months elapsed. Both forecasts must be
+    cited facts; a missing one leaves the calc without a value. The weights are shown in the formula and the calc
+    is labelled derived, so it is never mistaken for a reported number."""
+    if not 0 <= months_elapsed <= 12:
+        raise ValueError("months_elapsed must be 0-12")
+    w0 = Decimal(12 - months_elapsed) / Decimal(12)
+    w1 = Decimal(months_elapsed) / Decimal(12)
+    c = Calc("NTM " + metric + " (derived)", entity,
+             formula=f"{w0:.4f} x {metric} forecast {fy0} + {w1:.4f} x {metric} forecast {fy1}")
+    parts = []
+    for role, period, w in (("current FY forecast", fy0, w0), ("next FY forecast", fy1, w1)):
+        f = _find(db, tenant, entity, metric, period, scope)
+        if f is None:
+            c.missing.append(f"{role}: {metric} for {period}")
+        else:
+            c.inputs.append(Input(role, 1, f))
+            parts.append((f, w))
+    if c.missing:
+        return c
+    units = {f.unit for f, _ in parts}
+    if len(units) != 1:
+        c.problems.append(f"inputs use different units: {sorted(units)}")
+        return c
+    c.unit = units.pop()
+    c.value = sum((f.value * w for f, w in parts), Decimal(0)).quantize(Decimal("0.01"))
+    return c
