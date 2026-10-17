@@ -16,6 +16,8 @@ CHUNK = 3000
 class RawPage:
     text: str
     label: str | None = None
+    # (start, end, paragraph) offsets into `text` for DOCX blocks; PDFs and slides leave it empty
+    paras: tuple[tuple[int, int, int], ...] = ()
 
 
 def _table_lines(table) -> list[str]:
@@ -50,21 +52,23 @@ def extract_docx(data: bytes) -> list[RawPage]:
                 blocks.append((ln, None))
     pages: list[RawPage] = []
     buf: list[str] = []
+    spans: list[tuple[int, int, int]] = []
     size = 0
     heading = None
     start_heading = None
-    for text, h in blocks:
+    for n, (text, h) in enumerate(blocks, 1):
         if h:
             heading = h
         if not buf:
             start_heading = heading
+        spans.append((size, size + len(text), n))  # size is where this block starts in "\n".join(buf)
         buf.append(text)
         size += len(text) + 1
         if size >= CHUNK:
-            pages.append(RawPage("\n".join(buf), start_heading))
-            buf, size = [], 0
+            pages.append(RawPage("\n".join(buf), start_heading, tuple(spans)))
+            buf, spans, size = [], [], 0
     if buf:
-        pages.append(RawPage("\n".join(buf), start_heading))
+        pages.append(RawPage("\n".join(buf), start_heading, tuple(spans)))
     return pages
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import json
 import os
 import tempfile
 import zipfile
@@ -221,7 +222,8 @@ def _store_pages(db: Session, tenant_id: str, data: bytes, filename: str, kind: 
     if not pages:
         raise ValueError("no text found")
     doc = Document(id=doc_id, tenant_id=tenant_id, sha256=sha, filename=filename, n_pages=len(pages), kind=kind)
-    doc.pages = [PageRow(number=i, text=p.text, label=p.label) for i, p in enumerate(pages, 1)]
+    doc.pages = [PageRow(number=i, text=p.text, label=p.label, spans=json.dumps(p.paras) if p.paras else None)
+                 for i, p in enumerate(pages, 1)]
     db.add(doc)
     db.commit()
     return doc

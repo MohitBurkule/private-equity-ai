@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
-from app.citations import numbers_in, quote_in_page
+from app.citations import numbers_in, paragraphs_for, quote_in_page
 from app.hybrid import default_index
 from app.llm import LLM
 from app.models import Document, PageRow
@@ -41,6 +41,7 @@ class Claim:
     quote: str
     verified: bool = False
     reason: str = ""
+    paragraphs: list[int] | None = None  # DOCX only: the paragraph number(s) the quote sits in
 
 
 @dataclass
@@ -85,6 +86,7 @@ def verify_claim(db: Session, tenant_id: str, c: Claim, scope: set[str] | None =
         c.reason = "quote does not name the line item the question asks for"
     else:
         c.verified = True
+        c.paragraphs = paragraphs_for(c.quote, row.text, row.spans)
     return c
 
 

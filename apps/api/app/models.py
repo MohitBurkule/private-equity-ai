@@ -73,6 +73,7 @@ class PageRow(Base):
     label: Mapped[str | None] = mapped_column(String(256), default=None)  # sheet name
     method: Mapped[str] = mapped_column(String(16), default="text", server_default="text")  # text | ocr
     ocr_confidence: Mapped[float | None] = mapped_column(default=None)
+    spans: Mapped[str | None] = mapped_column(Text, default=None)  # JSON [[start, end, paragraph]], DOCX only
     document: Mapped[Document] = relationship(back_populates="pages")
 
 
