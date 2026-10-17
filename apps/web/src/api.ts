@@ -296,6 +296,11 @@ export const api2 = {
     if (markMetric) p.set("mark_metric", markMetric);
     return call<RollForward>(`/portfolio/companies/${companyId}/roll-forward?${p}`);
   },
+  lpReport: (period: string, prior: string) => call<LpReport>(`/portfolio/lp-report?period=${encodeURIComponent(period)}&prior=${encodeURIComponent(prior)}`),
+  // The report as a file: fetched with the key and saved from a blob, as the memo download is.
+  lpReportBlob: (period: string, prior: string, format: "docx" | "pptx") =>
+    fetch(`/api/portfolio/lp-report?period=${encodeURIComponent(period)}&prior=${encodeURIComponent(prior)}&format=${format}`, { headers: auth() })
+      .then((r) => { if (!r.ok) throw new Error(`lp report: ${r.status}`); return r.blob(); }),
   emailAttach: (docId: string, deal: string) => call<{ document_id: string; deal: string }>(`/email/review/${encodeURIComponent(docId)}/attach`, "POST", { deal }),
 };
 
@@ -321,5 +326,10 @@ export interface SubmissionRow { company_id: number; name: string; metrics: stri
 export interface SubmissionsOut { period: string; submitted: SubmissionRow[]; missing: SubmissionRow[]; pct_submitted: number | null }
 
 export interface RollForward { period: string; prior: string; opening: CitedFigure | null; closing: CitedFigure | null; contributions: CitedFigure | null; distributions: CitedFigure | null; change_in_value: string | null }
+
+/** The LP report: numbered paragraphs, each citing sources by number. Source n is listed once at the end. */
+export interface LpReportSource { n: number; value: string; source: string; url: string | null }
+export interface LpReportPara { text: string; source: number | null }
+export interface LpReport { title: string; paragraphs: LpReportPara[][]; sources: LpReportSource[] }
 
 export const STAGES = ["sourcing", "screening", "dd", "ic", "signed", "closed", "passed"];
