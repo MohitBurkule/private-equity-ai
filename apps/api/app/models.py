@@ -466,6 +466,17 @@ class TargetNote(Base):
     edited_at: Mapped[str] = mapped_column(String(40), default="")
 
 
+class DealDeletion(Base):
+    """A pending request to delete a deal for good. The delete itself is the confirm step and needs an admin;
+    a legal hold or linked documents stop it at either step."""
+    __tablename__ = "deal_deletion"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    deal: Mapped[str] = mapped_column(String(200), index=True)
+    requested_by: Mapped[str] = mapped_column(String(64), default="")
+    requested_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 class PeerSet(Base):
     """A saved comps peer set for one deal: the SEC peers picked for a target, kept with their sources and
     refreshed on schedule (workflow kind `peer_refresh`). A peer that loses its revenue is dropped, never guessed."""

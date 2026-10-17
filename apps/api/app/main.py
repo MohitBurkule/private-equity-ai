@@ -171,6 +171,7 @@ from app.models import (
     DDRequest,
     Deal,
     DealChecklistItem,
+    DealDeletion,
     DealNote,
     DigestPref,
     Document,
@@ -1784,23 +1785,47 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
     return _deal_out(db, who, d)
 
 
-@app.delete("/deals/{name}")
-def deal_delete(name: str, db: Db, who: Writer):
+def _deletable_deal(db: Session, who: Principal, name: str, capability: str = "purge") -> Deal:
     d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
     if d is None or not _dd_scope_ok(who, name) or deal_hidden(d, who):
         raise HTTPException(404, "deal not found")
-    # Holds and linked documents are refused rather than cascaded: deleting evidence the team
-    # still relies on is the one step here that cannot be walked back.
-    _require(who, "govern", "delete deals", deal=name)
+    _require(who, capability, "delete deals", deal=name)
     if d.legal_hold:
-        raise HTTPException(409, "deal is under legal hold")
+        raise HTTPException(409, "deal is under legal hold; lift the hold before deleting")
     if db.query(Document).filter_by(tenant_id=who.tenant, deal=name).first():
         raise HTTPException(409, "documents still linked to this deal; unlink them first")
+    return d
+
+
+@app.post("/deals/{name}/deletion-request", status_code=201)
+def deal_deletion_request(name: str, db: Db, who: Writer):
+    """Step one of deleting a deal: an admin asks for it. Nothing is removed until DELETE /deals/{name}."""
+    _deletable_deal(db, who, name)
+    if db.query(DealDeletion).filter_by(tenant_id=who.tenant, deal=name).first():
+        raise HTTPException(409, "deletion already requested for this deal")
+    req = DealDeletion(tenant_id=who.tenant, deal=name, requested_by=who.key_id, requested_at=_now_iso())
+    db.add(req)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "deal.delete_requested", {"name": name})
+    return {"deal": name, "requested_by": req.requested_by, "requested_at": req.requested_at}
+
+
+@app.delete("/deals/{name}")
+def deal_delete(name: str, db: Db, who: Writer):
+    """Step two: confirm the deletion that was requested. Holds and linked documents are refused rather than
+    cascaded: deleting evidence the team still relies on is the one step here that cannot be walked back."""
+    d = _deletable_deal(db, who, name)
+    req = db.query(DealDeletion).filter_by(tenant_id=who.tenant, deal=name).first()
+    if req is None:
+        raise HTTPException(409, "request the deletion first: POST /deals/{name}/deletion-request")
     removed = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=name).delete()
+    requested_by = req.requested_by
+    db.query(DealDeletion).filter_by(tenant_id=who.tenant, deal=name).delete()
     db.delete(d)
     db.commit()
     retag_deals(db, who.tenant)  # meetings tagged to the deal lose the tag and their note
-    log_event(db, who.tenant, actor(who), "deal.delete", {"name": name, "dd_requests_removed": removed})
+    log_event(db, who.tenant, actor(who), "deal.delete",
+              {"name": name, "dd_requests_removed": removed, "requested_by": requested_by})
     return {"deleted": name, "dd_requests_removed": removed}
 
 
