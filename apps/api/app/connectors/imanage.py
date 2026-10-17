@@ -28,4 +28,12 @@ class IManage(Connector):
             raise ConnectorError(f"imanage response not in the expected shape: {e}") from e
         for doc_id, name, version in docs:
             data = self.http(f"{base}/v1/documents/{quote(doc_id, safe='')}/content", headers)
-            yield Item(f"imanage:{doc_id}", name, data, f"{base}/v1/documents/{doc_id}", version)
+            acl = self._acl(base, doc_id)
+            yield Item(f"imanage:{doc_id}", name, data, f"{base}/v1/documents/{doc_id}", version, acl=acl)
+
+    def _acl(self, base: str, doc_id: str) -> tuple[str, ...]:
+        """Users by address and groups as group:{id}, from the document's access list. A workspace-wide share names
+        no one, so it is left out and fails closed."""
+        grants = self._get_json(f"{base}/v1/documents/{quote(doc_id, safe='')}/acl").get("acl", [])
+        return tuple(f"group:{g['id']}" if g.get("type") == "group" else g["id"]
+                     for g in grants if g.get("type") in ("user", "group") and g.get("id"))

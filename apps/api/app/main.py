@@ -292,6 +292,7 @@ class KeyIn(BaseModel):
     deals: list[str] | None = None  # None = unrestricted; [] = sees nothing
     deal_roles: dict[str, str] | None = None  # per-deal role overrides, e.g. {"atlas": "partner"}
     identity: str | None = Field(default=None, max_length=256)  # the person's external id, e.g. their email
+    groups: list[str] | None = None  # external group ids the person is in, e.g. Azure AD group object ids
 
 
 @app.post("/admin/tenants/{tenant_id}/keys", status_code=201)
@@ -302,7 +303,7 @@ def admin_add_key(tenant_id: str, db: Db, body: KeyIn | None = None, x_admin_tok
         raise HTTPException(404, "tenant not found")
     body = body or KeyIn()
     try:
-        kid, key = add_key(db, tenant_id, body.role, body.deals, body.deal_roles, body.identity)
+        kid, key = add_key(db, tenant_id, body.role, body.deals, body.deal_roles, body.identity, body.groups)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     return {"key_id": kid, "role": body.role, "deals": body.deals, "deal_roles": body.deal_roles, "api_key": key,

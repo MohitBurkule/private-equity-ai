@@ -36,6 +36,7 @@ class ApiKey(Base):
     deals: Mapped[str | None] = mapped_column(Text, default=None)  # comma list; None = unrestricted
     deal_roles: Mapped[str | None] = mapped_column(Text, default=None)  # "deal:role,deal:role" overrides
     identity: Mapped[str | None] = mapped_column(String(256), default=None)  # the person's external id, e.g. email
+    groups: Mapped[str | None] = mapped_column(Text, default=None)  # comma list of external group ids
 
 
 class Document(Base):
