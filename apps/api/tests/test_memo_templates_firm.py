@@ -37,3 +37,22 @@ def test_restricted_key_cannot_save_a_firm_template(monkeypatch):
     tid, _ = _tenant("firm-tpl-scope")
     scoped = {"Authorization": f"Bearer {_token(tenant=tid, role='partner', sub='tess', deals=['Atlas'])}"}
     assert c.post("/memo/templates", headers=scoped, json={"name": "firm-x", "sections": ["risks"]}).status_code == 403
+
+
+def test_firm_heading_text_and_intro_print_in_memo(monkeypatch):
+    _sso(monkeypatch)
+    _tid, h = _tenant("firm-tpl-text")
+    body = {"name": "firm-text", "sections": ["risks", "financial"],
+            "headings": {"risks": "Key risks (firm wording)"}, "intro": "Prepared for the Monday IC."}
+    saved = c.post("/memo/templates", headers=h, json=body)
+    assert saved.status_code == 201, saved.text
+    assert saved.json()["headings"] == {"risks": "Key risks (firm wording)"}
+    item = next(t for t in c.get("/memo/templates", headers=h).json()["items"] if t["name"] == "firm-text")
+    assert item["intro"] == "Prepared for the Monday IC."
+    # heading for a section the template does not carry, a markdown heading, or an over-long intro are refused
+    assert c.post("/memo/templates", headers=h, json={**body, "name": "bad-a",
+                                                     "headings": {"derived": "x"}}).status_code == 422
+    assert c.post("/memo/templates", headers=h, json={**body, "name": "bad-b",
+                                                     "headings": {"risks": "# Risks"}}).status_code == 422
+    assert c.post("/memo/templates", headers=h, json={**body, "name": "bad-c",
+                                                     "intro": "x" * 501}).status_code == 422
