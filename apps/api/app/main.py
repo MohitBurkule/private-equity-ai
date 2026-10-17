@@ -1128,6 +1128,16 @@ def calc_comps_docx(body: CompsIn, db: Db, who: Who):
                     media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
+@app.post("/calc/comps.pptx")
+def calc_comps_pptx(body: CompsIn, db: Db, who: Who):
+    """Slide deck of the comps result; every figure cites its source line."""
+    res = comps_mod.run(db, who.tenant, body.target, body.peers, body.period, body.metrics,
+                        visible_doc_ids(db, who), body.target_period, body.ev_period)
+    log_event(db, who.tenant, actor(who), "comps.export", {"format": "pptx", "target": body.target})
+    return Response(comps_mod.to_pptx(db, res), headers={"Content-Disposition": 'attachment; filename="comps.pptx"'},
+                    media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+
+
 @app.get("/documents/{doc_id}/legal-terms")
 def legal_terms(doc_id: str, doc_type: str, db: Db, who: Who):
     """Key terms (governing law, term, caps, covenants...) as cited sentences. doc_type: nda | spa | credit."""

@@ -173,3 +173,42 @@ def to_docx(db: Session, result: dict) -> bytes:
     buf = io.BytesIO()
     d.save(buf)
     return buf.getvalue()
+
+
+def to_pptx(db: Session, result: dict) -> bytes:
+    """One slide per topic: implied ranges, then peer multiples. Each figure carries its source line."""
+    import io
+
+    from pptx import Presentation
+    from pptx.util import Pt
+
+    prs = Presentation()
+    s = prs.slides.add_slide(prs.slide_layouts[0])
+    s.shapes.title.text = f"Comparable companies: {result['target']}"
+    s.placeholders[1].text = f"{result['period']} · DRAFT · every multiple computed from cited facts"
+
+    s = prs.slides.add_slide(prs.slide_layouts[1])
+    s.shapes.title.text = "Implied valuation"
+    tf = s.placeholders[1].text_frame
+    tf.clear()
+    for i, im in enumerate(result["implied"]):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        if im.get("mid"):
+            p.text = f"{im['multiple']}: {im['low']} to {im['high']} (median {im['mid']}) · {_cite(db, im.get('target_fact_id'))}"
+        else:
+            p.text = f"{im['multiple']}: no range ({im.get('note') or 'insufficient data'})"
+        p.font.size = Pt(16)
+
+    s = prs.slides.add_slide(prs.slide_layouts[1])
+    s.shapes.title.text = "Peers"
+    tf = s.placeholders[1].text_frame
+    tf.clear()
+    for i, p_row in enumerate(result["peers"]):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        parts = [f"EV/{m} {v}" if v else f"EV/{m} n.m. ({p_row['nm'].get(m, 'unavailable')})"
+                 for m, v in p_row["multiples"].items()]
+        p.text = f"{p_row['entity']}: " + "; ".join(parts)
+        p.font.size = Pt(14)
+    buf = io.BytesIO()
+    prs.save(buf)
+    return buf.getvalue()
