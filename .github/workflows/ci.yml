@@ -86,22 +86,23 @@ jobs:
         run: docker compose down -v
   llm-local:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       LLM_PROVIDER: llamacpp
-      LLAMA_MODEL_PATH: ${{ github.workspace }}/models/qwen2.5-1.5b-instruct-q4_k_m.gguf
+      LLAMA_MODEL_PATH: ${{ github.workspace }}/models/gemma-2-9b-it-Q4_K_M.gguf
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - uses: actions/cache@v4
-        with: {path: models, key: gguf-qwen2.5-1.5b-q4km-v1}
+        with: {path: models, key: gguf-gemma-2-9b-it-q4km-v1}
       - name: Fetch model weights (cached)
         run: |
           mkdir -p models
           [ -f "$LLAMA_MODEL_PATH" ] || curl -fsSL -o "$LLAMA_MODEL_PATH" \
-            https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf
+            https://huggingface.co/bartowski/gemma-2-9b-it-GGUF/resolve/main/gemma-2-9b-it-Q4_K_M.gguf
       - run: pip install -e 'apps/api[dev]' llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-      - name: /ask and schema-extraction evals on a local open model
+      - name: /ask and schema-extraction evals on a local open model (gated: must pass)
         run: python evals/run_llm_eval.py | tee llm-eval.json
       - uses: actions/upload-artifact@v4
         if: always()
