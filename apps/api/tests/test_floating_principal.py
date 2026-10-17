@@ -66,3 +66,38 @@ def test_watcher_on_cited_xpo_inputs_alerts_when_cover_breaks_under_shock():
     made = [a for a in c.post("/alerts/scan", headers=h).json()["created"] if a["kind"] == "covenant_scenario"]
     # 1177/219 = 5.37x today (passes 5.2x); +100bp on 985 = +9.85: 1177/228.85 = 5.14x (breaks)
     assert len(made) == 1 and "5.14x" in made[0]["title"] and fl in made[0]["fact_ids"]
+def test_watcher_derives_ebitda_from_cited_operating_income_and_d_and_a():
+    h = new_tenant(c, "xpo2")
+    wb = Workbook()
+    rows = [("Operating income", 656), ("D&A", 521), ("Interest", 219), ("Floating", 985), ("Min ICR", 2)]
+    for i, (k, v) in enumerate(rows, 1):
+        wb.active[f"A{i}"], wb.active[f"B{i}"] = k, v
+    wb.active["A6"] = SENTENCE
+    wb.active["A7"], wb.active["B7"] = "Test minimum (assumed, not from the filing)", 5.2
+    b = io.BytesIO()
+    wb.save(b)
+    doc = c.post("/documents", files={"file": ("xpo2.xlsx", b.getvalue(), "x")}, headers=h).json()["id"]
+
+    def fact(metric, row, value, quote, scale=1_000_000):
+        r = c.post("/facts", headers=h, json={"entity": "XPO", "metric": metric, "period": "FY2025",
+                                              "value": str(value), "unit": "USD", "document_id": doc, "page": 1,
+                                              "quote": quote, "scale": scale})
+        assert r.status_code == 201, r.text
+        return r.json()["id"]
+
+    co = c.post("/portfolio/companies", json={"name": "XPO"}, headers=h).json()["id"]
+    op = fact("operating_income", 1, 656_000_000, "Sheet!B1: 656")
+    da = fact("depreciation_and_amortization", 2, 521_000_000, "Sheet!B2: 521")
+    fact("interest_expense", 3, 219_000_000, "Sheet!B3: 219")
+    fl = fact("floating_rate_debt", 4, 985_000_000, f"Sheet!A6: {SENTENCE}")
+    thr = fact("debt.min_interest_cover_x", 5, 2, "Sheet!B5: 2", scale=1)
+    c.post(f"/portfolio/companies/{co}/covenants", json={"kpi_metric": "interest_coverage", "operator": ">=",
+                                                         "threshold_fact_id": thr}, headers=h)
+    # Real inputs, real minimum: 1177/219 = 5.37x, 5.14x after +100bp. Far above 2.00x, so no alert at the default.
+    assert [a for a in c.post("/alerts/scan", headers=h).json()["created"] if a["kind"] == "covenant_scenario"] == []
+    # Same inputs against a 5.2x minimum (a test value, not the filing's): the shock breaks it.
+    thr2 = fact("debt.min_interest_cover_x", 7, 5.2, "Sheet!B7: 5.2", scale=1)
+    c.post(f"/portfolio/companies/{co}/covenants", json={"kpi_metric": "interest_coverage", "operator": ">=",
+                                                         "threshold_fact_id": thr2}, headers=h)
+    made = [a for a in c.post("/alerts/scan", headers=h).json()["created"] if a["kind"] == "covenant_scenario"]
+    assert len(made) == 1 and {op, da, fl, thr2} <= set(made[0]["fact_ids"])

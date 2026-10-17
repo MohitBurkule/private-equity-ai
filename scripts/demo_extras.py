@@ -126,3 +126,35 @@ with make_session_factory(engine)() as db:
 
         made = al.scan_candidates(db, tenant, cached, None, "2025-10-17", "2026-10-17")
         print(f"candidate watch: {len(made)} new candidates from cached search {cache['captured_on']}")
+
+# 4. XPO rate-move watch, end to end on cited inputs. Floating principal is read from the FY2025 10-K debt
+# sentence; EBITDA is derived from operating income and D&A; the interest-cover minimum is the Term Loan A
+# covenant (section 7.11(c)), created from the exhibit in step 1. Each fact is verified through /facts.
+from app import debt_parse  # noqa: E402
+from app.ixbrl_full import read_filing  # noqa: E402
+
+tenk = DATA / "filings" / "XPO_10-K_FY2025.htm"
+if tenk.exists() and tla.exists():
+    tenk_doc = upload(tenk, "text/html")
+    pages, _ = read_filing(tenk.read_text(encoding="utf-8", errors="replace"))
+    numbered = [(int(p.label.split()[1]), p.text) for p in pages]
+    for row in debt_parse.floating_principal(numbered):
+        fact = call("POST", "/facts", {"entity": "XPO", "metric": "floating_rate_debt", "period": "FY2025",
+                                       "value": str(row["amount"]), "unit": "USD", "document_id": tenk_doc["id"],
+                                       "page": row["page"], "quote": row["quote"], "scale": 1000000})
+        if "id" in fact:
+            call("POST", f"/facts/{fact['id']}/review", {"action": "accept"})
+        print("xpo floating principal:", fact.get("id", fact), row["quote"][:60])
+    with make_session_factory(engine)() as db:
+        thr = db.execute(select(Fact.id).where(Fact.metric == "covenant interest_coverage minimum")
+                         .order_by(Fact.id.desc())).scalars().first()
+    if thr is not None:
+        co = call("POST", "/portfolio/companies", {"name": "XPO", "sector": "Industrials"})
+        call("POST", f"/portfolio/companies/{co['id']}/covenants",
+             {"kpi_metric": "interest_coverage", "operator": ">=", "threshold_fact_id": thr})
+        print("xpo covenant:", "interest cover minimum from Term Loan A section 7.11(c), fact", thr)
+    scan = call("POST", "/alerts/scan")
+    rate = [a for a in scan.get("created", []) if a.get("kind") == "covenant_scenario"]
+    print("xpo rate-move watch at the firm's shock:", rate or "no alert (cover stays above the minimum)")
+else:
+    print("xpo rate-move watch: FY2025 10-K or Term Loan A exhibit not in DATA_DIR, skipped")
