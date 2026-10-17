@@ -1,6 +1,6 @@
 # Contributing
 
-- Run `make ci` before merging. It runs ruff, the alembic heads check, pytest on SQLite, the full suite on Postgres, and web `tsc` + `vitest`. GitHub Actions is not the gate right now, so this is. Postgres needs a non-root user: `PG_RUN_AS=<user> make ci` (the script starts a throwaway embedded-postgres 18 cluster; see `scripts/test_postgres.sh`).
+- Run `make ci` before merging. It installs the API's `dev` extras first (pytest, paramiko, boto3, httpx, ruff), then runs ruff, the alembic heads check, pytest on SQLite, the full suite on Postgres, and web `tsc` + `vitest`. GitHub Actions is not the gate right now, so this is. Postgres needs a non-root user: `PG_RUN_AS=<user> make ci` (the script starts a throwaway embedded-postgres 18 cluster; see `scripts/test_postgres.sh`).
 - `make test-postgres` alone runs the API suite on Postgres. Use it when you touch RLS, tenant binding or the ACL code.
 - One migration per PR. Alembic keeps one head: `apps/api/tests/test_alembic_heads.py` fails on a clash.
 - New dependencies: add them to `apps/api/pyproject.toml`, then regenerate `docs/LICENSES.md` with `python scripts/licence_audit.py > docs/LICENSES.md`. Copyleft or unknown licences need a reviewer's sign-off.
