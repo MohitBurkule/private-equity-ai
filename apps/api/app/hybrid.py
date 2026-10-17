@@ -115,7 +115,8 @@ class DenseRanker:
         self.np = np
         self.model = TextEmbedding(model)
         self.keys = [(d, p) for d, p, _ in pages]
-        self.vecs = np.array(list(self.model.embed([t[:4000] for _, _, t in pages])), dtype="float32")
+        # batch_size: the default (256) peaks near 3.4 GB on 160 real pages; 16 peaks near 0.8 GB.
+        self.vecs = np.array(list(self.model.embed([t[:4000] for _, _, t in pages], batch_size=16)), dtype="float32")
 
     def search(self, query: str, k: int, doc_ids: set[str] | None) -> list[Hit]:
         q = next(iter(self.model.query_embed(query)))
