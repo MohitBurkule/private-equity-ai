@@ -55,7 +55,7 @@ def _layout_text(db: Session, document_id: str, page: int) -> str | None:
         return engines.run("pdftotext_layout", path, [page])[0].text
 
 
-def _reject_unit_mix(db: Session, tenant_id: str, entity: str, metric: str, period: str, basis: str, unit: str) -> None:
+def reject_unit_mix(db: Session, tenant_id: str, entity: str, metric: str, period: str, basis: str, unit: str) -> None:
     """One metric, entity, period and basis must carry one unit. A second unit (say $000 beside $m, or GBP beside
     USD) would let ratios and bridges mix scales silently, so the write is refused and the reviewer decides."""
     other = (db.query(Fact.unit)
@@ -86,7 +86,7 @@ def add_verified_fact(
         layout_only = True
     if not verify_number(value, quote, scale, outflow=is_outflow(metric)):
         raise CitationError("value does not match any number in the quote")
-    _reject_unit_mix(db, tenant_id, entity, metric, period, basis, unit)
+    reject_unit_mix(db, tenant_id, entity, metric, period, basis, unit)
     fact = Fact(tenant_id=tenant_id, entity=entity, metric=metric, period=period, value=value, unit=unit,
                 basis=basis, as_of=as_of,
                 status="ocr_unverified" if row.method == "ocr" or layout_only else "verified")
@@ -117,6 +117,7 @@ def add_html_fact(
     _, first_quote = sources[0]
     if not verify_number(value, first_quote, scale, outflow=is_outflow(metric)):
         raise CitationError("value does not match any number in the quote")
+    reject_unit_mix(db, tenant_id, entity, metric, period, basis, unit)
     fact = Fact(tenant_id=tenant_id, entity=entity, metric=metric, period=period, value=value, unit=unit,
                 basis=basis, status="verified")
     fact.sources = [FactSource(document_id=document_id, page=0, quote=quote, kind="html",
@@ -141,6 +142,7 @@ def add_chart_fact(
         raise CitationError(f"page {page} not found in document {document_id[:8]}")
     if not verify_number(value, label, outflow=is_outflow(metric)):
         raise CitationError("chart label does not match the value")
+    reject_unit_mix(db, tenant_id, entity, metric, period, "GAAP", unit)
     fact = Fact(tenant_id=tenant_id, entity=entity, metric=metric, period=period, value=value, unit=unit,
                 status="ocr_unverified")
     anchor = "bbox:" + ",".join(f"{x:.1f}" for x in bbox)
