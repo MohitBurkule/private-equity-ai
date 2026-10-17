@@ -8,6 +8,7 @@ SEC_USER_AGENT (SEC rejects anonymous requests). Tests inject a fake fetch, so n
 from __future__ import annotations
 
 import html
+import json
 import re
 
 from app import dealscan, precedents
@@ -26,6 +27,18 @@ def filing_text(raw: bytes) -> str:
     return html.unescape(_TAG.sub(" ", s))
 
 
+def exhibit_urls(lead_url: str, fetch: Fetch) -> list[str]:
+    """The filing itself plus its EX-99 press-release exhibits, which usually state EV and multiples."""
+    base = lead_url.rsplit("/", 1)[0]
+    try:
+        items = json.loads(fetch(f"{base}/index.json"))["directory"]["item"]
+    except (OSError, ValueError, KeyError):
+        return [lead_url]
+    names = [i["name"] for i in items if re.match(r"(?i)ex-?99", i["name"])]
+    urls = [f"{base}/{n}" for n in names if n.lower().endswith((".htm", ".html"))]
+    return [lead_url] + [u for u in urls if u != lead_url]
+
+
 def build(
     since: str, until: str, fetch: Fetch = default_fetch, limit: int = 25
 ) -> dict:
@@ -33,21 +46,28 @@ def build(
     deals, skipped = [], []
     for lead in leads:
         name = f"{lead.company} ({lead.filed})"
-        try:
-            text = filing_text(fetch(lead.url))
-        except Exception as e:  # noqa: BLE001  one bad filing must not stop the rest
-            skipped.append(
-                {"name": name, "url": lead.url, "reason": f"download failed: {e}"}
-            )
-            continue
-        terms = precedents.extract([(1, text)])
-        for m in terms["multiples"]:
-            m["source_url"] = lead.url
-        if terms["ev_musd"]:
-            terms["ev_musd"]["source_url"] = lead.url
+        terms: dict = {"ev_musd": None, "multiples": [], "absent": []}
+        failed = None
+        for url in exhibit_urls(lead.url, fetch):
+            try:
+                text = filing_text(fetch(url))
+            except Exception as e:  # noqa: BLE001  one bad document must not stop the rest
+                failed = failed or f"download failed: {e}"
+                continue
+            part = precedents.extract([(1, text)])
+            for m in part["multiples"]:
+                m["source_url"] = url
+                terms["multiples"].append(m)
+            if part["ev_musd"] and terms["ev_musd"] is None:
+                part["ev_musd"]["source_url"] = url
+                terms["ev_musd"] = part["ev_musd"]
         if not terms["multiples"] and not terms["ev_musd"]:
             skipped.append(
-                {"name": name, "url": lead.url, "reason": "no stated EV or multiple"}
+                {
+                    "name": name,
+                    "url": lead.url,
+                    "reason": failed or "no stated EV or multiple",
+                }
             )
             continue
         deals.append({"name": name, "document_id": lead.url, "terms": terms})
