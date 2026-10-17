@@ -3,9 +3,10 @@
 //! and source ACL are ported, so nothing is shown or written past a wall by accident.
 
 use crate::audit::log_event;
-use crate::auth::{principal, Principal, WRITE_ROLES};
+use crate::auth::principal;
 use crate::citations::{is_outflow, locator_label, quote_in_page, verify_number, xlsx_location};
 use crate::error::ApiError;
+use crate::scope::{ensure_no_walls, require_unrestricted, require_writer};
 use crate::AppState;
 use axum::{
     extract::{Query, State},
@@ -16,7 +17,6 @@ use axum::{
 use rust_decimal::Decimal;
 use serde::{de, Deserialize, Deserializer};
 use serde_json::{json, Value};
-use sqlx::{Postgres, Transaction};
 use std::str::FromStr;
 
 /// Accepts a JSON number or string, as pydantic does for Decimal.
@@ -61,34 +61,6 @@ pub struct ListQuery {
     entity: Option<String>,
 }
 
-fn require_unrestricted(p: &Principal) -> Result<(), ApiError> {
-    if p.restricted {
-        return Err(ApiError::new(
-            StatusCode::NOT_IMPLEMENTED,
-            "deal-scoped keys not ported to the Rust API yet",
-        ));
-    }
-    Ok(())
-}
-
-/// Matches `writer`: the key's role must carry the write capability.
-fn require_writer(p: &Principal) -> Result<(), ApiError> {
-    if !WRITE_ROLES.contains(&p.role.as_str()) {
-        return Err(ApiError::new(StatusCode::FORBIDDEN, "role is read-only"));
-    }
-    Ok(())
-}
-
-/// Tenant-wide MNPI deals or ACL-restricted sources would hide rows from unrestricted keys. Refuse rather than leak.
-async fn tenant_has_walls(tx: &mut Transaction<'_, Postgres>) -> Result<bool, sqlx::Error> {
-    let (walls,): (bool,) = sqlx::query_as(
-        "SELECT EXISTS (SELECT 1 FROM deal WHERE mnpi) OR EXISTS (SELECT 1 FROM document_source WHERE acl IS NOT NULL)",
-    )
-    .fetch_one(&mut **tx)
-    .await?;
-    Ok(walls)
-}
-
 type FactRow = (
     i32,
     String,
@@ -120,12 +92,7 @@ pub async fn list_facts(
 ) -> Result<Json<Value>, ApiError> {
     let (p, mut tx) = principal(&s.pool, &headers).await?;
     require_unrestricted(&p)?;
-    if tenant_has_walls(&mut tx).await? {
-        return Err(ApiError::new(
-            StatusCode::NOT_IMPLEMENTED,
-            "tenant has deal walls or ACLs; not ported yet",
-        ));
-    }
+    ensure_no_walls(&mut tx).await?;
     let facts: Vec<FactRow> = sqlx::query_as(
         "SELECT id, entity, metric, period, value, unit, basis, status, reviewed_by, reviewed_at, review_note
          FROM fact WHERE ($1::text IS NULL OR status = $1) AND ($2::text IS NULL OR entity = $2) ORDER BY id",
@@ -172,12 +139,7 @@ pub async fn create_fact(
     let (p, mut tx) = principal(&s.pool, &headers).await?;
     require_unrestricted(&p)?;
     require_writer(&p)?;
-    if tenant_has_walls(&mut tx).await? {
-        return Err(ApiError::new(
-            StatusCode::NOT_IMPLEMENTED,
-            "tenant has deal walls or ACLs; not ported yet",
-        ));
-    }
+    ensure_no_walls(&mut tx).await?;
 
     // _own_doc: same 404 for missing and for another tenant (RLS hides the row either way).
     let doc: Option<(String, String)> =

@@ -4,8 +4,10 @@
 mod audit;
 mod auth;
 mod citations;
+mod documents;
 mod error;
 mod facts;
+mod scope;
 
 use axum::{extract::State, http::HeaderMap, routing::get, Json, Router};
 use serde_json::{json, Value};
@@ -35,6 +37,8 @@ pub fn app(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/me", get(whoami))
         .route("/facts", get(facts::list_facts).post(facts::create_fact))
+        .route("/documents", get(documents::list_documents))
+        .route("/documents/:doc_id/pages/:number", get(documents::get_page))
         .with_state(state)
 }
 
