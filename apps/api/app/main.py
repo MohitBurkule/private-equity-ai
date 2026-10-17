@@ -37,6 +37,7 @@ from app import companies_house as ch_mod
 from app import comps as comps_mod
 from app import covenant_parse as covparse_mod
 from app import debt_parse as debt_parse_mod
+from app import derived as derived_mod
 from app import firm_knowledge as fk
 from app import html_doc as html_doc_mod
 from app import jobs as jobs_mod
@@ -606,6 +607,18 @@ def _calc_out(c: Calc) -> dict:
                        for i in c.inputs]}
 
 
+@app.get("/facts/derived")
+def fact_derived(db: Db, who: Who, formula: str, entity: str, period: str):
+    """A derived value with every component's citation. Recomputed on each call; never stored."""
+    try:
+        d = derived_mod.derive(db, who.tenant, visible_doc_ids(db, who), formula, entity, period)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"formula": d.formula, "entity": d.entity, "period": d.period, "unit": d.unit, "value": str(d.value),
+            "components": [{"fact_id": c.fact_id, "metric": c.metric, "value": str(c.value), "sources": c.sources}
+                           for c in d.components]}
+
+
 @app.get("/facts/conflicts")
 def fact_conflicts(db: Db, who: Who, entity: str | None = None, cross_document_only: bool = False):
     """Same entity, metric, period and basis with different values across facts. Reports only."""
@@ -634,6 +647,17 @@ def lbo_returns(body: dict, db: Db, who: Who, xlsx: bool = False):
             src = {"document_id": f.sources[0].document_id, "filename": names.get(f.sources[0].document_id),
                    "page": f.sources[0].page, "quote": f.sources[0].quote}
             cited[name] = lbo_mod.Cited(f.value, src)
+        elif "derived" in spec:
+            # A derived input is computed from its components, each of which carries its own citation.
+            d = spec["derived"] or {}
+            try:
+                dv = derived_mod.derive(db, who.tenant, scope, d.get("formula", ""), d.get("entity", ""), d.get("period", ""))
+            except ValueError as e:
+                raise HTTPException(422, f"{name}: {e}") from e
+            first = dv.components[0].sources[0]
+            src = {"derived": True, "formula": dv.formula, "document_id": first["document_id"], "page": first["page"],
+                   "quote": first["quote"], "components": [c.fact_id for c in dv.components]}
+            cited[name] = lbo_mod.Cited(dv.value, src)
         elif "assumption" in spec:
             # An assumption is a judgement, not a fact: it names who set it, when and why, and never passes the
             # citation gate. Outputs list every assumption so it cannot pass as sourced.
@@ -669,6 +693,8 @@ def lbo_returns(body: dict, db: Db, who: Who, xlsx: bool = False):
             "exit_equity": str(res.exit_equity), "moic": str(res.moic.quantize(Decimal("0.01"))),
             "irr": None if res.irr is None else str(res.irr.quantize(Decimal("0.0001"))),
             "dividends": str(res.dividends), "schedule": res.schedule, "sensitivity": grid,
+            "derived": [{"input": k, "formula": c.source["formula"], "components": c.source["components"]}
+                        for k, c in cited.items() if c.source.get("derived")],
             "assumptions": [{"input": k, "value": str(c.value), "set_by": c.source["set_by"],
                              "set_on": c.source["set_on"], "reason": c.source["reason"]}
                             for k, c in cited.items() if c.source.get("assumption")]}

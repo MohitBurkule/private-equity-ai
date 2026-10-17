@@ -2,6 +2,7 @@
 # One command to see the app with no Postgres, Redis or Docker: the API on SQLite, the built web UI,
 # and seeded filings. Stop it with Ctrl+C. Open the UI at the printed URL and paste the printed key.
 #   scripts/demo_local.sh            (or: make demo)
+# Asks once for an SEC User-Agent (name and contact) for live EDGAR search; nothing personal is stored.
 # Needs Python 3 with apps/api installed, and Node for the web UI. Filings are seeded when DATA_DIR
 # holds the SEC companyfacts and 10-K HTML files; otherwise the UI starts empty.
 set -euo pipefail
@@ -14,6 +15,13 @@ API_PORT="${API_PORT:-8000}"
 WEB_PORT="${WEB_PORT:-5173}"
 ADMIN_TOKEN="${ADMIN_TOKEN:-demo-admin-token}"
 export ADMIN_TOKEN DATABASE_URL="sqlite:///$DEMO_DIR/demo.db"
+
+# SEC rejects anonymous requests, so live EDGAR search needs a contact string. It is asked for here and never
+# written to the repo. Leave it empty to skip live search; the rest of the demo does not need it.
+if [ -z "${SEC_USER_AGENT:-}" ] && [ -t 0 ]; then
+  read -r -p "SEC User-Agent for live EDGAR search (e.g. 'PE Platform demo you@example.com', blank to skip): " SEC_USER_AGENT || true
+fi
+export SEC_USER_AGENT="${SEC_USER_AGENT:-}"
 
 pids=()
 cleanup() { for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done; }
