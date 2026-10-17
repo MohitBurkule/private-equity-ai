@@ -2072,6 +2072,19 @@ def saved_search_run(search_id: int, db: Db, who: Who, k: int = Query(5, ge=1, l
     return {"search": row.name, "items": search(row.query, db, who, None, k)}
 
 
+@app.get("/search/notes")
+def search_notes(q: str, db: Db, who: Who, limit: int = Query(50, ge=1, le=200)):
+    """Shared deal notes that contain the words in q. Deal visibility and MNPI hiding apply before matching."""
+    terms = [t.lower() for t in q.split() if t.strip()]
+    if not terms:
+        raise HTTPException(422, "query is required")
+    scope = deal_scope(db, who)
+    rows = db.query(DealNote).filter_by(tenant_id=who.tenant).order_by(DealNote.id.desc()).all()
+    hits = [n for n in rows if (scope is None or n.deal in scope)
+            and all(t in n.body.lower() for t in terms)]
+    return {"query": q, "items": [_note_out(n) for n in hits[:limit]]}
+
+
 @app.get("/search")
 def search(q: str, db: Db, who: Who, doc_id: str | None = None, k: int = 5):
     if doc_id:
