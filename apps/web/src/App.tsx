@@ -102,9 +102,9 @@ export function App() {
       ]} />
       <SourceProvider>
         {tab === "Home" && (
-          <div className="flex h-full">
-            <div className="min-w-0 flex-1"><Chat /></div>
-            <div className="hidden w-80 shrink-0 p-4 xl:block"><Inbox onGo={setTab} /></div>
+          <div className="flex h-full flex-col overflow-y-auto">
+            <div className="mx-auto h-72 w-full max-w-3xl px-6 pt-6"><Inbox onGo={setTab} /></div>
+            <div className="min-h-0 flex-1"><Chat /></div>
           </div>
         )}
         {tab === "Documents" && <Documents />}
