@@ -40,6 +40,19 @@ def _match(q: str, name: str) -> str | None:
 _SIC = re.compile(r"\d{4,5}")
 
 
+def _deal_rule(d: Deal, q: str, raw: str, sic: str | None) -> str | None:
+    """Registry identifiers match exactly and outrank names. Aliases match like the deal name does."""
+    if (d.cik and raw.lstrip("0") == d.cik) or (d.lei and raw.upper() == d.lei):
+        return "cik" if raw.isdigit() else "lei"
+    rule = _match(q, d.name)
+    if rule:
+        return rule
+    for alias in (a.strip() for a in (d.aliases or "").split(",")):
+        if alias and _match(q, alias):
+            return "alias"
+    return "sic" if sic and d.sic == sic else None
+
+
 def lookup(db: Session, tenant: str, query: str, deal_scope: set[str] | None = None) -> dict:
     q = normalise(query)
     sic = query.strip() if _SIC.fullmatch(query.strip()) else None
@@ -56,9 +69,9 @@ def lookup(db: Session, tenant: str, query: str, deal_scope: set[str] | None = N
     for d in db.query(Deal).filter_by(tenant_id=tenant):
         if deal_scope is not None and d.name not in deal_scope:
             continue  # ethical walls: a deal the caller cannot see is not even named
-        rule = _match(q, d.name) or ("sic" if sic and d.sic == sic else None)
+        rule = _deal_rule(d, q, query.strip(), sic)
         if rule:
             hits.append({"kind": "deal", "id": d.id, "name": d.name, "rule": rule, "stage": d.stage})
-    order = {"exact": 0, "contains": 1, "sic": 2}
+    order = {"cik": 0, "lei": 0, "exact": 0, "alias": 1, "contains": 2, "sic": 3}
     hits.sort(key=lambda h: (order[h["rule"]], h["kind"], h["name"]))
     return {"query": query, "normalised": q, "seen": bool(hits), "hits": hits}
