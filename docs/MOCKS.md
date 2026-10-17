@@ -8,13 +8,32 @@ and an e2e test that skips when the service is not running.
 |---|---|---|---|
 | Dev mail (SMTP, API) | Mailpit v1.21.8 | wired | compose `mailpit`, CI, `tests/test_mailpit_e2e.py`, `tests/test_mailpit_ingest.py` |
 | Generic IMAP mailbox | GreenMail 2.1.2 | wired | compose `greenmail`, CI, `tests/test_greenmail_e2e.py` |
-| Microsoft Graph (Outlook, SharePoint) | WireMock with recorded stubs | planned | contract tests on a fake today: `tests/test_graph_contract.py` |
-| Google Drive / Sheets | WireMock or fake-gcs-server | planned | fake today: `tests/test_gdrive_folder.py`, `tests/test_gsheets.py` |
-| CRM (Salesforce, HubSpot, DealCloud) | WireMock from OpenAPI, or Prism | planned | fakes today: `tests/test_dealcloud_contract.py`, `tests/test_connectors.py` |
-| Object store / doc store | MinIO | planned | not used by an adapter yet |
-| SSO | Keycloak or mock-oauth2-server | planned | OAuth tests use a fake token endpoint today |
-| SFTP data room | atmoz/sftp | planned | no SFTP adapter yet |
-| Slack / Teams | Slack-compatible mock | planned | Slack adapter tested on a fake today |
+| Microsoft Graph (Outlook, SharePoint) | WireMock 3.9.1 (jar) | wired locally | `tests/test_wiremock_adapters.py`, skips without `WIREMOCK_JAR` |
+| Google Drive | WireMock 3.9.1 (jar) | wired locally | `tests/test_wiremock_adapters.py` |
+| CRM (Salesforce SOQL, HubSpot companies/deals/contacts) | WireMock 3.9.1 (jar) | wired locally | `tests/test_wiremock_adapters.py` |
+| Slack (conversations.list, conversations.history) | WireMock 3.9.1 (jar) | wired locally | `tests/test_wiremock_adapters.py` |
+| SSO / OIDC | mock-oauth2-server 6.1.1 (jar) | wired locally | `tests/test_oauth_mock_idp_e2e.py`, skips without `MOCK_OAUTH_URL` |
+| Object store (S3) | moto server (pip) | available, no adapter yet | no S3 connector exists |
+| SFTP data room | Apache MINA SSHD (jar) | not wired | no SFTP connector exists |
+| Google Sheets | fake in tests | planned mock | `tests/test_gsheets.py` (in-test fake) |
+| Keycloak | not used | skipped | mock-oauth2-server covers OIDC |
+| MinIO | not used | blocked | binary download returned 410 in the build sandbox |
+
+The jar-based mocks are not in CI yet: CI needs Java and a download step. Each test skips cleanly without its env var.
+
+### mock-oauth2-server token recipe (for SSO roles)
+
+Run with `config.json`, which turns off interactive login and adds claims per token:
+
+```json
+{"interactiveLogin": false, "tokenCallbacks": [{"issuerId": "default", "tokenExpiry": 3600,
+  "requestMappings": [{"requestParam": "scope", "match": "*",
+    "claims": {"sub": "ic@firm.test", "aud": ["cid"], "groups": ["pe-ic-members"]}}]}]}
+```
+
+Start: `JSON_CONFIG_PATH=config.json java -cp <classpath> no.nav.security.mock.oauth2.StandaloneMockOAuth2ServerKt`
+(the classpath comes from Maven: artifact `no.nav.security:mock-oauth2-server:6.1.1`). Discovery: `http://localhost:8080/default/.well-known/openid-configuration`.
+The authorize request needs `scope=openid` (plus `offline_access` for a refresh token). Do not send `prompt=consent` to the mock: it shows a login page.
 
 ## Running the wired mocks
 
