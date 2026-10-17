@@ -21,6 +21,7 @@ from fastapi import (
     UploadFile,
 )
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import (
@@ -127,6 +128,8 @@ from app.models import (
     Holding,
     HtmlUnit,
     IngestJob,
+    MemoComment,
+    MemoVersion,
     PageRow,
     SyncRun,
     Target,
@@ -1102,6 +1105,73 @@ def memo_diff(body: MemoDiffBody, db: Db, who: Who):
     """Current memo draft against the previous text the reviewer sends: lines added and removed, sources kept."""
     current = build_memo(db, who.tenant, body.entity, visible_doc_ids(db, who))
     return {"entity": body.entity, **memo_diff_mod.diff_memos(body.previous, current)}
+
+
+def _whole_tenant(who: Principal) -> None:
+    # A saved memo keeps the figures the builder saw; a narrower key would store, or read, text it cannot see.
+    if who.restricted:
+        raise HTTPException(403, "memo versions cover the whole tenant; use an unrestricted key")
+
+
+class MemoCommentBody(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+@app.post("/memo/versions", status_code=201)
+def memo_version_save(entity: Annotated[str, Query(min_length=1, max_length=200)], db: Db, who: Writer):
+    """Save the current memo draft as the next version of this entity."""
+    _whole_tenant(who)
+    text = build_memo(db, who.tenant, entity, visible_doc_ids(db, who))
+    last = db.query(func.max(MemoVersion.number)).filter_by(tenant_id=who.tenant, entity=entity).scalar() or 0
+    v = MemoVersion(tenant_id=who.tenant, entity=entity, number=last + 1, markdown=text, created_by=actor(who),
+                    created_at=datetime.now(UTC).isoformat(timespec="seconds"))
+    db.add(v)
+    db.commit()
+    return {"id": v.id, "entity": entity, "number": v.number}
+
+
+@app.get("/memo/versions")
+def memo_versions(entity: str, db: Db, who: Who):
+    _whole_tenant(who)
+    rows = db.query(MemoVersion).filter_by(tenant_id=who.tenant, entity=entity).order_by(MemoVersion.number).all()
+    return {"items": [{"id": v.id, "number": v.number, "created_by": v.created_by, "created_at": v.created_at}
+                      for v in rows]}
+
+
+@app.get("/memo/versions/diff")
+def memo_versions_diff(from_id: int, to_id: int, db: Db, who: Who):
+    """Lines added and removed between two saved versions of the same entity."""
+    _whole_tenant(who)
+    a, b = db.get(MemoVersion, from_id), db.get(MemoVersion, to_id)
+    if a is None or b is None or a.tenant_id != who.tenant or b.tenant_id != who.tenant or a.entity != b.entity:
+        raise HTTPException(404, "version not found")
+    return {"entity": a.entity, "from": a.number, "to": b.number,
+            **memo_diff_mod.diff_memos(a.markdown, b.markdown)}
+
+
+@app.get("/memo/versions/{version_id}")
+def memo_version_get(version_id: int, db: Db, who: Who):
+    _whole_tenant(who)
+    v = db.get(MemoVersion, version_id)
+    if v is None or v.tenant_id != who.tenant:
+        raise HTTPException(404, "version not found")
+    comments = db.query(MemoComment).filter_by(tenant_id=who.tenant, version_id=v.id).order_by(MemoComment.id).all()
+    return {"id": v.id, "entity": v.entity, "number": v.number, "markdown": v.markdown, "created_by": v.created_by,
+            "created_at": v.created_at,
+            "comments": [{"id": c.id, "author": c.author, "body": c.body, "created_at": c.created_at} for c in comments]}
+
+
+@app.post("/memo/versions/{version_id}/comments", status_code=201)
+def memo_version_comment(version_id: int, body: MemoCommentBody, db: Db, who: Writer):
+    _whole_tenant(who)
+    v = db.get(MemoVersion, version_id)
+    if v is None or v.tenant_id != who.tenant:
+        raise HTTPException(404, "version not found")
+    c = MemoComment(tenant_id=who.tenant, version_id=v.id, author=actor(who), body=body.body,
+                    created_at=datetime.now(UTC).isoformat(timespec="seconds"))
+    db.add(c)
+    db.commit()
+    return {"id": c.id}
 
 
 def get_sec_fetch():
