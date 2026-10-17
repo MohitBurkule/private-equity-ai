@@ -40,6 +40,7 @@ class Memo:
     rules: list[dict] = field(default_factory=list)  # accepted firm rules this draft applies, each quoted
     series: dict[str, list[tuple[str, Decimal, int]]] = field(default_factory=dict)  # metric -> (period, value, note)
     risks: list[str] = field(default_factory=list)  # only what cited figures show, each with its note numbers
+    legal: list[str] = field(default_factory=list)  # legal red flags from a contract, each cited to its page
     comps: list[str] = field(default_factory=list)  # trading comps lines from comps.run, each cited
 
     @property
@@ -142,6 +143,15 @@ def _cite_fact(db: Session, memo: Memo, f: Fact) -> int:
     return n
 
 
+def add_legal(memo: Memo, flags: list[dict]) -> None:
+    """Legal red flags from the rules, each with its playbook text and the quote it cites. An empty list is said out loud."""
+    if not flags:
+        memo.legal = ["No legal red flags in this document under the playbook (rules only)."]
+        return
+    for f in flags:
+        memo.legal.append(f'{f["text"]} [{f["document_id"][:8]} p.{f["page"]}: "{f["quote"].strip()}"]')
+
+
 def add_comps(db: Session, memo: Memo, res: dict) -> None:
     """Trading comps from comps.run. Every peer EV and every multiple cites its fact; the EV line names the record
     it came from (a market feed's file name, so a SYNTHETIC feed stays visible). Medians and the implied range are
@@ -174,10 +184,12 @@ def add_comps(db: Session, memo: Memo, res: dict) -> None:
 
 
 def build_memo(db: Session, tenant_id: str, entity: str, scope: set[str] | None = None,
-               comps: dict | None = None) -> str:
+               comps: dict | None = None, legal: list[dict] | None = None) -> str:
     m = build_memo_data(db, tenant_id, entity, scope)
     if comps is not None:
         add_comps(db, m, comps)
+    if legal is not None:
+        add_legal(m, legal)
     if m.empty and not m.rules and not m.comps:
         return f"# {entity}\n\nNo verified facts available. Nothing to report.\n"
     out = [f"# {entity}: financial summary (draft, analyst review required)", ""]
@@ -188,15 +200,19 @@ def build_memo(db: Session, tenant_id: str, entity: str, scope: set[str] | None 
         out += ["", "Firm rules applied (accepted, quoted):", *[f"- {_rule_line(r)}" for r in m.rules]]
     if m.comps:
         out += ["", "Trading comps (peers, each cited):", *[f"- {c}" for c in m.comps]]
+    if m.legal:
+        out += ["", "Legal red flags (rules, cited):", *[f"- {x}" for x in m.legal]]
     return "\n".join([*out, "", "Sources:", *m.notes]) + "\n"
 
 
 def build_memo_docx(db: Session, tenant_id: str, entity: str, scope: set[str] | None = None,
-                    comps: dict | None = None) -> bytes:
+                    comps: dict | None = None, legal: list[dict] | None = None) -> bytes:
     from docx import Document as Docx
     m = build_memo_data(db, tenant_id, entity, scope)
     if comps is not None:
         add_comps(db, m, comps)
+    if legal is not None:
+        add_legal(m, legal)
     d = Docx()
     d.add_heading(f"{entity}: financial summary", level=1)
     d.add_paragraph("DRAFT. Analyst review required before use. Figures below are only those whose "
@@ -217,6 +233,10 @@ def build_memo_docx(db: Session, tenant_id: str, entity: str, scope: set[str] | 
         d.add_heading("Trading comps (peers, each cited)", level=2)
         for c in m.comps:
             d.add_paragraph(c, style="List Bullet")
+    if m.legal:
+        d.add_heading("Legal red flags (rules, cited)", level=2)
+        for ln in m.legal:
+            d.add_paragraph(ln, style="List Bullet")
     if m.notes:
         d.add_heading("Sources", level=2)
         for n in m.notes:
@@ -226,12 +246,15 @@ def build_memo_docx(db: Session, tenant_id: str, entity: str, scope: set[str] | 
     return buf.getvalue()
 
 
-def build_memo_pptx(db: Session, tenant_id: str, entity: str, scope: set[str] | None = None) -> bytes:
+def build_memo_pptx(db: Session, tenant_id: str, entity: str, scope: set[str] | None = None,
+                    legal: list[dict] | None = None) -> bytes:
     """IC deck: title, figures (8 per slide, each with its footnote marker), derived numbers, sources.
     Same verified-only data as the text and Word memo."""
     from pptx import Presentation
     from pptx.util import Pt
     m = build_memo_data(db, tenant_id, entity, scope)
+    if legal is not None:
+        add_legal(m, legal)
     prs = Presentation()
 
     def bullets(title: str, items: list[str], size: int = 16):
@@ -266,9 +289,12 @@ def build_memo_pptx(db: Session, tenant_id: str, entity: str, scope: set[str] | 
         cd.categories = [p for p, _, _ in rev]
         cd.add_series("Revenue (USD)", [float(v) for _, v, _ in rev])
         sl.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.5), Inches(1.5), Inches(9), Inches(5), cd)
+    if legal is not None:
+        m_legal = m.legal or ["No legal red flags in this document under the playbook (rules only)."]
+        bullets("Legal red flags (cited)", m_legal[:8], 11)
     bullets("Risks (from cited figures)",
             (m.risks or ["No loss, revenue decline or negative free cash flow in the cited years."])
-            + ["Not in this draft: legal red flags and precedent deals (no source documents supplied for this run)."], 14)
+            + ([] if legal is not None else ["Not in this draft: legal red flags and precedent deals (no source documents supplied for this run)."]), 14)
     for i in range(0, len(m.notes), 6):
         bullets("Sources" + (f" ({i // 6 + 1})" if len(m.notes) > 6 else ""), m.notes[i:i + 6], 11)
     buf = io.BytesIO()
