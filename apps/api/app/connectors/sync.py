@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.connectors.base import Connector
+from app.dataroom_check import check_room, parse_required
 from app.ingest import finalize_upload, ingest_any
 from app.models import Alert, DocumentSource
 
@@ -33,6 +34,7 @@ def sync(db: Session, who, conn: Connector, deal: str | None, limit: int = 50) -
         db.commit()
     if out["ingested"]:
         _alert_new_documents(db, who.tenant, conn.name, deal, out["ingested"])
+    check_room(db, who.tenant, deal, parse_required(conn.opts.get("required", "")))
     return out
 
 

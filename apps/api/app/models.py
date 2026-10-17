@@ -51,11 +51,12 @@ class Document(Base):
 
 
 class DocumentFile(Base):
-    """Original PDF bytes, kept so a citation can show the page as filed, with the quote highlighted."""
+    """Original file bytes (PDF or filing HTML), kept so a citation can show the page as filed."""
     __tablename__ = "document_file"
     document_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     data: Mapped[bytes] = mapped_column(LargeBinary)
+    media_type: Mapped[str] = mapped_column(String(64), default="application/pdf")
 
 
 class PageRow(Base):

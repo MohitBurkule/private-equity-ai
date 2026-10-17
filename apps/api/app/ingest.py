@@ -135,9 +135,10 @@ def ingest_csv(db: Session, tenant_id: str, data: bytes, filename: str) -> Docum
     return doc
 
 
-def _keep_original(db: Session, tenant_id: str, doc_id: str, data: bytes) -> None:
+def _keep_original(db: Session, tenant_id: str, doc_id: str, data: bytes,
+                   media_type: str = "application/pdf") -> None:
     if db.get(DocumentFile, doc_id) is None:
-        db.add(DocumentFile(document_id=doc_id, tenant_id=tenant_id, data=data))
+        db.add(DocumentFile(document_id=doc_id, tenant_id=tenant_id, data=data, media_type=media_type))
         db.commit()
 
 
@@ -157,7 +158,9 @@ def ingest_upload(db: Session, tenant_id: str, data: bytes, filename: str) -> Do
     if b"ix:nonfraction" in data[:2_000_000].lower():
         # Filings carry page-break styles; small UK accounts do not.
         if b"page-break" in data.lower():
-            return ingest_ixbrl_filing(db, tenant_id, data, filename)
+            doc = ingest_ixbrl_filing(db, tenant_id, data, filename)
+            _keep_original(db, tenant_id, doc.id, data, "text/html")
+            return doc
         return ingest_ixbrl(db, tenant_id, data, filename)
     if filename.lower().endswith((".csv", ".tsv")):
         return ingest_csv(db, tenant_id, data, filename)
