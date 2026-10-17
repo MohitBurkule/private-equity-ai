@@ -70,7 +70,12 @@ export interface CovenantStatus {
   breaches: (CovenantTest & { covenant_id: number; kpi_metric: string })[];
 }
 export interface Breach { company: string; kpi_metric: string; period: string; status: string; value: string; threshold: string; unit?: string }
-export interface Conflict { entity: string; metric: string; period: string; spread_pct: string; likely_rounding: boolean }
+export interface ConflictSource { fact_id: number; value: string; documents: { document_id: string; filename: string | null; page: number; quote: string }[] }
+export interface Conflict {
+  entity: string; metric: string; period: string; basis: string; spread_pct: string; likely_rounding: boolean;
+  severity: "rounding" | "minor" | "material"; cross_document: boolean; values: { value: string; fact_id: number }[];
+  sources: ConflictSource[];
+}
 export type ConnectorState = "connected" | "needs_key" | "stubbed";
 export interface Connector { name: string; label: string; category: string; auth: string; status: "live" | "planned"; state: ConnectorState; detail: string }
 export interface CompsOut {

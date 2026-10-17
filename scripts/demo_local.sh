@@ -8,6 +8,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
 DEMO_DIR="${DEMO_DIR:-$(mktemp -d)}"
+mkdir -p "$DEMO_DIR"
 DATA_DIR="${DATA_DIR:-$ROOT/data/demo/edgar}"
 API_PORT="${API_PORT:-8000}"
 WEB_PORT="${WEB_PORT:-5173}"
