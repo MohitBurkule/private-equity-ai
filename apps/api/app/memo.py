@@ -39,6 +39,8 @@ class Memo:
     notes: list[str] = field(default_factory=list)  # footnote texts, index = marker - 1
     rules: list[dict] = field(default_factory=list)  # accepted firm rules this draft applies, each quoted
     series: dict[str, list[tuple[str, Decimal, int]]] = field(default_factory=dict)  # metric -> (period, value, note)
+    # ratio label -> (period, value, (note of numerator, note of denominator)), for the chart slides
+    ratios: dict[str, list[tuple[str, Decimal, tuple[int, int]]]] = field(default_factory=dict)
     risks: list[str] = field(default_factory=list)  # only what cited figures show, each with its note numbers
     legal: list[str] = field(default_factory=list)  # legal red flags from a contract, each cited to its page
     comps: list[str] = field(default_factory=list)  # trading comps lines from comps.run, each cited
@@ -52,6 +54,25 @@ class Memo:
 # (label, numerator metric, denominator metric) for margins computed from cited facts
 MARGINS = (("gross margin", "gross_profit", "revenue"), ("operating margin", "operating_income", "revenue"),
            ("net margin", "net_income", "revenue"))
+
+
+LEVERAGE = ("net debt / EBITDA", "net_debt", "ebitda")
+
+
+def ratio_series(facts: dict[tuple[str, str], tuple[Decimal, str, int]]) -> dict[str, list]:
+    """Margins (%) and net debt / EBITDA (x) per period, each point keeping the note numbers of its two inputs.
+    Pure, same inputs as derive_lines. Nothing is derived across units."""
+    out: dict[str, list] = {}
+    periods = sorted({p for _, p in facts})
+    for label, num, den in (*MARGINS, LEVERAGE):
+        for period in periods:
+            if (num, period) in facts and (den, period) in facts:
+                nv, nu, nn = facts[(num, period)]
+                dv, du, dn = facts[(den, period)]
+                if dv and nu == du:
+                    scale = Decimal(1) if label == LEVERAGE[0] else Decimal(100)
+                    out.setdefault(label, []).append((period, nv / dv * scale, (nn, dn)))
+    return out
 
 
 def derive_lines(facts: dict[tuple[str, str], tuple[Decimal, str, int]]) -> list[str]:
@@ -122,6 +143,7 @@ def build_memo_data(db: Session, tenant_id: str, entity: str, scope: set[str] | 
                           f'"{src.quote.strip()}"')
         memo.lines.append(f"{f.metric} ({f.period}, {f.basis}): {_gloss(f.value)} {f.unit} [{n}]")
     memo.derived += derive_lines({k: (f.value, f.unit, note_no[f.id]) for k, f in by_key.items()})
+    memo.ratios = ratio_series({k: (f.value, f.unit, note_no[f.id]) for k, f in by_key.items()})
     for (metric, period), f in sorted(by_key.items(), key=lambda kv: kv[0][1]):
         memo.series.setdefault(metric, []).append((period, f.value, note_no[f.id]))
     memo.risks = risk_lines({k: (f.value, f.unit, note_no[f.id]) for k, f in by_key.items()})
@@ -278,24 +300,42 @@ def build_memo_pptx(db: Session, tenant_id: str, entity: str, scope: set[str] | 
         bullets("Firm rules applied", [_rule_line(r) for r in m.rules], size=12)
     if m.derived:
         bullets("Derived (computed in code)", m.derived)
-    rev = m.series.get("revenue", [])
-    if len(rev) >= 2:
-        from pptx.chart.data import CategoryChartData
-        from pptx.enum.chart import XL_CHART_TYPE
-        from pptx.util import Inches
+    from pptx.chart.data import CategoryChartData
+    from pptx.enum.chart import XL_CHART_TYPE
+    from pptx.util import Inches
+
+    def foot(nums: set[int]) -> str:
+        """Source line for a chart: the cited note of every figure plotted, the same text as the Sources slides."""
+        return "Source: " + " ".join(next((x for x in m.notes if x.startswith(f"[{n}]")), f"[{n}]")
+                                     for n in sorted(nums))
+
+    def chart_slide(title: str, kind, cats: list[str], series: list[tuple[str, list]], nums: set[int]):
         sl = prs.slides.add_slide(prs.slide_layouts[5])
-        sl.shapes.title.text = "Revenue trend (cited figures only)"
+        sl.shapes.title.text = title
         cd = CategoryChartData()
-        cd.categories = [p for p, _, _ in rev]
-        cd.add_series("Revenue (USD)", [float(v) for _, v, _ in rev])
-        sl.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.5), Inches(1.5), Inches(9), Inches(5), cd)
-        # Footnote: the source line of every figure plotted, so the chart reads as cited like the rest of the memo.
-        cited = sorted({n for _, _, n in rev})
-        foot = [next((x for x in m.notes if x.startswith(f"[{n}]")), f"[{n}]") for n in cited]
+        cd.categories = cats
+        for name, vals in series:
+            cd.add_series(name, vals)
+        sl.shapes.add_chart(kind, Inches(0.5), Inches(1.5), Inches(9), Inches(4.9), cd)
         box = sl.shapes.add_textbox(Inches(0.5), Inches(6.6), Inches(9), Inches(0.8))
         box.text_frame.word_wrap = True
-        box.text_frame.text = "Source: " + " ".join(foot)
+        box.text_frame.text = foot(nums)
         box.text_frame.paragraphs[0].font.size = Pt(9)
+
+    for metric, label in (("revenue", "Revenue"), ("ebitda", "EBITDA")):
+        pts = m.series.get(metric, [])
+        if len(pts) >= 2:
+            chart_slide(f"{label} trend (cited figures only)", XL_CHART_TYPE.COLUMN_CLUSTERED,
+                        [p for p, _, _ in pts], [(f"{label} (USD)", [float(v) for _, v, _ in pts])],
+                        {n for _, _, n in pts})
+    ratios = {k: v for k, v in m.ratios.items() if len(v) >= 2}
+    if ratios:
+        periods = sorted({p for v in ratios.values() for p, _, _ in v})
+        series = [(k, [next((float(x) for q, x, _ in v if q == per), None) for per in periods])
+                  for k, v in ratios.items()]
+        nums = {n for v in ratios.values() for _, _, pair in v for n in pair}
+        chart_slide("Margins (%) and leverage (x), cited figures only", XL_CHART_TYPE.LINE_MARKERS,
+                    periods, series, nums)
     if legal is not None:
         m_legal = m.legal or ["No legal red flags in this document under the playbook (rules only)."]
         bullets("Legal red flags (cited)", m_legal[:8], 11)
