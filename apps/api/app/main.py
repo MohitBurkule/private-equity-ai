@@ -367,6 +367,34 @@ def get_page_image(doc_id: str, number: int, db: Db, who: Who, quote: str = Quer
     return Response(png, media_type="image/png", headers={"X-Quote-Highlighted": "1" if highlighted else "0"})
 
 
+@app.post("/documents/{doc_id}/capital-form/facts", status_code=201)
+def capital_form_facts(doc_id: str, db: Db, who: Writer):
+    """Store each readable SH01 allotment as a fact (shares allotted per class and period). Each goes
+    through the citation gate: its number must appear in its quote on the cited page. OCR pages are
+    stored as ocr_unverified, so they wait in the review queue."""
+    doc = _own_doc(db, who, doc_id)
+    rows = db.query(PageRow).filter_by(document_id=doc.id).order_by(PageRow.number).all()
+    f = parse_capital_form([(r.number, r.text, r.method == "ocr") for r in rows])
+    entity = f.company_number.value if f.company_number and f.company_number.readable else doc.filename
+    period = str(f.date_to.value) if f.date_to and f.date_to.readable else "unknown"
+    created, skipped = [], []
+    for a in f.allotments:
+        n = a.number
+        if not n.readable or not isinstance(n.value, Decimal):
+            skipped.append({"class": a.cls.value, "reason": "allotted number not readable"})
+            continue
+        try:
+            fact = add_verified_fact(db, tenant_id=who.tenant, entity=str(entity), metric=f"shares allotted {a.cls.value}",
+                                     period=period, value=n.value, unit="shares", document_id=doc.id,
+                                     page=n.page, quote=n.quote)
+        except CitationError as e:
+            skipped.append({"class": a.cls.value, "reason": str(e)})
+            continue
+        created.append(fact.id)
+    log_event(db, who.tenant, actor(who), "capital_form.facts", {"document_id": doc.id, "created": created})
+    return {"created": created, "skipped": skipped, "problems": f.problems}
+
+
 @app.get("/documents/{doc_id}/pages/{number}")
 def get_page(doc_id: str, number: int, db: Db, who: Who):
     _own_doc(db, who, doc_id)
