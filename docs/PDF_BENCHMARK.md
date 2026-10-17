@@ -79,3 +79,19 @@ Degraded recall by filing: Adobe 91.2%, AMD 90.3%, Best Buy 89.2%, 3M 88.9%, Amc
 3. Degraded scans: vote between two engines, with disagreements sent to review. Preprocessing did not help and was dropped. Any figure from a scan stays `ocr_unverified`.
 
 **Verification guarantee.** OCR-sourced figures are stored with status `ocr_unverified` (`apps/api/app/facts.py`). Only a human `review_fact` call promotes them to `verified`. This is pinned by `tests/test_unverified_citations.py`. No OCR figure is auto-verified by the text-layer comparison.
+
+## Table-row pairing (golden PDF items)
+
+Harness: `evals/pdf_benchmark.py`, 31 golden PDF items (13 from `golden_v1`, 18 from `golden_sh01_v1`). `row` means every expected number and the row label sit on one line. Docling 2.x table model weights are reachable from this environment (HF HTTP 307), so Docling was run as a candidate.
+
+| Engine | Page hit | Row hit | Bbox on row | s/page |
+|---|---|---|---|---|
+| pypdf | 17/31 | 16/31 | 0 | 0.19 |
+| pymupdf_text | 17/31 | 16/31 | 0 | 0.13 |
+| pdfplumber | 17/31 | 16/31 | 16 | 0.19 |
+| router (current extractor) | 29/31 | 27/31 | 27 | 1.13 |
+| docling | 28/31 | 26/31 | 26 | 10.53 |
+
+The `golden_v1` subset scores 13/13 for every engine, so the gap is in the sh01 forms (router 14/18 rows, Docling 13/18).
+
+Decision: keep the router. Docling does not win on row pairing and costs about 9x the time per page. Not adopted. Docling stays available as an engine in `apps/api/app/parse/engines.py`.

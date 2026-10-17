@@ -41,6 +41,7 @@ from app import ddq as ddq_mod
 from app import ddq_llm as ddq_llm_mod
 from app import debt_parse as debt_parse_mod
 from app import derived as derived_mod
+from app import edgar as edgar_mod
 from app import firm_knowledge as fk
 from app import flagship as flagship_mod
 from app import html_doc as html_doc_mod
@@ -96,6 +97,8 @@ from app.db import make_engine, make_session_factory
 from app.dd import STATUSES, TEMPLATE
 from app.edgar import fetch_companyfacts
 from app.email_links import links_for
+from app.extract.rows import _ROWS as ROW_SCHEMAS
+from app.extract.rows import extract_rows
 from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
@@ -137,6 +140,7 @@ from app.models import (
     PageRow,
     SyncRun,
     Target,
+    TargetContact,
     WorkflowSchedule,
 )
 from app.models import Tenant as TenantRow
@@ -1675,6 +1679,9 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
     except (OSError, ValueError, RuntimeError) as e:
         steps.append(flagship_mod.Step("precedents", "failed", f"{type(e).__name__}: {e}"))
     steps.append(flagship_mod.legal_step(pages, doc.id, body.legal_doc_type, legal_mod))
+    ext_step = next((s for s in steps if s.name == "extraction"), None)
+    steps.append(flagship_mod.crosscheck_step(ext_step, body.cik, edgar_mod.fetch_companyfacts) if body.extract
+                 else flagship_mod.Step("crosscheck", "skipped", "set extract=true to cross-check its figures"))
     lbo_raw = dict(body.lbo.get("inputs") or {})
     if "ebitda" not in lbo_raw:
         derived = flagship_mod.derive_ebitda(steps, doc.id, doc.filename)
@@ -2341,8 +2348,16 @@ class OutreachReviewIn(BaseModel):
 
 
 class OutreachQueueSend(BaseModel):
-    to: list[str] = Field(min_length=1, max_length=20)
+    to: list[str] | None = Field(default=None, max_length=20)  # None: the target's saved contacts
     memo_entity: str | None = Field(default=None, max_length=200)
+
+
+class ContactBody(BaseModel):
+    email: str = Field(min_length=3, max_length=256)
+    name: str | None = Field(default=None, max_length=200)
+
+
+OUTREACH_DAILY_LIMIT = int(os.environ.get("OUTREACH_DAILY_LIMIT", "50"))
 
 
 def _queue_item(db: Session, who: Principal, item_id: int) -> OutreachItem:
@@ -2395,6 +2410,35 @@ def outreach_review(item_id: int, body: OutreachReviewIn, db: Db, who: Writer):
     return {"id": it.id, "status": it.status}
 
 
+@app.post("/targets/{tid}/contacts", status_code=201)
+def target_contact_add(tid: int, body: ContactBody, db: Db, who: Writer):
+    """Add an address that outreach to this target may be sent to. Only a senior key's send mails it."""
+    t = db.get(Target, tid)
+    if t is None or t.tenant_id != who.tenant:
+        raise HTTPException(404, "target not found")
+    try:
+        email = notify_mod.valid_recipients([body.email])[0]
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    row = db.query(TargetContact).filter_by(tenant_id=who.tenant, target_id=t.id, email=email).one_or_none()
+    if row is None:
+        row = TargetContact(tenant_id=who.tenant, target_id=t.id, email=email, name=body.name)
+        db.add(row)
+    else:
+        row.name = body.name
+    db.commit()
+    return {"id": row.id, "email": row.email, "name": row.name}
+
+
+@app.get("/targets/{tid}/contacts")
+def target_contacts(tid: int, db: Db, who: Who):
+    t = db.get(Target, tid)
+    if t is None or t.tenant_id != who.tenant:
+        raise HTTPException(404, "target not found")
+    rows = db.query(TargetContact).filter_by(tenant_id=who.tenant, target_id=t.id).order_by(TargetContact.id).all()
+    return {"items": [{"id": c.id, "email": c.email, "name": c.name} for c in rows]}
+
+
 @app.post("/targets/outreach/queue/{item_id}/send")
 def outreach_queue_send(item_id: int, body: OutreachQueueSend, db: Db, who: Writer):
     """Send an approved draft. The text must still match what was queued, or it goes back for review."""
@@ -2406,10 +2450,18 @@ def outreach_queue_send(item_id: int, body: OutreachQueueSend, db: Db, who: Writ
     t = db.get(Target, it.target_id)
     if t is None:
         raise HTTPException(404, "target not found")
+    addresses = body.to if body.to is not None else [c.email for c in db.query(TargetContact).filter_by(tenant_id=who.tenant, target_id=t.id).all()]
+    if not addresses:
+        raise HTTPException(422, "no recipients: add a contact to this target or send to addresses")
     try:
-        to = notify_mod.valid_recipients(body.to)
+        to = notify_mod.valid_recipients(addresses)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
+    today = datetime.now(UTC).date().isoformat()
+    sent_today = db.query(OutreachItem).filter(OutreachItem.tenant_id == who.tenant, OutreachItem.status == "sent",
+                                               OutreachItem.sent_at >= today).count()
+    if sent_today >= OUTREACH_DAILY_LIMIT:
+        raise HTTPException(429, f"daily outreach limit of {OUTREACH_DAILY_LIMIT} reached; sends resume tomorrow")
     now_draft = outreach_mod.draft(t, it.sender, it.firm, it.thesis)
     if now_draft["subject"] != it.subject or now_draft["body"] != it.body:
         it.status = "pending"
@@ -2654,6 +2706,28 @@ def extract(doc_id: str, body: ExtractIn, db: Db, who: Writer, llm: Annotated[LL
             "fields": [{"metric": r.metric, "status": r.status, "value": None if r.value is None else str(r.value),
                         "page": r.page, "quote": r.quote, "reason": r.reason, "fact_id": r.fact_id}
                        for r in res.results]}
+
+
+class RowExtractIn(BaseModel):
+    schema_name: str
+    period: str
+
+
+@app.post("/documents/{doc_id}/extract-rows")
+def extract_row_table(doc_id: str, body: RowExtractIn, db: Db, who: Writer,
+                      llm: Annotated[LLM, Depends(llm_dependency)]):
+    """Row tables (cap table, contract terms). Each row is cited by page and quote and stays `auto` until reviewed."""
+    doc = _own_doc(db, who, doc_id)
+    if body.schema_name not in ROW_SCHEMAS:
+        raise HTTPException(422, f"schema must be one of {sorted(ROW_SCHEMAS)}")
+    text = {r.number: r.text for r in db.query(PageRow).filter_by(document_id=doc.id).all()}
+    results, detail = extract_rows(db, who.tenant, llm, doc, body.schema_name, body.period, text)
+    log_event(db, who.tenant, actor(who), "extract_rows",
+              {"document_id": doc.id, "schema": body.schema_name,
+               "accepted": sum(r.status == "accepted" for r in results)})
+    return {"schema": body.schema_name, "detail": detail,
+            "rows": [{"status": r.status, "page": r.page, "reason": r.reason, "fact_ids": r.fact_ids}
+                     for r in results]}
 
 
 class DDQIn(BaseModel):

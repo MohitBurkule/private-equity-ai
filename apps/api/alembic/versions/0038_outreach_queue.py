@@ -1,7 +1,7 @@
 """outreach review queue: drafts reviewed by a senior person before one is sent
 
 Revision ID: 0038
-Revises: 0036
+Revises: 0037
 """
 import sqlalchemy as sa
 
