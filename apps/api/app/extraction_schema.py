@@ -83,3 +83,20 @@ class EbitdaBridgeRow(BaseModel):
     kind: Literal["reported", "add_back", "deduction", "adjusted"]
     amount: Decimal
 
+
+class CohortRow(BaseModel):
+    """One cohort in a cohort or ARR table: the customers won in `cohort`, measured in `period`. Each measure is
+    optional because tables often show only some of them; a row with none of them is not a row."""
+    cohort: str = Field(min_length=1)
+    period: str = Field(min_length=1)
+    arr: Decimal | None = Field(default=None, ge=0)
+    customers: int | None = Field(default=None, ge=0)
+    nrr_pct: Decimal | None = Field(default=None, ge=0)
+    churn_pct: Decimal | None = Field(default=None, ge=0, le=100)
+
+    @model_validator(mode="after")
+    def _has_a_measure(self) -> CohortRow:
+        if all(v is None for v in (self.arr, self.customers, self.nrr_pct, self.churn_pct)):
+            raise ValueError("cohort row states no measure")
+        return self
+
