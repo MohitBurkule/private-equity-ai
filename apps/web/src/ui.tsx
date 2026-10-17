@@ -55,3 +55,11 @@ export const Empty = ({ children }: { children: ReactNode }) => (
 
 export const ErrorLine = ({ e }: { e: string }) =>
   e ? <p role="alert" className="mx-5 my-3 rounded-lg bg-bad/10 px-3 py-2 text-sm text-bad">{e}</p> : null;
+
+/** Page frame shared by every section: title, one-line hint, then cards. */
+export const Page = ({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) => (
+  <div className="mx-auto max-w-4xl space-y-5 p-6">
+    <div><h1 className="text-xl font-semibold tracking-tight">{title}</h1>{hint && <p className="text-sm text-mut">{hint}</p>}</div>
+    {children}
+  </div>
+);

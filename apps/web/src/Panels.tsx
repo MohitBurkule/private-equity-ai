@@ -2,16 +2,10 @@ import { api2, DDRow, DealRow, EvalRunRow, FactRow, Report, STAGES } from "./api
 import { fmtAmount } from "./format";
 import { useLoad } from "./hooks";
 import { SourceChip } from "./source";
-import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input } from "./ui";
+import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input, Page } from "./ui";
 import { useState } from "react";
 import { DealWorkspace } from "./DealWorkspace";
 
-const Page = ({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) => (
-  <div className="mx-auto max-w-4xl space-y-5 p-6">
-    <div><h1 className="text-xl font-semibold tracking-tight">{title}</h1>{hint && <p className="text-sm text-mut">{hint}</p>}</div>
-    {children}
-  </div>
-);
 
 export function ReviewQueue() {
   const { data, error, reload, setError } = useLoad<FactRow[]>(async () => [
@@ -39,11 +33,30 @@ export function ReviewQueue() {
         </ul>
       </Card>
       <Card>
-        <CardHead title="Conflicts between documents" hint="Same metric and period, different values. Nothing is picked for you." />
+        <CardHead title="Conflicts between documents" hint="Same metric and period, different values. Each value sits beside its own source. Nothing is picked for you." />
         {conflicts.data?.length === 0 && <Empty>No conflicts found.</Empty>}
         <ul className="divide-y divide-line">
           {conflicts.data?.map((c, i) => (
-            <li key={i} className="px-5 py-3 text-sm">{c.entity} · {c.metric} · {c.period}: differ by {c.spread_pct}% {c.likely_rounding && <Badge tone="acc">likely rounding</Badge>}</li>
+            <li key={i} className="px-5 py-3">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-medium">{c.entity} · {c.metric} · {c.period}</span>
+                <Badge tone={c.severity === "material" ? "bad" : c.severity === "minor" ? "warn" : "acc"}>{c.severity}</Badge>
+                {c.cross_document && <Badge tone="warn">across documents</Badge>}
+                <span className="text-xs text-mut">spread {c.spread_pct}%</span>
+              </div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {c.sources.map((src) => (
+                  <div key={src.fact_id} className="rounded-lg border border-line p-3">
+                    <p className="tnum text-sm font-medium">{fmtAmount(src.value, "")}</p>
+                    {src.documents.slice(0, 1).map((d) => (
+                      <p key={d.document_id} className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-mut">
+                        <SourceChip docId={d.document_id} page={d.page} quote={d.quote} label={`${(d.filename ?? "doc").slice(0, 22)} p.${d.page}`} />
+                      </p>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </li>
           ))}
         </ul>
       </Card>

@@ -58,8 +58,24 @@ export interface FactRow {
 export interface DealRow { name: string; stage: string; note: string | null; documents: number; dd_total: number; dd_open: number }
 export interface DDRow { id: number; deal: string; category: string; title: string; status: string; document_id: string | null }
 export interface EvalRunRow { id: number; suite: string; ran_at: string; note: string | null; metrics: Record<string, unknown> }
+/** Cited input: a verified fact id, as /lbo/returns requires. Multiples are inputs too, so they must be cited. */
+export interface LboRequest { inputs: Record<string, { fact_id: number }>; entry_multiples?: string[]; exit_multiples?: string[] }
+export interface LboResult {
+  entry_ev: string; debt: string; fees: string; equity: string; exit_ev: string; exit_net_debt: string; exit_equity: string;
+  moic: string; irr: string | null; dividends: string; sensitivity: [string, string, string | null, string | null][] | null;
+}
+export interface CovenantTest { period: string; status: string; value: string; threshold: string; unit?: string }
+export interface CovenantStatus {
+  covenants: { id: number; kpi_metric: string; operator: string; tests: CovenantTest[] }[];
+  breaches: (CovenantTest & { covenant_id: number; kpi_metric: string })[];
+}
 export interface Breach { company: string; kpi_metric: string; period: string; status: string; value: string; threshold: string; unit?: string }
-export interface Conflict { entity: string; metric: string; period: string; spread_pct: string; likely_rounding: boolean }
+export interface ConflictSource { fact_id: number; value: string; documents: { document_id: string; filename: string | null; page: number; quote: string }[] }
+export interface Conflict {
+  entity: string; metric: string; period: string; basis: string; spread_pct: string; likely_rounding: boolean;
+  severity: "rounding" | "minor" | "material"; cross_document: boolean; values: { value: string; fact_id: number }[];
+  sources: ConflictSource[];
+}
 export type ConnectorState = "connected" | "needs_key" | "stubbed";
 export interface Connector { name: string; label: string; category: string; auth: string; status: "live" | "planned"; state: ConnectorState; detail: string }
 export interface CompsOut {
@@ -139,6 +155,8 @@ export const api2 = {
   legalTerms: (docId: string, docType: string) => call<LegalOut>(`/documents/${docId}/legal-terms?doc_type=${docType}`),
   conflicts: () => call<Conflict[]>("/facts/conflicts"),
   evals: () => call<EvalRunRow[]>("/evals?limit=200"),
+  lboReturns: (body: LboRequest) => call<LboResult>("/lbo/returns", "POST", body),
+  covenants: (companyId: number) => call<CovenantStatus>(`/portfolio/companies/${companyId}/covenants`),
 };
 
 export const STAGES = ["sourcing", "screening", "dd", "ic", "signed", "closed", "passed"];

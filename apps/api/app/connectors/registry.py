@@ -73,3 +73,11 @@ def status(connected: set[str]) -> list[dict]:
 def catalog() -> list[dict]:
     return [{"name": n, "label": lbl, "category": cat, "auth": auth,
              "status": "live" if n in IMPLEMENTED or n in IMPORTS else "planned"} for n, lbl, cat, auth in CATALOG]
+
+
+def connection_health(row) -> dict:
+    """Last run of a saved connection: never run, ok, or error with the message it stored."""
+    if row.last_run is None:
+        return {"health": "never_run", "last_run": None, "detail": "not synced yet"}
+    state = "ok" if (row.last_status or "").startswith("ok") else "error"
+    return {"health": state, "last_run": row.last_run, "detail": row.last_status or ""}

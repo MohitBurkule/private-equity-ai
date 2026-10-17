@@ -13,6 +13,8 @@ import { Workflows } from "./Workflows";
 import { Integrations } from "./Integrations";
 import { Inbox } from "./Inbox";
 import { Deals, EvalDashboard, PortfolioPanel, ReviewQueue } from "./Panels";
+import { Lbo } from "./Lbo";
+import { Covenants } from "./Covenants";
 import { SourceProvider } from "./source";
 import { Button, Card } from "./ui";
 import clsx from "clsx";
@@ -22,6 +24,8 @@ const NAV: { id: string; icon: ReactNode }[] = [
   { id: "Documents", icon: <FileText size={16} /> },
   { id: "Deals", icon: <Briefcase size={16} /> },
   { id: "Portfolio", icon: <LayoutGrid size={16} /> },
+  { id: "Covenants", icon: <ShieldCheck size={16} /> },
+  { id: "LBO", icon: <Calculator size={16} /> },
   { id: "Dashboards", icon: <BarChart3 size={16} /> },
   { id: "Targets", icon: <Map size={16} /> },
   { id: "Comps", icon: <Calculator size={16} /> },
@@ -110,6 +114,8 @@ export function App() {
         {tab === "Documents" && <Documents />}
         {tab === "Deals" && <Deals />}
         {tab === "Portfolio" && <PortfolioPanel />}
+        {tab === "Covenants" && <Covenants />}
+        {tab === "LBO" && <Lbo />}
         {tab === "Dashboards" && <Dashboards />}
         {tab === "Targets" && <Targets />}
         {tab === "Comps" && <Comps />}
