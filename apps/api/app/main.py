@@ -16,11 +16,12 @@ from fastapi import (
     Response,
     UploadFile,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import agent as ag
 from app import alerts as al
+from app import companies_house as ch_mod
 from app import comps as comps_mod
 from app import firm_knowledge as fk
 from app import jobs as jobs_mod
@@ -1293,6 +1294,10 @@ class ChImport(BaseModel):
     csv_text: str
 
 
+class ChNumbersImport(BaseModel):
+    numbers: list[str] = Field(min_length=1, max_length=200)
+
+
 class Screen(BaseModel):
     sectors: list[str] = []
     countries: list[str] = []
@@ -1327,6 +1332,15 @@ def targets_import_ch(body: ChImport, db: Db, who: Writer):
     items = tg_mod.ch_targets(body.csv_text)[:5000]
     new, upd = tg_mod.upsert(db, who.tenant, items)
     return {"new": new, "updated": upd}
+
+
+@app.post("/targets/import/companies-house/numbers", status_code=201)
+def targets_import_ch_numbers(body: ChNumbersImport, db: Db, who: Writer):
+    """Live lookup per number: CH_API_KEY when set, else the keyless public page. Each row keeps its
+    source link, so a target can always be traced back to the Companies House page it came from."""
+    items, skipped = ch_mod.company_numbers_to_targets(body.numbers)
+    new, upd = tg_mod.upsert(db, who.tenant, items)
+    return {"new": new, "updated": upd, "skipped": skipped}
 
 
 def _target_query(db, tenant, sector, country, min_revenue, max_revenue, q, status):
