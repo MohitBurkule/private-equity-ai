@@ -4,7 +4,6 @@ from app.parse import chart_vlm
 from app.parse.charts import ChartValue
 
 pytest.importorskip("pymupdf")
-pytest.importorskip("docling")
 
 
 def ocr_label(value: float, bbox=(100.0, 100.0, 150.0, 120.0)) -> ChartValue:
@@ -42,7 +41,7 @@ def test_vlm_disabled_without_flag(monkeypatch):
 
 
 @pytest.mark.skipif(not chart_vlm.vlm_enabled(), reason="needs CHART_VLM=1 and CHART_VLM_MODEL")
-def test_vlm_bar_labels_verified_end_to_end(tmp_path):
+def test_vlm_bar_labels_verified_end_to_end(tmp_path, monkeypatch):
     matplotlib = pytest.importorskip("matplotlib")
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -60,6 +59,9 @@ def test_vlm_bar_labels_verified_end_to_end(tmp_path):
     pdf = tmp_path / "chart.pdf"
     doc.save(pdf)
 
+    # docling is too heavy for this job (torch wheels fill the runner disk), so the picture box is fixed:
+    # the test PDF places the image at (50, 50, 560, 400)
+    monkeypatch.setattr(chart_vlm, "chart_regions", lambda path, page: [(50.0, 50.0, 560.0, 400.0)])
     vals = chart_vlm.extract_vlm_values(pdf, 1)
     verified = {v.value for v in vals if v.verified}
     assert {1234.0, 567.0, 890.0} <= verified
