@@ -52,6 +52,8 @@ if [ -f "$DATA_DIR/filings/3M_2019_10K.htm" ]; then
   if [ -f "$DATA_DIR/filings/XPO_10-K_FY2024.htm" ]; then
     python3 scripts/seed_xpo_qoe.py "http://localhost:$API_PORT" "$KEY" "$DATA_DIR/filings" | sed 's/^/qoe: /'
   fi
+  # A synthetic holding with budget, marks and a target note, for the portfolio and targets screens.
+  python3 scripts/seed_portfolio_synthetic.py "http://localhost:$API_PORT" "$KEY" | sed 's/^/synthetic: /'
   echo "Dated EDGAR cache: data/demo/cache (captured 2026-10-17). Firm rule is synthetic demo text."
 else
   echo "No seed data at $DATA_DIR; the UI starts empty. Add a tenant with POST /admin/tenants."
