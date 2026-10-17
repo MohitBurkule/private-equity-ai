@@ -2,9 +2,10 @@
 //! Tenant comes only from the key.
 
 use crate::error::ApiError;
+use crate::AppState;
 use axum::http::{HeaderMap, StatusCode};
 use sha2::{Digest, Sha256};
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{Postgres, Transaction};
 use std::collections::HashSet;
 
 /// Roles with the "write" capability (app/acl.py CAPABILITIES).
@@ -76,7 +77,7 @@ fn parse_list(raw: &str) -> Vec<String> {
 /// Returns the caller and an open transaction with the tenant bound (transaction-local, so pooled connections
 /// cannot carry it to the next request).
 pub async fn principal(
-    pool: &PgPool,
+    s: &AppState,
     headers: &HeaderMap,
 ) -> Result<(Principal, Transaction<'static, Postgres>), ApiError> {
     let unauth = || ApiError::new(StatusCode::UNAUTHORIZED, "invalid token");
@@ -96,7 +97,7 @@ pub async fn principal(
             "OIDC tokens not ported to the Rust API yet",
         ));
     }
-    let mut tx = pool.begin().await?;
+    let mut tx = s.pool.begin().await?;
     let row: Option<KeyRow> = sqlx::query_as(
         "SELECT tenant_id, role, revoked, deals, deal_roles, key_hash, identity, groups FROM api_key WHERE key_hash = $1",
     )
@@ -106,8 +107,15 @@ pub async fn principal(
     let Some((tenant, role, revoked, deals, deal_roles, kh, identity, groups)) = row else {
         return Err(unauth());
     };
+    // Same order as get_principal: the limit applies after the key is accepted, before tenant binding.
     if revoked {
         return Err(unauth());
+    }
+    if !s.limiter.allow(&tenant) {
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate limit exceeded",
+        ));
     }
     sqlx::query("SELECT set_config('app.tenant_id', $1, true)")
         .bind(&tenant)

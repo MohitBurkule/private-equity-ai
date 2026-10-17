@@ -22,7 +22,7 @@ pub async fn list_templates(
     State(s): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, ApiError> {
-    let (_, mut tx) = principal(&s.pool, &headers).await?;
+    let (_, mut tx) = principal(&s, &headers).await?;
     let rows: Vec<(String, String, Option<String>, Option<String>)> =
         sqlx::query_as("SELECT name, sections, headings, intro FROM memo_template ORDER BY name")
             .fetch_all(&mut *tx)
@@ -60,7 +60,7 @@ pub async fn list_versions(
     headers: HeaderMap,
     axum::extract::Query(q): axum::extract::Query<EntityQuery>,
 ) -> Result<Json<Value>, ApiError> {
-    let (p, mut tx) = principal(&s.pool, &headers).await?;
+    let (p, mut tx) = principal(&s, &headers).await?;
     if p.deals.is_some() {
         return Err(ApiError::new(
             StatusCode::FORBIDDEN,
