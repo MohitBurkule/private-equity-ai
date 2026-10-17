@@ -82,3 +82,26 @@ def test_quote_endpoint(monkeypatch):
         assert c.get("/market/quote", params={"symbol": "a.us", "provider": "stooq", "currency": "usd"}, headers=h).status_code == 404
     finally:
         app.dependency_overrides.pop(get_market_fetch, None)
+
+
+def test_openbb_is_off_unless_flagged_and_needs_https_and_currency(monkeypatch):
+    from app.marketfeeds import OpenBBProvider, from_env
+    monkeypatch.delenv("OPENBB_ENABLED", raising=False)
+    monkeypatch.setenv("OPENBB_BASE_URL", "https://openbb.synthetic.test")
+    monkeypatch.setenv("OPENBB_CURRENCY", "usd")
+    assert "openbb" not in [p.name for p in from_env(lambda u, h: b'{"data":[]}')]
+    monkeypatch.setenv("OPENBB_ENABLED", "1")
+    assert "openbb" in [p.name for p in from_env(lambda u, h: b'{"data":[]}')]
+    with pytest.raises(RuntimeError):
+        OpenBBProvider(base_url="http://insecure.test", currency="USD")
+    monkeypatch.delenv("OPENBB_CURRENCY")
+    with pytest.raises(RuntimeError):
+        OpenBBProvider(base_url="https://openbb.synthetic.test")  # no currency given: refused, not guessed
+
+
+def test_openbb_latest_close_is_cited_with_its_date_and_currency():
+    from app.marketfeeds import OpenBBProvider
+    body = b'{"results":[{"date":"2026-10-14","close":101.5},{"date":"2026-10-16","close":103}]}'
+    q = OpenBBProvider(base_url="https://openbb.synthetic.test", currency="usd",
+                       fetch=lambda u, h: body).quote("aapl")
+    assert (q.price, q.currency, q.as_of, q.source) == (103, "USD", "2026-10-16", "openbb")
