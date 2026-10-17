@@ -75,7 +75,7 @@ class RowResult:
     bridge: tuple[str, str, Decimal] | None = None  # (period, kind, amount) of an accepted bridge line
 
 
-def _facts_for(schema: str, row: BaseModel) -> list[tuple[str, str, str, Decimal, str]]:
+def _facts_for(schema: str, row: BaseModel, entity: str | None) -> list[tuple[str, str, str, Decimal, str]]:
     """(entity, period, metric, value, unit) tuples for one validated row. A row's own period wins over the
     run's, since one customer table carries several periods."""
     data = row.model_dump()
@@ -98,7 +98,8 @@ def _facts_for(schema: str, row: BaseModel) -> list[tuple[str, str, str, Decimal
                 out.append((data["cohort"], data["period"], metric, Decimal(data[field_name]), unit))
         return out
     if schema == "ebitda_bridge":
-        out.append((data["item"], data["period"], f"ebitda_bridge {data['kind']}", Decimal(data["amount"]), "USD"))
+        # Bridge lines belong to the company, not to the line's label; the label is what the line says.
+        out.append((entity or "", data["period"], f"ebitda_bridge {data['kind']}", Decimal(data["amount"]), "USD"))
         return out
     if schema == "customer_concentration":
         out.append((data["customer"], data["period"], "revenue_pct", Decimal(data["revenue_pct"]), "%"))
@@ -127,7 +128,7 @@ def _blocks(db: Session, doc: Document) -> dict[int, str]:
 
 
 def extract_rows(db: Session, tenant: str, llm: LLM, doc: Document, schema: str, period: str,
-                 ) -> tuple[list[RowResult], str, list[dict]]:
+                 entity: str | None = None) -> tuple[list[RowResult], str, list[dict]]:
     """Runs the model once over the best-matching blocks, validates every proposed row and stores the accepted
     ones. Returns per-row results, a detail string when the model output was unusable, and bridge checks."""
     model = _ROWS[schema]
@@ -142,7 +143,7 @@ def extract_rows(db: Session, tenant: str, llm: LLM, doc: Document, schema: str,
         return [], f"model returned unusable output: {e}", []
     results = []
     for p in proposed:
-        results.append(_accept(db, tenant, doc, schema, model, p, text, period))
+        results.append(_accept(db, tenant, doc, schema, model, p, text, period, entity))
     checks = bridge_checks(results) if schema == "ebitda_bridge" else []
     for c in checks:
         if c["status"] == "mismatch":
@@ -207,7 +208,7 @@ def _cite(db: Session, doc: Document, page: int, quote: str) -> FactSource:
 
 
 def _accept(db: Session, tenant: str, doc: Document, schema: str, model: type[BaseModel], p: dict,
-            text: dict[int, str], period: str) -> RowResult:
+            text: dict[int, str], period: str, entity: str | None) -> RowResult:
     try:
         page = int(p.get("page"))
     except (TypeError, ValueError):
@@ -222,7 +223,7 @@ def _accept(db: Session, tenant: str, doc: Document, schema: str, model: type[Ba
     except ValidationError as e:
         return RowResult(schema, page, "rejected", f"row failed validation: {e.errors()[0]['msg']}")
     ids = []
-    for ent, row_period, metric, value, unit in _facts_for(schema, row):
+    for ent, row_period, metric, value, unit in _facts_for(schema, row, entity):
         if unit in _NUMERIC_UNITS and not verify_number(value, quote):
             return RowResult(schema, page, "rejected", f"{metric} is not printed in the quote")
         fact = Fact(tenant_id=tenant, entity=ent, metric=metric, period=row_period or period, value=value,
