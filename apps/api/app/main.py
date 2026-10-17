@@ -1597,7 +1597,15 @@ def targets_benchmark(db: Db, who: Who, sector: str | None = None, target_id: in
 @app.post("/targets/screen")
 def targets_screen(body: Screen, db: Db, who: Who):
     """Apply strategy criteria. verdict: match | review (some criterion unknown) | fail. Failures are omitted."""
-    c = tg_mod.Criteria(body.sectors, body.countries, body.min_revenue, body.max_revenue)
+    source = None
+    if body.sectors or body.countries or body.min_revenue is not None or body.max_revenue is not None:
+        c = tg_mod.Criteria(body.sectors, body.countries, body.min_revenue, body.max_revenue)
+    else:  # no criteria in the request: use the accepted firm screening rule, cited
+        rule, c = al.profile_criteria(db, who.tenant)
+        if rule is None:
+            raise HTTPException(422, "give criteria, or accept a firm deal_screening_criteria rule first")
+        source = {"key": rule.key, "value": rule.value, "document_id": rule.document_id, "page": rule.page,
+                  "quote": rule.quote}
     out = []
     for t in db.query(Target).filter_by(tenant_id=who.tenant).order_by(Target.id).all():
         e = tg_mod.evaluate(t, c)
@@ -1610,7 +1618,10 @@ def targets_screen(body: Screen, db: Db, who: Who):
     profile = [fk.row_dict(r) for r in (fk.newest_accepted(db, who.tenant, k)
                                         for k in SCREEN_PROFILE_KEYS) if r is not None]
     return {"matches": sum(r["verdict"] == "match" for r in out), "review": sum(r["verdict"] == "review" for r in out),
-            "criteria_profile": profile,
+            "criteria_profile": profile, "criteria_source": source,
+            "applied": {"sectors": c.sectors, "countries": c.countries,
+                        "min_revenue": None if c.min_revenue is None else str(c.min_revenue),
+                        "max_revenue": None if c.max_revenue is None else str(c.max_revenue)},
             "items": out[:min(max(body.limit, 1), 1000)]}
 
 

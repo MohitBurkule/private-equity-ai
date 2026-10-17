@@ -189,19 +189,30 @@ def _now() -> str:
 
 def scan(db: Session, tenant_id: str, only: list[str] | None = None) -> list[Alert]:
     """Run watchers; returns the alerts created by this scan."""
-    created: list[Alert] = []
+    drafts: list[AlertDraft] = []
     for name, w in WATCHERS.items():
-        if only and name not in only:
+        if not only or name in only:
+            drafts += w(db, tenant_id)
+    return _persist(db, tenant_id, drafts)
+
+
+def scan_candidates(db: Session, tenant_id: str, edgar_search: Callable | None, ch_search: Callable | None,
+                    since: str, until: str) -> list[Alert]:
+    """Weekly candidate watch (run by a schedule, not by every scan: it calls out to SEC and Companies House)."""
+    return _persist(db, tenant_id, candidate_watch(db, tenant_id, edgar_search, ch_search, since, until))
+
+
+def _persist(db: Session, tenant_id: str, drafts: list[AlertDraft]) -> list[Alert]:
+    created: list[Alert] = []
+    for d in drafts:
+        if d.severity not in SEVERITIES:
             continue
-        for d in w(db, tenant_id):
-            if d.severity not in SEVERITIES:
-                continue
-            if db.query(Alert).filter_by(tenant_id=tenant_id, dedupe_key=d.dedupe_key).first():
-                continue
-            a = Alert(tenant_id=tenant_id, kind=d.kind, severity=d.severity, title=d.title, detail=d.detail,
-                      dedupe_key=d.dedupe_key, fact_ids=json.dumps(d.fact_ids), status="new", created_at=_now())
-            db.add(a)
-            created.append(a)
+        if db.query(Alert).filter_by(tenant_id=tenant_id, dedupe_key=d.dedupe_key).first():
+            continue
+        a = Alert(tenant_id=tenant_id, kind=d.kind, severity=d.severity, title=d.title, detail=d.detail,
+                  dedupe_key=d.dedupe_key, fact_ids=json.dumps(d.fact_ids), status="new", created_at=_now())
+        db.add(a)
+        created.append(a)
     db.commit()
     return created
 
@@ -242,16 +253,78 @@ def sec_filings(db: Session, tenant_id: str) -> list[AlertDraft]:
 
 
 _MIN_REVENUE = re.compile(r"min(?:imum)?\s+revenue\D{0,20}?(\d[\d,]*(?:\.\d+)?)", re.IGNORECASE)
+_REVENUE_AT_LEAST = re.compile(r"revenue\s+(?:is\s+)?at\s+least\s+\$?(\d[\d,]*(?:\.\d+)?)\s*(million)?",
+                               re.IGNORECASE)
 _SECTORS = re.compile(r"sectors?\s*:\s*([^.;\n]+)", re.IGNORECASE)
+_OPERATES = re.compile(r"operates?\s+in\s+(.+?)\s+in\s+(?:the\s+)?(.+?)(?:\.|,\s*and\b|;|$)", re.IGNORECASE)
+
+
+def _items(text: str) -> list[str]:
+    return [x.strip() for x in re.split(r",| or ", text) if x.strip()]
 
 
 def screening_criteria(text: str) -> Criteria:
-    """Read the criteria a firm rule states in plain words: "sectors: software, fintech" and
-    "minimum revenue 20000000". Anything the rule does not state stays unset and is not screened."""
-    m = _MIN_REVENUE.search(text)
-    s = _SECTORS.search(text)
-    return Criteria(sectors=[x.strip() for x in s.group(1).split(",") if x.strip()] if s else [],
-                    min_revenue=Decimal(m.group(1).replace(",", "")) if m else None)
+    """Read the criteria a firm rule states in plain words: "sectors: software, fintech", "minimum revenue
+    20000000", "revenue is at least $20 million" and "operates in software or business services in the
+    United States or Canada". Anything the rule does not state stays unset and is not screened."""
+    m, r = _MIN_REVENUE.search(text), _REVENUE_AT_LEAST.search(text)
+    s, op = _SECTORS.search(text), _OPERATES.search(text)
+    if m:
+        min_revenue = Decimal(m.group(1).replace(",", ""))
+    elif r:
+        min_revenue = Decimal(r.group(1).replace(",", "")) * (1_000_000 if r.group(2) else 1)
+    else:
+        min_revenue = None
+    sectors = _items(s.group(1)) if s else _items(op.group(1)) if op else []
+    countries = [x.removeprefix("the ").strip() for x in _items(op.group(2))] if op else []
+    return Criteria(sectors=sectors, countries=countries, min_revenue=min_revenue)
+
+
+def profile_criteria(db: Session, tenant_id: str) -> tuple[fk.FirmKnowledge | None, Criteria]:
+    """The accepted firm screening rule and the criteria it states. No accepted rule: no criteria."""
+    rule = fk.newest_accepted(db, tenant_id, "deal_screening_criteria")
+    return rule, (screening_criteria(rule.value) if rule else Criteria())
+
+
+_SUFFIX = re.compile(r"\b(inc|incorporated|ltd|limited|llc|plc|corp|corporation|co|company)\b\.?")
+
+
+def company_key(name: str) -> str:
+    """Name with legal suffixes and punctuation removed, so one company found twice collapses."""
+    return " ".join(re.sub(r"[^a-z0-9 ]", " ", _SUFFIX.sub(" ", name.lower())).split())
+
+
+def candidate_watch(db: Session, tenant_id: str, edgar_search: Callable | None = None,
+                    ch_search: Callable | None = None, since: str = "", until: str = "") -> list[AlertDraft]:
+    """New companies from live searches on the accepted firm sectors. Each search is a function
+    (term, since, until) -> [(name, url, label)]. Each company alerts once (dedupe key from its name),
+    skipping companies already imported as targets. Revenue is not checked here; the alert says so."""
+    rule, criteria = profile_criteria(db, tenant_id)
+    if rule is None or not criteria.sectors:
+        return []
+    known = {company_key(t.name) for t in db.query(Target).filter_by(tenant_id=tenant_id)}
+    known |= {a.dedupe_key.removeprefix("candidate:")
+              for a in db.query(Alert).filter_by(tenant_id=tenant_id, kind="candidate")}
+    out: list[AlertDraft] = []
+    for term in criteria.sectors[:3]:
+        found: list[tuple[str, str, str]] = []  # (name, source url, source label) from each search
+        for fn in (edgar_search, ch_search):
+            if fn is None:
+                continue
+            try:
+                found += fn(term, since, until)
+            except (OSError, ValueError):
+                continue  # a failed source is skipped; the other still runs
+        for name, url, label in found:
+            if not company_key(name) or company_key(name) in known:
+                continue
+            known.add(company_key(name))
+            key = f"candidate:{company_key(name)}"
+            out.append(AlertDraft("candidate", "info", f"New candidate: {name}",
+                                  f"Matches firm rule (document {rule.document_id}, page {rule.page}): "
+                                  f"\"{rule.quote}\". Sector search: {term}. Source: {label} {url}. "
+                                  "Revenue not checked.", key))
+    return out
 
 
 @register_watcher("new_target_screen")
