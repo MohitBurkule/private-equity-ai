@@ -105,12 +105,43 @@ class FactSetProvider:
         return Quote(symbol.upper(), _dec(last["price"]), str(last["currency"]).upper(), str(last["date"])[:10], self.name)
 
 
+class OpenBBProvider:
+    """A self-hosted OpenBB Platform API server (open source, run by the customer). Off unless OPENBB_ENABLED=1,
+    because it is a second hop to a service we do not run. The server's price-history route returns rows with
+    a date and close but no currency, so the currency comes from OPENBB_CURRENCY and is never guessed.
+    The response shape is SYNTHETIC until checked against a real OpenBB server. Base URL must be https."""
+    name = "openbb"
+
+    def __init__(self, base_url: str | None = None, currency: str | None = None, fetch: Fetch = default_fetch):
+        self.base = (base_url or os.environ.get("OPENBB_BASE_URL") or "").rstrip("/")
+        self.currency = (currency or os.environ.get("OPENBB_CURRENCY") or "").upper()
+        if not self.base or not self.currency:
+            raise RuntimeError("OPENBB_BASE_URL and OPENBB_CURRENCY are required for openbb")
+        if not self.base.startswith("https://"):
+            raise RuntimeError("OPENBB_BASE_URL must be https")
+        self._fetch = fetch
+
+    def quote(self, symbol: str) -> Quote:
+        url = self.base + "/api/v1/equity/price/historical?" + urllib.parse.urlencode({"symbol": symbol})
+        doc = json.loads(self._fetch(url, {"Accept": "application/json"}))
+        rows = [r for r in (doc.get("results") or []) if r.get("close") is not None and r.get("date")]
+        if not rows:
+            raise NoData(f"openbb: no price for {symbol}")
+        last = max(rows, key=lambda r: str(r["date"]))
+        return Quote(symbol.upper(), _dec(last["close"]), self.currency, str(last["date"])[:10], self.name)
+
+
 def from_env(fetch: Fetch = default_fetch) -> list:
     """Providers whose credentials are present. Free ones are always listed; Stooq needs a currency so
     is registered by the caller who knows it."""
     out = [YahooProvider(fetch)]
     if os.environ.get("FACTSET_USERNAME_SERIAL") and os.environ.get("FACTSET_API_KEY"):
         out.append(FactSetProvider(fetch=fetch))
+    if os.environ.get("OPENBB_ENABLED") == "1":
+        try:
+            out.append(OpenBBProvider(fetch=fetch))
+        except RuntimeError:
+            pass
     from app.marketvendors import (  # licensed; only when configured
         CapIQProvider,
         PitchBookProvider,
