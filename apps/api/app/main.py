@@ -67,6 +67,7 @@ from app.auth import (
     revoke_key,
 )
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
+from app.chat_alerts import chat_poster
 from app.connectors import oauth, vault
 from app.connectors.base import ConnectorError, default_http
 from app.connectors.gsheets import GoogleSheets
@@ -1617,7 +1618,7 @@ def workflow_delete(wid: int, db: Db, who: Writer):
 @app.post("/workflows/run-due")
 def workflow_run_due(db: Db, who: Writer):
     """Run every due schedule of this tenant now. Call from cron; emails when SMTP_HOST is set."""
-    runs = wf_mod.run_due(db, who.tenant, visible_doc_ids(db, who), wf_mod.smtp_mailer())
+    runs = wf_mod.run_due(db, who.tenant, visible_doc_ids(db, who), wf_mod.smtp_mailer(), chat=chat_poster())
     log_event(db, who.tenant, actor(who), "workflow.run_due", {"ran": len(runs)})
     return runs
 
