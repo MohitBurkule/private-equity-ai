@@ -40,14 +40,27 @@ def call(base, path, key=None, method="GET", body=None, headers=None):
             return e.code, raw.decode(errors="replace")
 
 
-def seed():
-    """Keys and rows go in through FastAPI's own routes, so the seed is the same for both sides."""
+def seed(conn):
+    """Keys and deal rows go in through FastAPI's own routes. Alerts come from the watchers, so they are inserted
+    directly, with the same rows for both stacks to read."""
     keys = {}
     admin_hdr = {"X-Admin-Token": ADMIN_TOKEN}
     status, out = call(FA, "/admin/tenants", method="POST", body={"name": "parity"}, headers=admin_hdr)
     assert status == 201, out
     keys["admin"] = out["api_key"]
     tenant_id = out["tenant_id"]
+    with conn.cursor() as cur:
+        for kind, severity, title, created in [
+            ("sec_filings", "info", "New 10-Q", "2026-10-15T08:00:00+00:00"),
+            ("covenant", "critical", "Leverage covenant breach", "2026-10-16T08:00:00+00:00"),
+            ("sec_filings", "warning", "Late filing", "2026-10-17T08:00:00+00:00"),
+            ("covenant", "critical", "Liquidity below floor", "2026-10-17T09:00:00+00:00"),
+        ]:
+            cur.execute(
+                "INSERT INTO alert (tenant_id, kind, severity, title, detail, dedupe_key, fact_ids, status, created_at)"
+                " VALUES (%s, %s, %s, %s, 'detail', %s, '[1]', 'new', %s)",
+                (tenant_id, kind, severity, title, f"{kind}:{title}", created),
+            )
     for name, body in [
         ("scoped_other", {"role": "analyst", "deals": ["Other"]}),
         ("zeta", {"role": "analyst", "deals": ["Zeta"]}),
@@ -85,11 +98,15 @@ def audit_since(conn, marker):
 
 def main():
     with psycopg.connect(DSN, autocommit=True) as conn:
-        keys = seed()
+        keys = seed(conn)
         requests = [
             ("/health", None),
             ("/memo/templates", None),
         ]
+        for name in ["admin", "scoped_other", "zeta", "analyst"]:
+            for path in ["/alerts", "/alerts?status=new", "/alerts/brief?since=2026-10-16T00:00:00%2B00:00",
+                         "/alerts/brief?since=2030-01-01T00:00:00%2B00:00"]:
+                requests.append((path, name))
         for name in keys:
             for path in [
                 "/deals",
