@@ -94,6 +94,28 @@ def add_html_fact(
     return fact
 
 
+def add_chart_fact(
+    db: Session, *, tenant_id: str, entity: str, metric: str, period: str, value: Decimal, unit: str,
+    document_id: str, page: int, label: str, bbox: tuple[float, float, float, float],
+) -> Fact:
+    """A value read off a chart (vision model, matched to OCR of the chart). Always ocr_unverified: a chart
+    is never trusted on its own, so only a human review_fact call can promote it. Cites page and label bbox."""
+    doc = db.get(Document, document_id)
+    row = (db.query(PageRow).filter_by(document_id=document_id, number=page).one_or_none()
+           if doc is not None and doc.tenant_id == tenant_id else None)
+    if row is None:
+        raise CitationError(f"page {page} not found in document {document_id[:8]}")
+    if not verify_number(value, label, outflow=is_outflow(metric)):
+        raise CitationError("chart label does not match the value")
+    fact = Fact(tenant_id=tenant_id, entity=entity, metric=metric, period=period, value=value, unit=unit,
+                status="ocr_unverified")
+    anchor = "bbox:" + ",".join(f"{x:.1f}" for x in bbox)
+    fact.sources = [FactSource(document_id=document_id, page=page, quote=label, anchor=anchor)]
+    db.add(fact)
+    db.commit()
+    return fact
+
+
 def review_fact(db: Session, fact: Fact, *, action: str, reviewer: str, note: str | None = None,
                 value: Decimal | None = None, page: int | None = None, quote: str | None = None,
                 scale: Decimal = Decimal(1)) -> Fact:
