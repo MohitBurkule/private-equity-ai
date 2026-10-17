@@ -6,7 +6,8 @@ claim independently of the gate:
   - every number in the claim text appears in that quote,
   - and those numbers also appear on the cited page, not only in the quote.
 Reports answered, abstained, claims, traced and untraced. trace_share = traced / claims.
-Usage: python evals/run_citation_eval.py DATA_DIR [--n 50]
+Usage: python evals/run_citation_eval.py DATA_DIR [--n 50] [--chunk K] [--checkpoint FILE.jsonl]
+Checkpointing: each question's counts are appended to FILE; rerun with the same FILE to resume.
 """
 import json
 import re
@@ -32,7 +33,7 @@ def _nums(text: str) -> set[str]:
     return {str(abs(float(n.value))) for n in numbers_in(text)}
 
 
-def main(data: Path, n: int) -> dict:
+def main(data: Path, n: int, chunk: int | None = None, checkpoint: Path | None = None) -> dict:
     gold = [json.loads(x) for x in (data / "financebench_open_source.jsonl").open()]
     have = {p.stem: p for p in (data / "sec").glob("*.pdf")}
     items = [g for g in gold if g["doc_name"] in have][:n]
@@ -47,27 +48,46 @@ def main(data: Path, n: int) -> dict:
         db.add(d)
         pages_by_doc[_id(name)] = {p.number: _norm(p.text) for p in pgs}
     db.commit()
+    # One JSONL row per question, written as each finishes, so a killed run resumes where it stopped.
+    rows = {}
+    if checkpoint and checkpoint.exists():
+        rows = {r["question"]: r for r in map(json.loads, checkpoint.open())}
+    todo = [g for g in items if g["question"] not in rows]
+    if chunk:
+        todo = todo[:chunk]
     llm = get_llm()
-    answered = abstained = claims = traced = 0
-    for g in items:
+    for g in todo:
         a = answer_question(db, "t", llm, g["question"], doc_id=_id(g["doc_name"]))
-        if a.status != "answered":
-            abstained += 1
-            continue
-        answered += 1
-        for c in a.claims:
-            claims += 1
-            page = pages_by_doc.get(c.doc_id, {}).get(c.page, "")
-            quote = _norm(c.quote)
-            nums = _nums(c.text)
-            traced += bool(quote) and quote in page and nums <= _nums(quote) and nums <= _nums(page)
-    return {"suite": "citation_trace", "questions": len(items), "answered": answered, "abstained": abstained,
+        row = {"question": g["question"], "status": a.status, "claims": 0, "traced": 0}
+        if a.status == "answered":
+            for c in a.claims:
+                row["claims"] += 1
+                page = pages_by_doc.get(c.doc_id, {}).get(c.page, "")
+                quote = _norm(c.quote)
+                nums = _nums(c.text)
+                row["traced"] += bool(quote) and quote in page and nums <= _nums(quote) and nums <= _nums(page)
+        rows[g["question"]] = row
+        if checkpoint:
+            with checkpoint.open("a") as f:
+                f.write(json.dumps(row) + "\n")
+    done = [rows[g["question"]] for g in items if g["question"] in rows]
+    answered = sum(r["status"] == "answered" for r in done)
+    claims = sum(r["claims"] for r in done)
+    traced = sum(r["traced"] for r in done)
+    return {"suite": "citation_trace", "questions": len(items), "done": len(done), "remaining": len(items) - len(done),
+            "answered": answered, "abstained": len(done) - answered,
             "claims": claims, "traced": traced, "untraced": claims - traced,
             "trace_share": round(traced / claims, 3) if claims else None}
 
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    n = int(sys.argv[sys.argv.index("--n") + 1]) if "--n" in sys.argv else 50
-    args = [a for a in args if a != str(n)]
-    print(json.dumps(main(Path(args[0]), n), indent=1))
+    argv = sys.argv[1:]
+
+    def opt(name, cast, default):
+        return cast(argv[argv.index(name) + 1]) if name in argv else default
+
+    n = opt("--n", int, 50)
+    chunk = opt("--chunk", int, None)
+    checkpoint = opt("--checkpoint", Path, None)
+    data = Path(next(a for a in argv if not a.startswith("--") and a not in (str(n), str(chunk), str(checkpoint))))
+    print(json.dumps(main(data, n, chunk, checkpoint), indent=1))
