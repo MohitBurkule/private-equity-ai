@@ -124,6 +124,21 @@ def crosscheck_step(extraction: Step | None, cik: str | None, fetch) -> Step:
     return Step("crosscheck", "ok", result={"matched": matched, "conflicts": [], "unchecked": unchecked})
 
 
+# Words that mark a document's type in its first pages. A filing or memo that names none of them is not
+# read as a contract, so legal is skipped rather than run on the wrong terms.
+DOC_TYPE_MARKERS = {
+    "credit": ("credit agreement", "term loan", "revolving credit"),
+    "spa": ("stock purchase agreement", "asset purchase agreement", "merger agreement"),
+    "nda": ("non-disclosure agreement", "confidentiality agreement", "mutual nondisclosure"),
+}
+
+
+def detect_doc_type(pages: list[tuple[int, str]], head_pages: int = 3) -> str | None:
+    head = " ".join(text for _, text in pages[:head_pages]).lower()
+    hits = [t for t, words in DOC_TYPE_MARKERS.items() if any(w in head for w in words)]
+    return hits[0] if len(hits) == 1 else None
+
+
 def legal_step(pages: list[tuple[int, str]], doc_id: str, doc_type: str | None, legal_mod, llm=None) -> Step:
     """Rules-based red flags. With a local model, it also reads the terms the rules did not find (cited, else dropped)."""
     if not doc_type:
