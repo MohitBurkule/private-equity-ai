@@ -1457,7 +1457,8 @@ class DealNoteIn(BaseModel):
 
 
 def _note_out(n: DealNote) -> dict:
-    return {"id": n.id, "deal": n.deal, "author": n.author, "body": n.body, "created_at": n.created_at}
+    return {"id": n.id, "deal": n.deal, "author": n.author, "body": n.body, "created_at": n.created_at,
+            "edited_at": n.edited_at or None}
 
 
 @app.get("/deals/{name}/notes")
@@ -1517,6 +1518,25 @@ def peer_sets_refresh(name: str, sid: int, db: Db, who: Writer):
     log_event(db, who.tenant, actor(who), "peer_set.refresh", {"deal": name, "id": sid})
     db.refresh(row)
     return peer_sets_mod.out(row)
+
+
+@app.patch("/deals/{name}/notes/{nid}")
+def deal_note_edit(name: str, nid: int, body: DealNoteIn, db: Db, who: Writer):
+    """Edit a deal note. Its author edits their own; a whole-tenant key may edit any note on the deal. The old
+    text is kept in the audit chain (`deal.note_edit`), so an edit never silently replaces the record."""
+    _visible_deal_or_404(db, who, name)
+    _require(who, "write", "edit a note", deal=name)
+    n = db.get(DealNote, nid)
+    if n is None or n.tenant_id != who.tenant or n.deal != name:
+        raise HTTPException(404, "note not found")
+    if n.author != actor(who) and who.restricted:
+        raise HTTPException(403, "only the note's author or a whole-tenant key can edit it")
+    old = n.body
+    n.body = body.body.strip()
+    n.edited_at = _now_iso()
+    db.commit()
+    log_event(db, who.tenant, actor(who), "deal.note_edit", {"deal": name, "id": nid, "before": old, "after": n.body})
+    return _note_out(n)
 
 
 @app.get("/deals/{name}/checklist")

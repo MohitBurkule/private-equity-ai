@@ -175,6 +175,7 @@ class DealNote(Base):
     author: Mapped[str] = mapped_column(String(64))
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(String(40), default="")
+    edited_at: Mapped[str] = mapped_column(String(40), default="")  # set on each edit; empty when never edited
 
 
 class DDQuestion(Base):

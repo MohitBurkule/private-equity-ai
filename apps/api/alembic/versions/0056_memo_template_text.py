@@ -1,14 +1,14 @@
 """firm heading text and intro line for memo templates
 
-Revision ID: 0055
-Revises: 0054
+Revision ID: 0056
+Revises: 0055
 """
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = '0055'
-down_revision = '0054'
+revision = '0056'
+down_revision = '0055'
 branch_labels = None
 depends_on = None
 
