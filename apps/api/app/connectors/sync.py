@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app import fund_admin_facts as fund_admin_facts_mod
 from app.calendar_events import record_events
 from app.connectors.base import Connector
 from app.connectors.calendar import CalendarConnector
@@ -50,6 +51,8 @@ def _pull(db: Session, who, conn: Connector, deal: str | None, limit: int, run_i
             db.add(DocumentSource(tenant_id=who.tenant, document_id=d.id, connector=conn.name,
                                   external_id=it.external_id, version=it.version, url=it.url, sync_run_id=run_id))
             out["ingested"].append({"document_id": d.id, "filename": d.filename, "source_url": it.url})
+            # fund-admin workbooks and capital-call notices become cited facts on arrival; other files yield none
+            fund_admin_facts_mod.extract_facts(db, who.tenant, d, d.deal or d.filename)
         db.commit()
     if out["ingested"]:
         _alert_new_documents(db, who.tenant, conn.name, deal, out["ingested"])
