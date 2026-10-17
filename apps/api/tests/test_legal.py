@@ -41,3 +41,23 @@ def test_termination_fee_amount_is_read_from_the_definition():
     out = extract([(7, "“Company Termination Fee” means $12,500,000.")], "spa")
     assert [(f["term"], f["value"]) for f in out["findings"] if f["term"] == "termination_fee"] == [
         ("termination_fee", "$12,500,000")]
+
+
+def test_governing_law_reads_governed_in_all_respects_by():
+    out = extract([(5, "5. Governing Law. This Amendment shall be governed in all respects by the laws of the State of Delaware.")], "spa")
+    assert [f["value"] for f in out["findings"] if f["term"] == "governing_law"] == ["Delaware"]
+
+
+def test_governing_law_reads_through_a_parenthetical_after_laws():
+    out = extract([(9, "This Agreement shall be governed by, and construed in accordance with, the Laws (excluding conflict of laws rules and principles) of the State of Delaware.")], "spa")
+    assert [f["value"] for f in out["findings"] if f["term"] == "governing_law"] == ["Delaware"]
+
+
+def test_non_solicit_years_become_months_and_may_come_first():
+    out = extract([(3, "Seller shall not, for a period of four (4) years after the Closing Date, directly or indirectly solicit any employee.")], "spa")
+    assert [f["value"] for f in out["findings"] if f["term"] == "non_solicit_months"] == ["48"]
+
+
+def test_termination_fee_is_not_read_from_an_expense_cap():
+    out = extract([(34, "fees and expenses shall not exceed $6,500,000 in the aggregate, the Termination Fee payable by Parent.")], "spa")
+    assert [f for f in out["findings"] if f["term"] == "termination_fee"] == []
