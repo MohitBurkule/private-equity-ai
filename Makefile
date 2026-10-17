@@ -31,6 +31,7 @@ demo-mocks:  ## Run the firm-system mock flows: compose mocks when Docker runs, 
 		apps/api/tests/test_sharepoint_wiremock.py apps/api/tests/test_gsheets_wiremock.py \
 		apps/api/tests/test_accounting_flow.py apps/api/tests/test_accounting_wiremock.py \
 		apps/api/tests/test_carta_flow.py apps/api/tests/test_carta_wiremock.py \
-		apps/api/tests/test_docusign_stage.py apps/api/tests/test_docusign_wiremock.py
+		apps/api/tests/test_docusign_stage.py apps/api/tests/test_docusign_wiremock.py \
+		apps/api/tests/test_docusign_connect.py apps/api/tests/test_monthly_covenant.py
 
 .PHONY: demo-mocks

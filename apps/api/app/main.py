@@ -1,3 +1,6 @@
+import base64
+import hashlib
+import hmac
 import json
 import os
 import tempfile
@@ -17,6 +20,7 @@ from fastapi import (
     Header,
     HTTPException,
     Query,
+    Request,
     Response,
     UploadFile,
 )
@@ -98,7 +102,7 @@ from app.db import make_engine, make_session_factory
 from app.dd import STATUSES, TEMPLATE
 from app.edgar import fetch_companyfacts
 from app.email_links import links_for
-from app.envelope_stage import advance
+from app.envelope_stage import advance, deal_for_subject
 from app.expert_calls import flags, parse
 from app.extract.rows import _ROWS as ROW_SCHEMAS
 from app.extract.rows import extract_rows
@@ -3212,6 +3216,41 @@ def sync_connector(name: str, body: SyncBody, db: Db, who: Writer):
     return out
 
 
+@app.post("/webhooks/docusign")
+async def docusign_connect(request: Request, tenant: str, db: Db):
+    """DocuSign Connect: an envelope status change for one tenant (?tenant=...). The body is checked against
+    X-DocuSign-Signature-1 (base64 HMAC-SHA256 of the raw body, keyed by DOCUSIGN_CONNECT_HMAC_KEY) before anything
+    is read. Without the key configured the route is off (503); a bad signature is a 401 and changes nothing."""
+    key = os.environ.get("DOCUSIGN_CONNECT_HMAC_KEY", "")
+    if not key:
+        raise HTTPException(503, "DocuSign Connect is not configured")
+    raw = await request.body()
+    expected = base64.b64encode(hmac.new(key.encode(), raw, hashlib.sha256).digest()).decode()
+    if not hmac.compare_digest(request.headers.get("X-DocuSign-Signature-1", ""), expected):
+        raise HTTPException(401, "bad signature")
+    if db.get(TenantRow, tenant) is None:
+        raise HTTPException(404, "tenant not found")
+    bind_tenant(db, tenant)  # no bearer token on this route: the signature is the only credential
+    try:
+        payload = json.loads(raw)
+        envelope_id, status, subject = (str(payload[k]) for k in ("envelopeId", "status", "emailSubject"))
+    except (ValueError, KeyError, TypeError) as e:
+        raise HTTPException(422, "envelopeId, status and emailSubject are required") from e
+    deal = deal_for_subject(db, tenant, subject)
+    changed = None
+    if deal is not None:
+        before = deal.stage
+        deal.stage = advance(deal.stage, status)
+        if deal.stage != before:
+            deal.updated_at = _now_iso()
+            changed = {"deal": deal.name, "stage_before": before, "stage_after": deal.stage}
+            db.commit()
+    log_event(db, tenant, "docusign-connect", "docusign.webhook",
+              {"envelope": envelope_id, "status": status, "deal": deal.name if deal else None,
+               "changed": changed is not None})
+    return {"envelope": envelope_id, "changed": changed}
+
+
 @app.post("/connectors/docusign/stage-sync")
 def docusign_stage_sync(body: SyncBody, db: Db, who: Writer):
     """Move one deal's stage on its completed DocuSign envelopes (subject = the deal name, then a space or the end).
@@ -3437,15 +3476,15 @@ def put_my_digest(body: DigestPrefBody, db: Db, who: Who):
 
 @app.post("/me/digest/send")
 def send_my_digest(db: Db, who: Who):
-    """Email this person the new alerts at their severity or above. Only their own watermark moves."""
+    """Email this person the new alerts at their severity or above, within their deal scope. Only their own watermark moves."""
     subject = _signed_in_subject(who)
-    if who.restricted:
-        raise HTTPException(403, "alerts cover the whole tenant; use an unrestricted sign-in")
     row = db.query(DigestPref).filter_by(tenant_id=who.tenant, subject=subject).one_or_none()
     if row is None:
         raise HTTPException(404, "set your digest first with PUT /me/digest")
     try:
-        n = notify.send_personal_digest(db, who.tenant, row)
+        # A deal-scoped sign-in gets only the deal alerts for its own deals; a whole-tenant sign-in gets all.
+        n = notify.send_personal_digest(db, who.tenant, row, None if who.deals is None else set(who.deals),
+                                        hidden=hidden_deal_names(db, who))
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     except notify.MailNotConfigured as e:

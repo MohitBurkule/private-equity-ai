@@ -109,14 +109,28 @@ def start_periodic_scan(session_factory: sessionmaker) -> threading.Event | None
 SEVERITY_RANK = {"critical": 0, "warning": 1, "info": 2}
 
 
-def send_personal_digest(db: Session, tenant_id: str, pref) -> int:
+DEAL_KINDS = ("deal", "dd")  # alerts whose title starts with the deal name, e.g. "Acme: no update for 40 days"
+
+
+def alert_deal(a: Alert) -> str | None:
+    """The deal an alert is about, when it is one of the deal-scoped kinds. Other alerts have no deal."""
+    if a.kind not in DEAL_KINDS or ": " not in a.title:
+        return None
+    return a.title.split(": ", 1)[0]
+
+
+def send_personal_digest(db: Session, tenant_id: str, pref, deals: set[str] | None = None,
+                         hidden: frozenset[str] = frozenset()) -> int:
     """Email one person the alerts at or above their chosen severity that they have not had yet.
     Their own watermark (last_alert_id) moves, so each person gets every alert once and nobody else's
     digest is affected. Nothing is marked when the send fails."""
     floor = SEVERITY_RANK[pref.min_severity]
+    # deals: the person's deal scope, None = whole tenant. Within a scope, an alert with no deal is left out.
+    # hidden: MNPI deals this person may not see; their alerts are never mailed to them.
     pending = [a for a in db.query(Alert).filter(Alert.tenant_id == tenant_id, Alert.id > pref.last_alert_id,
                                                   Alert.status == "new").order_by(Alert.id).all()
-               if SEVERITY_RANK.get(a.severity, 3) <= floor]
+               if SEVERITY_RANK.get(a.severity, 3) <= floor
+               and (deals is None or alert_deal(a) in deals) and alert_deal(a) not in hidden]
     if not pending:
         return 0
     subject, body = render_digest(pending)
