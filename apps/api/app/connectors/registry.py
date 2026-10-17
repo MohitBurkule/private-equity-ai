@@ -15,10 +15,11 @@ from app.connectors.imap import Imap
 from app.connectors.mailpit import Mailpit
 from app.connectors.oauth import OAuthError
 from app.connectors.s3 import S3Source
+from app.connectors.sftp import SftpSource
 from app.connectors.slack import Slack
 
 IMPLEMENTED: dict[str, type[Connector]] = {c.name: c for c in (Gmail, Outlook, OneDriveSharePoint, GoogleDrive, Box, Dropbox, GoogleSheets, Imap, Mailpit,
-                                                                     Salesforce, HubSpot, Affinity, DealCloud, Slack, Intralinks, Datasite, S3Source)}
+                                                                     Salesforce, HubSpot, Affinity, DealCloud, Slack, Intralinks, Datasite, S3Source, SftpSource)}
 
 CATALOG = [  # (name, label, category, auth)
     ("gmail", "Gmail", "email", "OAuth2"), ("mailpit", "Mailpit (dev inbox)", "email", "none, local only"), ("imap", "Any IMAP mailbox", "email", "password / app password"), ("outlook", "Outlook / Exchange", "email", "OAuth2 (Graph)"),
@@ -26,7 +27,7 @@ CATALOG = [  # (name, label, category, auth)
     ("box", "Box", "files", "OAuth2"), ("dropbox", "Dropbox", "files", "OAuth2"),
     ("salesforce", "Salesforce", "crm", "OAuth2"), ("dealcloud", "DealCloud", "crm", "OAuth2 client credentials"),
     ("affinity", "Affinity", "crm", "API key"), ("hubspot", "HubSpot", "crm", "OAuth2 / private app token"),
-    ("slack", "Slack", "chat", "OAuth2"), ("intralinks", "Intralinks", "dataroom", "bulk export URL"), ("s3", "S3 / object store", "dataroom", "access key"),
+    ("slack", "Slack", "chat", "OAuth2"), ("intralinks", "Intralinks", "dataroom", "bulk export URL"), ("s3", "S3 / object store", "dataroom", "access key"), ("sftp", "SFTP data room", "dataroom", "password + pinned host key"),
     ("datasite", "Datasite", "dataroom", "bulk export URL"),
     ("capiq", "S&P Capital IQ", "market data", "licensed API"), ("factset", "FactSet", "market data", "licensed API"),
     ("pitchbook", "PitchBook", "market data", "licensed API / export"),
