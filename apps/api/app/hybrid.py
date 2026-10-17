@@ -100,6 +100,20 @@ def default_index(pages: list[tuple[str, int, str]]) -> HybridIndex:
     return _CACHE[key]
 
 
+_EMBEDDERS: dict[str, object] = {}
+
+
+def _embedder(model: str):
+    """One ONNX session per model name, shared by every index. Each cached index used to load its own
+    session (~0.3 GB apiece), so four cached documents held gigabytes of duplicate weights."""
+    if model not in _EMBEDDERS:
+        from fastembed import (
+            TextEmbedding,  # lazy: only required when dense retrieval is used
+        )
+        _EMBEDDERS[model] = TextEmbedding(model)
+    return _EMBEDDERS[model]
+
+
 class DenseRanker:
     """Dense retrieval with a small open ONNX embedding model (fastembed, no torch, no API key).
 
@@ -109,11 +123,8 @@ class DenseRanker:
 
     def __init__(self, pages: list[tuple[str, int, str]], model: str = "BAAI/bge-small-en-v1.5"):
         import numpy as np
-        from fastembed import (
-            TextEmbedding,  # lazy: only required when dense retrieval is used
-        )
         self.np = np
-        self.model = TextEmbedding(model)
+        self.model = _embedder(model)
         self.keys = [(d, p) for d, p, _ in pages]
         # batch_size: the default (256) peaks near 3.4 GB on 160 real pages; 16 peaks near 0.8 GB.
         self.vecs = np.array(list(self.model.embed([t[:4000] for _, _, t in pages], batch_size=16)), dtype="float32")
