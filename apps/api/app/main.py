@@ -125,6 +125,7 @@ from app.models import (
     HtmlUnit,
     IngestJob,
     PageRow,
+    SyncRun,
     Target,
     WorkflowSchedule,
 )
@@ -2569,7 +2570,38 @@ def document_source(doc_id: str, db: Db, who: Who):
     s = db.query(DocumentSource).filter_by(document_id=doc_id).order_by(DocumentSource.id.desc()).first()
     if s is None:
         raise HTTPException(404, "document was uploaded manually; no connector source")
-    return {"connector": s.connector, "url": s.url, "version": s.version}
+    return {"connector": s.connector, "url": s.url, "version": s.version, "sync_run_id": s.sync_run_id}
+
+
+@app.get("/sync-runs")
+def list_sync_runs(who: Who, db: Db, limit: int = 25):
+    """Recent connector syncs, newest first. Restricted keys see only runs on deals in their scope."""
+    q = db.query(SyncRun).filter_by(tenant_id=who.tenant)
+    if who.restricted:
+        q = q.filter(SyncRun.deal.in_(who.deals))
+    rows = q.order_by(SyncRun.id.desc()).limit(max(1, min(limit, 200))).all()
+    return [_run_dict(r) for r in rows]
+
+
+@app.get("/sync-runs/{run_id}")
+def get_sync_run(run_id: int, who: Who, db: Db):
+    """One sync and every document it brought in, each with its source link."""
+    run = db.query(SyncRun).filter_by(tenant_id=who.tenant, id=run_id).first()
+    if run is None or (who.restricted and run.deal not in who.deals):
+        raise HTTPException(404, "sync run not found")
+    items = (db.query(DocumentSource, Document.filename)
+             .join(Document, Document.id == DocumentSource.document_id)
+             .filter(DocumentSource.tenant_id == who.tenant, DocumentSource.sync_run_id == run_id)
+             .order_by(DocumentSource.id).all())
+    return {**_run_dict(run), "documents": [
+        {"document_id": s.document_id, "filename": fn, "external_id": s.external_id, "version": s.version,
+         "source_url": s.url} for s, fn in items]}
+
+
+def _run_dict(r: SyncRun) -> dict:
+    return {"id": r.id, "connector": r.connector, "connection_id": r.connection_id, "deal": r.deal,
+            "started_at": r.started_at, "finished_at": r.finished_at, "status": r.status,
+            "ingested": r.ingested, "unchanged": r.unchanged, "skipped": r.skipped, "error": r.error}
 
 
 def _unrestricted(who: Principal) -> None:
@@ -2663,7 +2695,7 @@ def _run_connection(db: Session, who: Principal, row: Connection) -> dict:
         opts = json.loads(row.options)
         token = _oauth_access_token(row) if opts.pop("auth", None) == "oauth" else vault.unseal(row.token_sealed)
         conn = cls(token, CONNECTOR_HTTP, **opts)
-        out = connector_sync(db, who, conn, row.deal)
+        out = connector_sync(db, who, conn, row.deal, connection_id=row.id)
         row.last_status = f"ok: {len(out['ingested'])} new, {out['unchanged']} unchanged"
     except (ConnectorError, vault.VaultError, ValueError, OSError, PermissionError) as e:
         out = {"error": str(e)}
