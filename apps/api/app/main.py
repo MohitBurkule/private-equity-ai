@@ -36,6 +36,7 @@ from app import ch_search as chs_mod
 from app import companies_house as ch_mod
 from app import comps as comps_mod
 from app import covenant_parse as covparse_mod
+from app import ddq as ddq_mod
 from app import debt_parse as debt_parse_mod
 from app import firm_knowledge as fk
 from app import html_doc as html_doc_mod
@@ -1303,6 +1304,31 @@ def _lp_output(model: lp_mod.Model, fmt: str, name: str, style: dict | None = No
         return Response(lp_mod.to_pptx(model), headers={"Content-Disposition": f'attachment; filename="{name}.pptx"'},
                         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
     raise HTTPException(422, "format must be json, docx or pptx")
+
+
+class DdqQuestionIn(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    section: str = Field(default="", max_length=128)
+    text: str = Field(min_length=3, max_length=1000)
+
+
+class DdqIn(BaseModel):
+    questions: list[DdqQuestionIn] = Field(min_length=1, max_length=300)
+
+
+@app.post("/ddq/answer")
+def ddq_answer(body: DdqIn, who: Who, db: Db):
+    """Answers a DDQ only where an accepted firm rule matches each question; the rest are listed as unanswered.
+    Rules whose source document the caller cannot see are not used."""
+    visible = visible_doc_ids(db, who)
+    accepted = {k: [r for r in rows if visible is None or r["source"]["document_id"] in visible]
+                for k, rows in fk.profile(db, who.tenant).items()}
+    qs = [ddq_mod.Question(q.id, q.section, q.text) for q in body.questions]
+    out = ddq_mod.answer(qs, accepted)
+    log_event(db, who.tenant, actor(who), "ddq.answer", {"questions": len(qs),
+              "answered": sum(1 for r in out if r["status"] == "answered")})
+    return {"answers": out, "answered": sum(1 for r in out if r["status"] == "answered"),
+            "unanswered": sum(1 for r in out if r["status"] == "unanswered")}
 
 
 @app.post("/lp/letter")
