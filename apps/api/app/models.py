@@ -351,6 +351,24 @@ class MemoComment(Base):
     created_at: Mapped[str] = mapped_column(String(40), default="")
 
 
+class OutreachItem(Base):
+    """One outreach draft in the review queue. The text is frozen at queueing; sending re-drafts and refuses if it moved."""
+    __tablename__ = "outreach_item"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("target.id"), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending | approved | rejected | sent
+    sender: Mapped[str] = mapped_column(String(120))
+    firm: Mapped[str] = mapped_column(String(120))
+    thesis: Mapped[str | None] = mapped_column(Text, default=None)
+    subject: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    reviewed_by: Mapped[str | None] = mapped_column(String(64), default=None)
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+    sent_at: Mapped[str | None] = mapped_column(String(40), default=None)
+
+
 class DigestPref(Base):
     """One signed-in person's alert digest: where it goes, the least severe alert it includes, and the last alert sent.
     Keyed on the OIDC subject, so a person's preference follows their account, not a shared key."""
