@@ -2,16 +2,10 @@ import { api2, DDRow, DealRow, EvalRunRow, FactRow, Report, STAGES } from "./api
 import { fmtAmount } from "./format";
 import { useLoad } from "./hooks";
 import { SourceChip } from "./source";
-import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input } from "./ui";
+import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input, Page } from "./ui";
 import { useState } from "react";
 import { DealWorkspace } from "./DealWorkspace";
 
-const Page = ({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) => (
-  <div className="mx-auto max-w-4xl space-y-5 p-6">
-    <div><h1 className="text-xl font-semibold tracking-tight">{title}</h1>{hint && <p className="text-sm text-mut">{hint}</p>}</div>
-    {children}
-  </div>
-);
 
 export function ReviewQueue() {
   const { data, error, reload, setError } = useLoad<FactRow[]>(async () => [
