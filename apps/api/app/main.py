@@ -2718,6 +2718,43 @@ def valuation_roll_forward(company_id: int, period: str, prior: str, db: Db, who
             "change_in_value": None if change is None else str(change)}
 
 
+def _fact_cite(db: Session, fact_id: int, value: str) -> lp_mod.Cite:
+    """The cited source of one figure, as the LP model takes it: the document it was read from, and its link."""
+    f = db.get(Fact, fact_id)
+    src = f.sources[0] if f is not None and f.sources else None
+    doc = db.get(Document, src.document_id) if src is not None else None
+    link = db.query(DocumentSource).filter_by(document_id=src.document_id).first() if src is not None else None
+    return lp_mod.Cite(value, doc.filename if doc else f"fact {fact_id}", link.url if link else None)
+
+
+@app.get("/portfolio/lp-report")
+def portfolio_lp_report(period: str, prior: str, db: Db, who: Writer, format: str = "json"):
+    """Per-company section for LP reporting: cited actuals for the period, budget against actual where both are on
+    file, and the change in value from the roll-forward. Every line carries its source. A figure the caller may not
+    see is left out, as the company routes leave it out."""
+    model = lp_mod.Model(f"Portfolio LP report: {period} (prior mark {prior})")
+    for c in db.query(PortfolioCompany).filter_by(tenant_id=who.tenant).order_by(PortfolioCompany.name).all():
+        model.para((f"{c.name}:", None))
+        kpi_rows = kpis(c.id, db, who)
+        for k in kpi_rows:
+            model.para((f"{k['metric']} {k['value']} {k['unit']} for {period}.",
+                        _fact_cite(db, k["fact_id"], k["value"])))
+        for m in budget_vs_actual(c.id, period, db, who)["metrics"]:
+            if m["actual"] is None or m["budget"] is None:
+                continue
+            text = (f"{m['metric']}: actual {m['actual']['value']} against budget {m['budget']['value']}, "
+                    f"variance {m['variance']}.")
+            model.para((text, _fact_cite(db, m["actual"]["fact_id"], m["actual"]["value"])))
+        rf = valuation_roll_forward(c.id, period, prior, db, who)
+        if rf["change_in_value"] is not None and rf["closing"] is not None:
+            text = (f"Change in value from {prior} to {period}: {rf['change_in_value']} "
+                    "(closing mark less opening mark, adjusted for cash in and out).")
+            model.para((text, _fact_cite(db, rf["closing"]["fact_id"], rf["closing"]["value"])))
+        if not kpi_rows:
+            model.para((f"No figures on file for {period}.", None))
+    return _lp_output(model, format, "portfolio-lp-report")
+
+
 @app.get("/portfolio/submissions")
 def kpi_submissions(period: str, db: Db, who: Who):
     """Which portfolio companies have filed any KPI for the period and which have not, so the missing ones can be
