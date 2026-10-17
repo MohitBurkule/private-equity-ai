@@ -1748,6 +1748,7 @@ def search(q: str, db: Db, who: Who, doc_id: str | None = None, k: int = 5):
 class CompanyIn(BaseModel):
     name: str
     sector: str | None = None
+    sic: str | None = Field(default=None, max_length=8)
     ownership_pct: Decimal | None = None
 
 

@@ -151,7 +151,6 @@ def test_cohort_rows_keep_each_measure_and_reject_empty_rows():
     assert metrics == ["cohort_arr"]
 
 
-
 HTML_FILING = """<html><body>
 <p>3.2. Capitalization.</p>
 <p>The following table sets out our shareholders and their holdings.</p>
@@ -176,3 +175,16 @@ def test_html_filing_rows_cite_section_and_block_not_page():
     assert len(shares) == 1 and shares[0]["status"] == "auto"
     locator = shares[0]["sources"][0]["locator"]
     assert "3.2" in locator and "p.0" not in locator and "p." not in locator
+
+
+def test_debt_schedule_rows_cite_principal_and_rate():
+    h = new_tenant(c, "rows9")
+    doc = upload(h, {"A1": "Term Loan A Lenders", "B1": 500000000, "C1": "5.25%"})
+    good = {"page": 1, "quote": "Sheet!B1: 500,000,000 | row: Term Loan A Lenders",
+            "fields": {"lender": "Agent Bank", "instrument": "term_loan", "principal": 500000000}}
+    bad = {"page": 1, "quote": "Sheet!B1: 500,000,000 | row: Term Loan A Lenders",
+           "fields": {"lender": "Agent Bank", "instrument": "bonds", "principal": 500000000}}
+    out = run(h, doc, "debt_schedule", [good, bad])
+    assert [r["status"] for r in out["rows"]] == ["accepted", "rejected"]
+    metrics = sorted(f["metric"] for f in c.get("/facts", headers=h).json() if f["metric"] in ("principal", "rate_pct"))
+    assert metrics == ["principal"]

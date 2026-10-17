@@ -47,6 +47,26 @@ services:
         -Dgreenmail.setup.test.imap -Dgreenmail.setup.test.smtp -Dgreenmail.hostname=0.0.0.0
         -Dgreenmail.users=ic@firm.test:app-pass -Dgreenmail.auth.disabled=false
     ports: ["3025:3025", "3143:3143"]
+  wiremock:
+    # Dev-only mock of SaaS HTTP APIs (Graph, Drive, CRM, Slack, Teams). Stubs are posted per test to /__admin.
+    # Point tests at it with WIREMOCK_URL=http://localhost:8089 (see docs/MOCKS.md).
+    image: wiremock/wiremock:3.9.1
+    ports: ["8089:8080"]
+    volumes: ["./deploy/mocks/wiremock/mappings:/home/wiremock/mappings:ro"]
+  keycloak:
+    # Dev-only OIDC provider for SSO role testing. Realm is SYNTHETIC (deploy/mocks/keycloak).
+    image: quay.io/keycloak/keycloak:26.0.7
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    volumes: ["./deploy/mocks/keycloak/realm-synthetic.json:/opt/keycloak/data/import/realm-synthetic.json:ro"]
+    ports: ["8081:8080"]
+  sftp:
+    # Dev-only SFTP drop for fund-admin files. User fundadmin, password is a fixed test value.
+    image: atmoz/sftp:alpine
+    command: ["fundadmin:drop-pass:1001::drop"]
+    ports: ["2222:22"]
 volumes:
   pgdata:
   spool:

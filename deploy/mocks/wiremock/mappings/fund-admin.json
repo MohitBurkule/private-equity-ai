@@ -1,0 +1,52 @@
+{
+  "mappings": [
+    {
+      "name": "fundadmin-capital-calls",
+      "request": {
+        "method": "GET",
+        "urlPath": "/synthetic/fundadmin/v1/funds/FUND-7/capital-calls"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "jsonBody": {
+          "items": [
+            {
+              "call_no": 4,
+              "date": "2026-09-30",
+              "amount_usd": 12500000,
+              "status": "funded"
+            }
+          ]
+        }
+      },
+      "metadata": {
+        "note": "SYNTHETIC mock: response shape is invented for tests, not copied from a vendor's API docs."
+      }
+    },
+    {
+      "name": "fundadmin-nav",
+      "request": {
+        "method": "GET",
+        "urlPath": "/synthetic/fundadmin/v1/funds/FUND-7/nav"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "jsonBody": {
+          "as_of": "2026-06-30",
+          "nav_usd": 214000000,
+          "currency": "USD",
+          "note": "SYNTHETIC"
+        }
+      },
+      "metadata": {
+        "note": "SYNTHETIC mock: response shape is invented for tests, not copied from a vendor's API docs."
+      }
+    }
+  ]
+}

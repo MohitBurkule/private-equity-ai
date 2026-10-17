@@ -8,9 +8,9 @@ and an e2e test that skips when the service is not running.
 |---|---|---|---|
 | Dev mail (SMTP, API) | Mailpit v1.21.8 | wired | compose `mailpit`, CI, `tests/test_mailpit_e2e.py`, `tests/test_mailpit_ingest.py` |
 | Generic IMAP mailbox | GreenMail 2.1.2 | wired | compose `greenmail`, CI, `tests/test_greenmail_e2e.py` |
-| Microsoft Graph (Outlook, SharePoint) | WireMock 3.9.1 (jar) | wired | `tests/test_wiremock_adapters.py`, skips without `WIREMOCK_JAR` |
-| Google Drive | WireMock 3.9.1 (jar) | wired | `tests/test_wiremock_adapters.py` |
-| CRM (Salesforce SOQL, HubSpot companies/deals/contacts) | WireMock 3.9.1 (jar) | wired | `tests/test_wiremock_adapters.py` |
+| Microsoft Graph (Outlook, SharePoint) | WireMock 3.9.1 (jar or compose) | wired | compose `wiremock` (port 8089), `tests/test_wiremock_adapters.py`, skips without `WIREMOCK_JAR` or `WIREMOCK_URL` |
+| Google Drive | WireMock 3.9.1 (jar or compose) | wired | `tests/test_wiremock_adapters.py` |
+| CRM (Salesforce SOQL, HubSpot companies/deals/contacts) | WireMock 3.9.1 (jar or compose) | wired | `tests/test_wiremock_adapters.py` |
 | Slack (conversations.list, conversations.history, incoming webhooks) | WireMock 3.9.1 (jar) | wired locally | `tests/test_wiremock_adapters.py`, poster in `app/chat_alerts.py` |
 | Teams (incoming webhook) | WireMock 3.9.1 (jar) | wired locally | `tests/test_wiremock_adapters.py` |
 | SSO / OIDC | mock-oauth2-server 6.1.1 (jar) | wired | `tests/test_oauth_mock_idp_e2e.py`, `tests/test_sso_mock_idp_e2e.py` (roles from scope, config in `apps/api/tests/mock_oauth/config.json`); both skip without `MOCK_OAUTH_URL` |
@@ -44,6 +44,15 @@ GREENMAIL_IMAP_PORT=3143 GREENMAIL_SMTP_PORT=3025 MAILPIT_API_URL=http://localho
   SMTP_HOST=localhost SMTP_PORT=1025 pytest apps/api/tests/test_greenmail_e2e.py apps/api/tests/test_mailpit_e2e.py
 ```
 
+WireMock runs as a compose service too; the adapter tests then use it instead of starting a jar:
+
+```
+docker compose up -d wiremock
+WIREMOCK_URL=http://localhost:8089 pytest apps/api/tests/test_wiremock_adapters.py
+```
+
+Tests reset the server's stubs at the start of each module when `WIREMOCK_URL` is set. Do not point it at a shared server.
+
 Without Docker, GreenMail runs from its standalone jar (Maven: `com.icegreen:greenmail-standalone`):
 
 ```
@@ -53,3 +62,18 @@ java -Dgreenmail.setup.test.imap -Dgreenmail.setup.test.smtp -Dgreenmail.hostnam
 ```
 
 Mock credentials are fixed test values. They must never be used for a real account.
+
+## Synthetic firm-system mocks (`make demo-mocks`)
+
+All SYNTHETIC: response shapes are invented for tests, not copied from any vendor's API.
+
+| System | Mock | Where | Flow today |
+|---|---|---|---|
+| DealCloud (companies, deals) | WireMock stubs | `deploy/mocks/wiremock/mappings/dealcloud.json` | stub smoke test only; no connector |
+| iManage (folder documents) | WireMock stubs | `deploy/mocks/wiremock/mappings/imanage.json` | stub smoke test only; no connector |
+| Datasite (room files) | WireMock stubs | `deploy/mocks/wiremock/mappings/datasite.json` | stub smoke test only; no connector |
+| Fund admin (capital calls, NAV) | WireMock stubs | `deploy/mocks/wiremock/mappings/fund-admin.json` | stub smoke test only; no connector |
+| SSO roles | Keycloak 26.0.7, realm `firm-synthetic` | compose `keycloak` on 8081 | not yet tested against the app |
+| Fund-admin file drop | atmoz/sftp | compose `sftp` on 2222 (user `fundadmin`) | connector covered by `tests/test_sftp_mina.py` with MINA, not against this image |
+
+`make demo-mocks` starts the WireMock, Keycloak and SFTP services and runs `tests/test_firm_mocks_smoke.py` and `tests/test_wiremock_adapters.py`. The stub smoke test uses an in-process WireMock jar when `WIREMOCK_JAR` is set, or the compose service when `WIREMOCK_URL` is set.
