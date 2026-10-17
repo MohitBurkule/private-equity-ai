@@ -17,6 +17,7 @@ from email.message import EmailMessage
 from sqlalchemy.orm import Session
 
 from app import alerts as alerts_mod
+from app import candidate_verify as cv_mod
 from app import ch_search as chs_mod
 from app import comps as comps_mod
 from app import sourcing_search as ss_mod
@@ -90,13 +91,18 @@ def _ch_candidates(term: str, since: str, until: str) -> list[tuple[str, str, st
     return [(c.name, c.company_url, "Companies House company page") for c in chs_mod.search(term)]
 
 
+def _verify_revenue(url: str, name: str) -> str:
+    return cv_mod.check_url(url, name).text()
+
+
 def _candidate_watch(db: Session, w: WorkflowSchedule) -> dict:
     """Weekly: searches EDGAR and Companies House for new companies in the accepted firm sectors.
     The window is the last cadence period; new alerts reach the inbox and the next digest."""
     until = _now().date()
     since = (_now() - timedelta(days=w.every_days)).date()
     created = alerts_mod.scan_candidates(db, w.tenant_id, _edgar_candidates if os.environ.get("SEC_USER_AGENT")
-                                         else None, _ch_candidates, since.isoformat(), until.isoformat())
+                                         else None, _ch_candidates, since.isoformat(), until.isoformat(),
+                                         verify=_verify_revenue)
     return {"alerts": [{"id": a.id, "severity": a.severity, "title": a.title, "detail": a.detail} for a in created]}
 
 

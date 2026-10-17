@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from app import alerts as al
 from app import workflows as wf
 from app.main import SessionLocal, app
-from app.models import Alert, FirmKnowledge, Target
+from app.models import Alert, FirmKnowledge, Target, WorkflowSchedule
 from app.rls import bind_tenant
 
 c = TestClient(app)
@@ -93,3 +93,22 @@ def test_screen_without_criteria_uses_cited_profile():
     assert r["applied"]["sectors"] == ["software", "business services"]
     assert r["applied"]["min_revenue"] == "20000000"
     assert r["criteria_source"]["quote"] == RULE
+
+
+def test_seed_script_creates_one_weekly_schedule(tmp_path, monkeypatch):
+    import importlib.util
+    from pathlib import Path
+
+    from app.db import Base, make_engine
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/seed.db")
+    _, tid = tenant("cw5")
+    spec = importlib.util.spec_from_file_location("seedcw", Path(__file__).resolve().parents[1] / "scripts/seed_candidate_watch.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    Base.metadata.create_all(make_engine())
+    assert mod.main([tid]) == 0
+    assert mod.main([tid]) == 0  # idempotent
+    from sqlalchemy.orm import sessionmaker
+    with sessionmaker(bind=make_engine())() as s:
+        rows = s.query(WorkflowSchedule).filter_by(tenant_id=tid, kind="candidate_watch").all()
+        assert len(rows) == 1 and rows[0].recipients == "candidates@mailpit.local" and rows[0].every_days == 7
