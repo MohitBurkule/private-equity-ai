@@ -257,6 +257,10 @@ export const api2 = {
   lboRun: (id: number) => call<LboRunDetail>(`/lbo/runs/${id}`),
   lboSave: (name: string, request: LboRequest) => call<LboRunRow>("/lbo/runs", "POST", { name, request }),
   covenants: (companyId: number) => call<CovenantStatus>(`/portfolio/companies/${companyId}/covenants`),
+  emailReview: () => call<{ emails: UnattachedEmail[] }>("/email/review"),
+  emailAttach: (docId: string, deal: string) => call<{ document_id: string; deal: string }>(`/email/review/${encodeURIComponent(docId)}/attach`, "POST", { deal }),
 };
+
+export interface UnattachedEmail { document_id: string; filename: string; source_url: string | null }
 
 export const STAGES = ["sourcing", "screening", "dd", "ic", "signed", "closed", "passed"];
