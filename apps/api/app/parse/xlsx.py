@@ -30,6 +30,9 @@ def extract_sheets(path: Path) -> list[Sheet]:
         fws = formulas[ws.title]
         lines = []
         for row in ws.iter_rows():
+            # Row label: first text cell in the row. Carried on each numeric line so the
+            # quote's page line names the line item (the gate's label check reads it).
+            label = next((str(c.value) for c in row if isinstance(c.value, str) and c.value.strip()), None)
             for c in row:
                 f = fws[c.coordinate].value
                 is_formula = isinstance(f, str) and f.startswith("=")
@@ -40,7 +43,8 @@ def extract_sheets(path: Path) -> list[Sheet]:
                     v = "(no cached value)"
                 else:
                     v = f"{c.value:,}" if isinstance(c.value, (int, float)) else str(c.value)
-                lines.append(f"{ws.title}!{c.coordinate}: {v}{suffix}")
+                row_note = f" | row: {label}" if label and label != str(c.value) else ""
+                lines.append(f"{ws.title}!{c.coordinate}: {v}{suffix}{row_note}")
         hidden = ws.sheet_state != "visible"
         head = f"[hidden sheet: {ws.sheet_state}]\n" if hidden else ""
         out.append(Sheet(doc_id, i, ws.title, hidden, head + "\n".join(lines)))
