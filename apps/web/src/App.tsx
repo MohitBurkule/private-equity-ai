@@ -15,6 +15,7 @@ import { Inbox } from "./Inbox";
 import { Deals, EvalDashboard, PortfolioPanel, ReviewQueue } from "./Panels";
 import { Lbo } from "./Lbo";
 import { Covenants } from "./Covenants";
+import { Sourcing } from "./Sourcing";
 import { SourceProvider } from "./source";
 import { Button, Card } from "./ui";
 import clsx from "clsx";
@@ -26,6 +27,7 @@ const NAV: { id: string; icon: ReactNode }[] = [
   { id: "Portfolio", icon: <LayoutGrid size={16} /> },
   { id: "Covenants", icon: <ShieldCheck size={16} /> },
   { id: "LBO", icon: <Calculator size={16} /> },
+  { id: "Sourcing", icon: <Map size={16} /> },
   { id: "Dashboards", icon: <BarChart3 size={16} /> },
   { id: "Targets", icon: <Map size={16} /> },
   { id: "Comps", icon: <Calculator size={16} /> },
@@ -116,6 +118,7 @@ export function App() {
         {tab === "Portfolio" && <PortfolioPanel />}
         {tab === "Covenants" && <Covenants />}
         {tab === "LBO" && <Lbo />}
+        {tab === "Sourcing" && <Sourcing />}
         {tab === "Dashboards" && <Dashboards />}
         {tab === "Targets" && <Targets />}
         {tab === "Comps" && <Comps />}

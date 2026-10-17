@@ -59,16 +59,24 @@ export interface DealRow { name: string; stage: string; note: string | null; doc
 export interface DDRow { id: number; deal: string; category: string; title: string; status: string; document_id: string | null }
 export interface EvalRunRow { id: number; suite: string; ran_at: string; note: string | null; metrics: Record<string, unknown> }
 /** Cited input: a verified fact id, as /lbo/returns requires. Multiples are inputs too, so they must be cited. */
-export interface LboRequest { inputs: Record<string, { fact_id: number }>; entry_multiples?: string[]; exit_multiples?: string[] }
+export interface LboAssumption { value: string; set_by: string; set_on: string; reason: string }
+export interface LboRequest {
+  inputs: Record<string, { fact_id: number } | { value: string; assumption: Omit<LboAssumption, "value"> }>;
+  entry_multiples?: string[]; exit_multiples?: string[];
+}
 export interface LboResult {
   entry_ev: string; debt: string; fees: string; equity: string; exit_ev: string; exit_net_debt: string; exit_equity: string;
   moic: string; irr: string | null; dividends: string; sensitivity: [string, string, string | null, string | null][] | null;
+  assumptions: { input: string; value: string; set_by: string; set_on: string; reason: string }[];
 }
 export interface CovenantTest { period: string; status: string; value: string; threshold: string; unit?: string }
 export interface CovenantStatus {
   covenants: { id: number; kpi_metric: string; operator: string; tests: CovenantTest[] }[];
   breaches: (CovenantTest & { covenant_id: number; kpi_metric: string })[];
 }
+/** A sourcing candidate from a live search. Not imported until someone adds it as a target. */
+export interface SearchCandidate { name: string; source_url: string | null; form?: string; file_date?: string; already_imported?: boolean }
+export interface SearchOut { total: number; items: SearchCandidate[] }
 export interface Breach { company: string; kpi_metric: string; period: string; status: string; value: string; threshold: string; unit?: string }
 export interface ConflictSource { fact_id: number; value: string; documents: { document_id: string; filename: string | null; page: number; quote: string }[] }
 export interface Conflict {
@@ -155,6 +163,9 @@ export const api2 = {
   legalTerms: (docId: string, docType: string) => call<LegalOut>(`/documents/${docId}/legal-terms?doc_type=${docType}`),
   conflicts: () => call<Conflict[]>("/facts/conflicts"),
   evals: () => call<EvalRunRow[]>("/evals?limit=200"),
+  searchEdgar: (body: { query: string; forms: string[]; since?: string; until?: string; limit?: number }) =>
+    call<SearchOut>("/targets/search/edgar", "POST", body),
+  searchCompaniesHouse: (body: { query: string; limit?: number }) => call<SearchOut>("/targets/search/companies-house", "POST", body),
   lboReturns: (body: LboRequest) => call<LboResult>("/lbo/returns", "POST", body),
   covenants: (companyId: number) => call<CovenantStatus>(`/portfolio/companies/${companyId}/covenants`),
 };
