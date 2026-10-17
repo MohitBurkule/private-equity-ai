@@ -7,8 +7,8 @@ import { SourceChip } from "./source";
 /** Quality of earnings from cited facts. A figure with a gap shows the gap; every input links to its source. */
 export function Qoe() {
   const [entity, setEntity] = useState("");
-  const [period, setPeriod] = useState("FY24");
-  const [periods, setPeriods] = useState("FY22, FY23, FY24");
+  const [period, setPeriod] = useState("");
+  const [periods, setPeriods] = useState("");
   const [ebitda, setEbitda] = useState<QoeCalc | null>(null);
   const [peg, setPeg] = useState<NwcPeg | null>(null);
   const [trend, setTrend] = useState<TrendRow[]>([]);
@@ -16,9 +16,15 @@ export function Qoe() {
 
   const run = async () => {
     setErr("");
-    const ps = periods.split(",").map((p) => p.trim()).filter(Boolean).join(",");
     try {
-      const [e, p, t] = await Promise.all([api2.qoeEbitda(entity, period), api2.nwcPeg(entity, ps), api2.revenueTrend(entity, ps)]);
+      // Default to the periods the entity actually has, so the first load is never a period with no facts.
+      const known = (await api2.calcPeriods(entity)).periods;
+      if (known.length === 0) throw new Error(`no verified periods for ${entity}`);
+      const latest = known[known.length - 1];
+      const chosen = period && known.includes(period) ? period : latest;
+      const ps = (periods.trim() ? periods.split(",").map((p) => p.trim()).filter(Boolean) : known).join(",");
+      setPeriod(chosen); setPeriods(ps);
+      const [e, p, t] = await Promise.all([api2.qoeEbitda(entity, chosen), api2.nwcPeg(entity, ps), api2.revenueTrend(entity, ps)]);
       setEbitda(e); setPeg(p); setTrend(t.rows);
     } catch (x) { setErr(String(x)); }
   };
