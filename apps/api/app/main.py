@@ -40,6 +40,7 @@ from app import html_doc as html_doc_mod
 from app import jobs as jobs_mod
 from app import lbo as lbo_mod
 from app import legal as legal_mod
+from app import lp_docs as lp_mod
 from app import notify as notify_mod
 from app import outreach as outreach_mod
 from app import peers as peers_mod
@@ -1232,6 +1233,91 @@ def facts_xlsx(db: Db, who: Who, entity: str | None = None):
     return Response(build_facts_xlsx(db, who.tenant, entity, visible_doc_ids(db, who)), headers={
         "Content-Disposition": 'attachment; filename="facts.xlsx"'},
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+class CiteIn(BaseModel):
+    value: str = Field(min_length=1, max_length=64)
+    source: str = Field(min_length=1, max_length=512)
+    url: str | None = Field(default=None, max_length=1024)
+
+    def cite(self) -> lp_mod.Cite:
+        return lp_mod.Cite(self.value, self.source, self.url)
+
+
+class FlowIn(BaseModel):
+    on: DateT
+    amount: Decimal
+    source: CiteIn
+
+
+class KpiIn(BaseModel):
+    company: str = Field(max_length=256)
+    metric: str = Field(max_length=128)
+    period: str = Field(max_length=64)
+    value: CiteIn
+
+
+class LpLetterIn(BaseModel):
+    fund: str = Field(max_length=256)
+    as_of: DateT
+    flows: list[FlowIn] = Field(min_length=1, max_length=500)
+    nav: CiteIn
+    kpis: list[KpiIn] = Field(default_factory=list, max_length=200)
+    tone: CiteIn | None = None
+
+
+class CapitalCallIn(BaseModel):
+    fund: str = Field(max_length=256)
+    amount: CiteIn
+    purpose: str = Field(max_length=512)
+    due: DateT
+    notice_days: CiteIn
+    commitments: dict[str, CiteIn] = Field(min_length=1, max_length=500)
+    kind: str = Field(default="capital call", max_length=40)
+    lp: str | None = Field(default=None, max_length=256)
+
+
+def _lp_output(model: lp_mod.Model, fmt: str, name: str):
+    if fmt == "json":
+        return model.to_dict()
+    if fmt == "docx":
+        return Response(lp_mod.to_docx(model), headers={"Content-Disposition": f'attachment; filename="{name}.docx"'},
+                        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    if fmt == "pptx":
+        return Response(lp_mod.to_pptx(model), headers={"Content-Disposition": f'attachment; filename="{name}.pptx"'},
+                        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+    raise HTTPException(422, "format must be json, docx or pptx")
+
+
+@app.post("/lp/letter")
+def lp_letter(body: LpLetterIn, who: Writer, db: Db, format: str = "json"):
+    """Quarterly LP letter: fund metrics from dated flows, portfolio KPIs and the accepted LP tone rule.
+    Every figure is cited to the source supplied with it. format: json, docx or pptx."""
+    try:
+        model = lp_mod.lp_letter(body.fund, body.as_of,
+                                 [lp_mod.Flow(f.on, f.amount, f.source.cite()) for f in body.flows],
+                                 body.nav.cite(),
+                                 [lp_mod.Kpi(k.company, k.metric, k.period, k.value.cite()) for k in body.kpis],
+                                 body.tone.cite() if body.tone else None)
+    except (ValueError, ArithmeticError) as e:
+        raise HTTPException(422, str(e)) from e
+    log_event(db, who.tenant, actor(who), "lp.letter", {"fund": body.fund, "format": format})
+    return _lp_output(model, format, "lp-letter")
+
+
+@app.post("/lp/capital-call")
+def lp_capital_call(body: CapitalCallIn, who: Writer, db: Db, format: str = "json"):
+    """Capital call or distribution notice: each LP's pro-rata share, every commitment and the notice period
+    cited to its source. lp=name gives one LP's notice; omitted gives the summary for all LPs."""
+    try:
+        model = lp_mod.capital_call_notice(body.fund, body.amount.cite(), body.purpose, body.due,
+                                           body.notice_days.cite(),
+                                           {k: v.cite() for k, v in body.commitments.items()},
+                                           body.kind, body.lp)
+    except (ValueError, ArithmeticError) as e:
+        raise HTTPException(422, str(e)) from e
+    log_event(db, who.tenant, actor(who), "lp.capital_call", {"fund": body.fund, "format": format})
+    return _lp_output(model, format, "capital-call")
 
 
 @app.get("/memo.docx")
