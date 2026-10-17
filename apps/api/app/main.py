@@ -94,6 +94,7 @@ from app.models import (
     DocumentSource,
     EvalRun,
     Fact,
+    FactSource,
     Holding,
     IngestJob,
     PageRow,
@@ -756,6 +757,41 @@ def retention_deals(body: RetentionIn, db: Db, who: Writer):
         deleted.append(d.name)
         log_event(db, who.tenant, actor(who), "deal.retention_delete",
                   {"name": d.name, "older_than_days": body.older_than_days, "dd_requests_removed": removed})
+    db.commit()
+    return {"dry_run": False, "deleted": deleted, "skipped": skipped}
+
+
+@app.post("/retention/documents")
+def retention_documents(body: RetentionIn, db: Db, who: Writer):
+    """Same rules as deal retention, for documents. Unknown creation time is never a candidate.
+    A document cited by a fact or a DD item is kept, and a document on a held or walled deal is
+    skipped whatever its age."""
+    cutoff = datetime.now(UTC) - timedelta(days=body.older_than_days)
+    hidden = hidden_deal_names(db, who)
+    held = {d.name for d in db.query(Deal).filter_by(tenant_id=who.tenant, legal_hold=True)}
+    cands = []
+    for doc in db.query(Document).filter_by(tenant_id=who.tenant).order_by(Document.created_at).all():
+        if not doc.created_at or not doc_visible(doc, who, hidden):
+            continue
+        if doc.deal and (doc.deal in held or doc.deal in hidden):
+            continue
+        created = datetime.fromisoformat(doc.created_at)
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=UTC)
+        if created < cutoff:
+            cands.append(doc)
+    if body.dry_run:
+        return {"dry_run": True, "candidates": [d.id for d in cands]}
+    deleted, skipped = [], []
+    for doc in cands:
+        if db.query(FactSource).filter_by(document_id=doc.id).first() or \
+                db.query(DDRequest).filter_by(document_id=doc.id).first():
+            skipped.append({"id": doc.id, "reason": "cited by a fact or DD item"})
+            continue
+        db.delete(doc)
+        deleted.append(doc.id)
+        log_event(db, who.tenant, actor(who), "document.retention_delete",
+                  {"document_id": doc.id, "deal": doc.deal, "older_than_days": body.older_than_days})
     db.commit()
     return {"dry_run": False, "deleted": deleted, "skipped": skipped}
 
