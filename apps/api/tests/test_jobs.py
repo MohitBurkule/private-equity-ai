@@ -58,7 +58,7 @@ def test_unexpected_errors_retry_then_fail(monkeypatch):
     def boom(*a, **k):
         calls.append(1)
         raise RuntimeError("db hiccup")
-    monkeypatch.setattr(jobs, "ingest_any", boom)
+    monkeypatch.setattr(jobs, "store_parsed", boom)  # the parent-side write is what retries; the parse runs in a child
     j = wait(h, submit(h))
     assert j["status"] == "failed" and j["attempts"] == jobs.MAX_ATTEMPTS and len(calls) == 3
     assert "db hiccup" in j["error"]
@@ -66,15 +66,16 @@ def test_unexpected_errors_retry_then_fail(monkeypatch):
 
 def test_transient_error_then_success(monkeypatch):
     h = new_tenant(c, "jb4")
-    real, n = jobs.ingest_any, []
+    real, n = jobs.store_parsed, []
 
-    def flaky(db, tenant, data, filename, *a, **k):
-        if filename == "transient.docx":  # only this test's job; never another job's call
+    def flaky(db, tenant, parsed):
+        names = [d["doc"]["filename"] for d in parsed["documents"]]
+        if names == ["transient.docx"]:  # only this test's job; never another job's call
             n.append(1)
             if len(n) == 1:
                 raise RuntimeError("once")
-        return real(db, tenant, data, filename, *a, **k)
-    monkeypatch.setattr(jobs, "ingest_any", flaky)
+        return real(db, tenant, parsed)
+    monkeypatch.setattr(jobs, "store_parsed", flaky)
     j = wait(h, submit(h, name="transient.docx"))
     assert j["status"] == "done" and j["attempts"] == 2
 

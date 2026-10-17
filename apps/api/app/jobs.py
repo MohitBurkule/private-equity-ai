@@ -1,5 +1,6 @@
 """Background ingest: upload returns a job id at once; a small worker pool parses and stores.
 
+- Parsing runs in a child process with a time limit (PARSE_TIMEOUT_S, default 120). See parse_child.py.
 - Bytes are spooled to SPOOL_DIR so queued jobs survive a restart (requeue_pending at startup).
 - Unexpected failures retry up to MAX_ATTEMPTS; parse problems inside ingest_any are not failures,
   they come back as `skipped` entries in the result like the synchronous path.
@@ -25,8 +26,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.acl import Principal, parse_deals
 from app.audit import log_event
-from app.ingest import finalize_upload, ingest_any
+from app.ingest import finalize_upload
 from app.models import IngestJob, Tenant
+from app.parse_child import ParseTimeout, parse_in_child, store_parsed
 from app.rls import bind_tenant
 
 MAX_ATTEMPTS = 3
@@ -100,8 +102,8 @@ def _run_job(session_factory: sessionmaker, job_id: str, tenant: str) -> None:
                     return
                 job.stage = "parsing"
                 db.commit()
-                res = ingest_any(db, job.tenant_id, path.read_bytes(), job.filename,
-                                 progress=_progress(db, job))
+                parsed = parse_in_child(path.read_bytes(), job.filename, progress=_progress(db, job))
+                res = store_parsed(db, job.tenant_id, parsed)
                 job.stage = "tagging"
                 db.commit()
                 kept, skipped = finalize_upload(db, who, res, job.deal)
@@ -115,6 +117,10 @@ def _run_job(session_factory: sessionmaker, job_id: str, tenant: str) -> None:
                 job.files_done, job.current_file = job.files_total, None
                 db.commit()
                 path.unlink(missing_ok=True)
+                return
+            except ParseTimeout as e:
+                db.rollback()  # a parse that hangs once will hang again, so this is not retried
+                _fail(db, db.get(IngestJob, job_id), str(e))
                 return
             except Exception as e:  # noqa: BLE001  retry unexpected failures, then fail loudly
                 db.rollback()
