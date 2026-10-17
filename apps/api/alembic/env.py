@@ -18,6 +18,9 @@ def _url() -> str:
 
 def run_migrations_online() -> None:
     engine = create_engine(_url())
+    # SQLite demo/tests get their schema from create_all (app/migrate.py); its ALTER-based revisions cannot run there.
+    if engine.dialect.name != "postgresql":
+        raise RuntimeError("alembic migrations are Postgres-only; SQLite uses Base.metadata.create_all")
     with engine.connect() as conn:
         context.configure(connection=conn, target_metadata=target_metadata, compare_type=True)
         with context.begin_transaction():
