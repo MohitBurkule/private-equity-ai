@@ -23,9 +23,9 @@ from sqlalchemy.orm import Session
 from app import firm_knowledge as fk
 from app.acl import Principal, visible_doc_ids
 from app.answer import Claim, answer_question, verify_claim
+from app.hybrid import default_index
 from app.llm import LLM
 from app.models import AgentRun, Alert, Deal, Document, Fact, PageRow
-from app.search import PageIndex
 
 
 @dataclass
@@ -88,7 +88,7 @@ def _search(ctx: Ctx, query: str, k: int = 5):
         q = q.filter(PageRow.document_id.in_(scope))
     rows = q.all()
     text = {(r.document_id, r.number): r.text for r in rows}
-    idx = PageIndex([(r.document_id, r.number, r.text) for r in rows])
+    idx = default_index([(r.document_id, r.number, r.text) for r in rows])
     return [{"doc_id": h.doc_id, "page": h.page, "snippet": text[(h.doc_id, h.page)][:400]}
             for h in idx.search(query, k=min(int(k), 10))]
 

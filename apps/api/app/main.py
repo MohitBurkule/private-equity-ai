@@ -77,6 +77,7 @@ from app.facts import CitationError, add_verified_fact, review_fact
 from app.factsxlsx import build_facts_xlsx
 from app.fundmetrics import fund_metrics
 from app.holdings import parse_holdings
+from app.hybrid import default_index
 from app.ingest import finalize_upload, ingest_any
 from app.llm import LLM, NoLLMConfigured, get_llm
 from app.memo import build_memo, build_memo_docx, build_memo_pptx
@@ -112,7 +113,6 @@ from app.portfolio import (
 from app.ratelimit import limiter
 from app.report import build_report, build_report_docx
 from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
-from app.search import PageIndex
 from app.shareledger import Event as LedgerEvent
 from app.shareledger import reconcile as reconcile_shares
 from app.sumcheck import sum_check
@@ -922,7 +922,7 @@ def search(q: str, db: Db, who: Who, doc_id: str | None = None, k: int = 5):
     if doc_id:
         query = query.filter(PageRow.document_id == doc_id)
     rows = query.all()
-    index = PageIndex([(r.document_id, r.number, r.text) for r in rows])
+    index = default_index([(r.document_id, r.number, r.text) for r in rows])
     text = {(r.document_id, r.number): r.text for r in rows}
     return [{"document_id": h.doc_id, "page": h.page, "score": round(h.score, 3),
              "snippet": text[(h.doc_id, h.page)][:300]}
