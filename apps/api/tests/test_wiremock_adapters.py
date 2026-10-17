@@ -53,3 +53,50 @@ def test_hubspot_companies_through_wiremock(wm):
     (item,) = list(HubSpot("tok", http, portal="123", objects="companies").items())
     assert item.data.splitlines()[0] == b"id,name,domain"
     assert item.url == "https://app.hubspot.com/contacts/123/objects/companies"
+
+
+def test_slack_channels_and_history_through_wiremock(wm):
+    from app.connectors.slack import Slack
+
+    http = rewrite_http({"https://slack.com/": wm.base + "/"})
+    wm.stub("GET", {"urlPath": "/api/conversations.list"}, body=_json({"ok": True, "channels": [
+        {"id": "C1", "name": "deal-atlas", "is_member": True}, {"id": "C2", "name": "x", "is_member": False}]}))
+    wm.stub("GET", {"urlPath": "/api/conversations.history", "queryParameters": {"channel": {"equalTo": "C1"}}},
+            body=_json({"ok": True, "messages": [
+                {"type": "message", "ts": "1700.1", "user": "U1", "text": "EBITDA 300"},
+                {"type": "message", "subtype": "channel_join", "ts": "1700.0", "user": "U2", "text": ""}]}))
+    (item,) = list(Slack("tok", http, team="T1").items())
+    assert item.name == "slack-deal-atlas.csv"
+    assert item.data.count(b"\n") == 2  # header plus one message; the join event is dropped
+    assert item.url == "https://app.slack.com/client/T1/C1"
+
+
+def test_salesforce_soql_contacts_and_opportunities_through_wiremock(wm):
+    from app.connectors.crm import Salesforce
+
+    http = rewrite_http({"https://acme.my.salesforce.com/": wm.base + "/"})
+    wm.stub("GET", {"urlPath": "/services/data/v60.0/query", "queryParameters": {"q": {"contains": "FROM Contact"}}},
+            body=_json({"records": [
+        {"Id": "003A", "Name": "Jane Doe", "Title": "CFO", "AccountId": "001A", "Email": "jane@acme.test",
+         "attributes": {"type": "Contact"}}]}))
+    wm.stub("GET", {"urlPath": "/services/data/v60.0/query", "queryParameters": {"q": {"contains": "FROM Opportunity"}}},
+            body=_json({"records": [
+        {"Id": "006A", "Name": "Atlas", "StageName": "IC", "Amount": 900, "CloseDate": "2026-12-01",
+         "AccountId": "001A"}]}))
+    conn = Salesforce("tok", http, instance_url="https://acme.my.salesforce.com", objects="Contact,Opportunity")
+    items = list(conn.items())
+    assert [i.name for i in items] == ["salesforce-Contact.csv", "salesforce-Opportunity.csv"]
+    assert b"Jane Doe" in items[0].data and b"attributes" not in items[0].data
+    assert items[1].url == "https://acme.my.salesforce.com/lightning/o/Opportunity/list"
+
+
+def test_hubspot_deals_and_contacts_through_wiremock(wm):
+    http = rewrite_http({"https://api.hubapi.com/": wm.base + "/"})
+    wm.stub("GET", {"urlPath": "/crm/v3/objects/deals"}, body=_json({"results": [
+        {"id": "d1", "properties": {"dealname": "Atlas", "amount": "900", "dealstage": "IC"}}]}))
+    wm.stub("GET", {"urlPath": "/crm/v3/objects/contacts"}, body=_json({"results": [
+        {"id": "c1", "properties": {"firstname": "Jane", "email": "jane@acme.test"}}]}))
+    items = list(HubSpot("tok", http, portal="123", objects="deals,contacts").items())
+    assert [i.external_id for i in items] == ["hubspot:deals", "hubspot:contacts"]
+    assert items[0].data.splitlines()[0] == b"id,dealname,amount,dealstage"
+    assert b"jane@acme.test" in items[1].data
