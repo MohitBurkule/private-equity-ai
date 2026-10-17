@@ -63,16 +63,15 @@ def classify(lines: list[engines.Line], width: float = 0.0, height: float = 0.0)
 
 
 def _size(path: Path, page: int) -> tuple[float, float]:
-    import pymupdf
-    r = pymupdf.open(str(path))[page - 1].rect
-    return r.width, r.height
+    import pypdfium2 as pdfium
+    return pdfium.PdfDocument(str(path))[page - 1].get_size()
 
 
 def route_page(path: Path, page: int, have: set[str] | None = None) -> RoutedPage:
     have = have if have is not None else set(engines.available())
-    primary = "pymupdf" if "pymupdf" in have else "pdftotext" if "pdftotext" in have else "pypdf"
+    primary = "pypdfium2_words" if "pypdfium2_words" in have else "pdftotext" if "pdftotext" in have else "pypdf"
     pr = engines.run(primary, path, [page])[0]
-    w, h = _size(path, page) if "pymupdf" in have else (0.0, 0.0)
+    w, h = _size(path, page) if "pypdfium2_words" in have else (0.0, 0.0)
     kind = classify(pr.lines, w, h)
     if kind == "scanned":
         if "rapidocr" in have:

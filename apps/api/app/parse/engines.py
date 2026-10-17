@@ -72,6 +72,39 @@ def _pymupdf_layout_text(path, pages):
         yield PageResult("pymupdf_text", p, [Line(t, None, "pymupdf_text") for t in doc[p - 1].get_text("text", sort=True).splitlines() if t.strip()])
 
 
+PDFIUM_GAP = 2.0  # a word ends at a space or a gap wider than this many character heights; 0.5 splits digits
+
+
+def _pdfium_words(path, pages):
+    """Words from pdfium's character boxes (Apache-2.0 / BSD), the primary parse engine since it has no AGPL
+    licence. Measured against pymupdf words on the gold sets and real decks (docs/PDF_BENCHMARK.md)."""
+    import pypdfium2 as pdfium
+    pdf = pdfium.PdfDocument(str(path))
+    for p in pages:
+        page = pdf[p - 1]
+        height = page.get_size()[1]
+        tp = page.get_textpage()
+        words, cur, prev = [], [], None
+        for i in range(tp.count_chars()):
+            ch = tp.get_text_range(i, 1)
+            l, b, r, t = tp.get_charbox(i)
+            if not ch.strip():
+                if cur:
+                    words.append(cur)
+                cur, prev = [], None
+                continue
+            if cur and prev is not None and l - prev[2] > (t - b) * PDFIUM_GAP:
+                words.append(cur)
+                cur = []
+            cur.append((l, height - t, r, height - b, ch))
+            prev = (l, height - t, r, height - b)
+        if cur:
+            words.append(cur)
+        ws = [(min(c[0] for c in w), min(c[1] for c in w), max(c[2] for c in w), max(c[3] for c in w),
+               "".join(c[4] for c in w)) for w in words]
+        yield PageResult("pypdfium2_words", p, group_words(ws, "pypdfium2_words"))
+
+
 def _pdfplumber(path, pages):
     import pdfplumber
     with pdfplumber.open(str(path)) as pdf:
@@ -215,6 +248,7 @@ ENGINES = {
     "pdftotext_layout": (_pdftotext_layout, lambda: shutil.which("pdftotext") is not None),
     "pymupdf": (_pymupdf, lambda: _has("pymupdf")),
     "pymupdf_text": (_pymupdf_layout_text, lambda: _has("pymupdf")),
+    "pypdfium2_words": (_pdfium_words, lambda: _has("pypdfium2")),
     "pdfplumber": (_pdfplumber, lambda: _has("pdfplumber")),
     "pypdf": (_pypdf, lambda: _has("pypdf")),
     "pdfium": (_pdfium, lambda: _has("pypdfium2")),
