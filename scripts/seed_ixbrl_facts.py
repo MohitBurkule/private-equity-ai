@@ -20,7 +20,7 @@ FY = "2019-01-01/2019-12-31"
 FY25 = "2025-01-01/2025-12-31"
 # (file, entity, [(metric, period label, [concepts to try], period_key, row label)])
 FILINGS = [
-    ("3M_2019_10K.htm", "3M Company", [
+    ("filings/3M_2019_10K.htm", "3M Company", [
         ("revenue", "FY2019", ["us-gaap:Revenues"], FY, "Net sales"),
         ("revenue", "FY2018", ["us-gaap:Revenues"], "2018-01-01/2018-12-31", "Net sales"),
         ("net_income", "FY2019", ["us-gaap:NetIncomeLoss"], FY, "Net income attributable to 3M"),
