@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app import agent as ag
 from app import alerts as al
+from app import ch_search as chs_mod
 from app import companies_house as ch_mod
 from app import comps as comps_mod
 from app import covenant_parse as covparse_mod
@@ -2218,3 +2219,23 @@ def targets_search_edgar(body: EdgarSearchIn, db: Db, who: Writer):
               "source_url": c.filing_url, "company_url": c.company_url, "already_imported": c.cik in have}
              for c in cands[:min(max(body.limit, 1), 200)]]
     return {"total": len(cands), "items": items}
+
+
+class CompaniesHouseSearchIn(BaseModel):
+    query: str
+    limit: int = 20
+
+
+@app.post("/targets/search/companies-house")
+def targets_search_companies_house(body: CompaniesHouseSearchIn, db: Db, who: Writer):
+    """Live Companies House name search, cited to each company page. Not imported; see already_imported."""
+    if not body.query.strip():
+        raise HTTPException(422, "give a query")
+    try:
+        cands = chs_mod.search(body.query, body.limit)
+    except Exception as e:  # network or site error: report, never guess
+        raise HTTPException(502, f"Companies House search failed: {e}") from e
+    have = {r[0] for r in db.query(Target.source_ref).filter_by(tenant_id=who.tenant,
+                                                                 source="companies_house").all()}
+    return {"items": [{"name": c.name, "number": c.number, "status": c.status, "address": c.address,
+                       "source_url": c.company_url, "already_imported": c.number in have} for c in cands]}
