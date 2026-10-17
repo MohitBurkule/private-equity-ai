@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app import (
     add_on,
+    chfeed,
     enrich,
     notify,
     opendata_tools,  # noqa: F401  (registers open-data agent tools)
@@ -42,6 +43,7 @@ from app import legal as legal_mod
 from app import notify as notify_mod
 from app import outreach as outreach_mod
 from app import peers as peers_mod
+from app import people_enrich as pe_mod
 from app import precedent_fetch as pfetch_mod
 from app import precedents as prec_mod
 from app import research as research_mod
@@ -2283,6 +2285,28 @@ def stage_sync_connector(name: str, body: SyncBody, db: Db, who: Writer):
         raise HTTPException(502, f"stage sync failed: {e}") from e
     log_event(db, who.tenant, actor(who), "connector.stage_sync", {"connector": name, **out})
     return out
+
+
+class PeopleIn(BaseModel):
+    ch_number: str | None = None  # Companies House company number
+    sec_url: str | None = None  # https sec.gov filing URL
+    sec_form: str = "10-K"  # label shown on each person's citation: 10-K or DEF 14A
+
+
+@app.post("/enrich/people")
+def enrich_people(body: PeopleIn, who: Who):
+    """Named people for a company from public sources (LinkedIn alternative). Every person is cited."""
+    if body.sec_form not in ("10-K", "DEF 14A"):
+        raise HTTPException(422, "sec_form must be 10-K or DEF 14A")
+    out: list[dict] = []
+    try:
+        if body.ch_number:
+            out += pe_mod.companies_house_people(body.ch_number)
+        if body.sec_url:
+            out += pe_mod.sec_people(body.sec_url, body.sec_form)
+    except (ValueError, RuntimeError, OSError, chfeed.CompanyNotFound) as e:
+        raise HTTPException(502, f"enrichment failed: {e}") from e
+    return {"people": out}
 
 
 @app.get("/documents/{doc_id}/source")
