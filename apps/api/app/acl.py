@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from app.models import Document, Fact
+from app.models import Deal, Document, Fact
 
 ROLES = ("admin", "analyst", "viewer")
 
@@ -50,21 +50,41 @@ def format_deals(deals: list[str] | None) -> str | None:
 def visible_doc_ids(db: Session, p: Principal) -> set[str] | None:
     """None means unrestricted. Otherwise the set of document ids this principal may see."""
     if p.deals is None:
-        return None
+        hidden = hidden_deal_names(db, p)
+        if not hidden:
+            return None
+        return {d.id for d in db.query(Document).filter(Document.tenant_id == p.tenant,
+                                                          Document.deal.is_(None) | Document.deal.notin_(hidden))}
     if not p.deals:
         return set()
     return {d.id for d in db.query(Document).filter(Document.tenant_id == p.tenant,
                                                       Document.deal.in_(p.deals))}
 
 
-def doc_visible(doc: Document | None, p: Principal) -> bool:
-    return doc is not None and doc.tenant_id == p.tenant and (p.deals is None or doc.deal in p.deals)
+def doc_visible(doc: Document | None, p: Principal, hidden: frozenset[str] = frozenset()) -> bool:
+    return (doc is not None and doc.tenant_id == p.tenant and (p.deals is None or doc.deal in p.deals)
+            and doc.deal not in hidden)
 
 
-def deal_hidden(deal_name: str, mnpi: bool, p: Principal) -> bool:
-    """MNPI deals need an explicit deal scope. An unscoped admin key does not see them either,
-    so a wall cannot be bypassed by role."""
-    return mnpi and (p.deals is None or deal_name not in p.deals)
+def _mnpi_deals(db: Session, tenant: str) -> list[Deal]:
+    return db.query(Deal).filter_by(tenant_id=tenant, mnpi=True).all()
+
+
+def _may_see_mnpi(d: Deal, p: Principal) -> bool:
+    """Scoped by name, or the key that flagged the deal. Unscoped admin keys see nothing else."""
+    return (p.deals is not None and d.name in p.deals) or bool(p.key_id and d.created_by == p.key_id)
+
+
+def hidden_deal_names(db: Session, p: Principal) -> frozenset[str]:
+    return frozenset(d.name for d in _mnpi_deals(db, p.tenant) if not _may_see_mnpi(d, p))
+
+
+def deal_hidden(d: Deal, p: Principal) -> bool:
+    return d.mnpi and not _may_see_mnpi(d, p)
+
+
+def visible_mnpi_deal_names(db: Session, p: Principal) -> list[str]:
+    return sorted(d.name for d in _mnpi_deals(db, p.tenant) if _may_see_mnpi(d, p))
 
 
 def fact_visible(fact: Fact, scope: set[str] | None) -> bool:

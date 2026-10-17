@@ -34,7 +34,15 @@ from app import research as research_mod
 from app import seen_before as seen_mod
 from app import targets as tg_mod
 from app import workflows as wf_mod
-from app.acl import Principal, deal_hidden, doc_visible, fact_visible, visible_doc_ids
+from app.acl import (
+    Principal,
+    deal_hidden,
+    doc_visible,
+    fact_visible,
+    hidden_deal_names,
+    visible_doc_ids,
+    visible_mnpi_deal_names,
+)
 from app.answer import answer_question
 from app.audit import log_event, verify_chain
 from app.auth import (
@@ -291,8 +299,11 @@ def admin_requeue(x_admin_token: Annotated[str | None, Header()] = None):
 
 def _own_doc(db: Session, who: Principal, doc_id: str) -> Document:
     doc = db.get(Document, doc_id)
-    if not doc_visible(doc, who):  # same 404 for "missing", "other tenant" and "behind a wall"
+    if not doc_visible(doc, who, hidden_deal_names(db, who)):  # same 404 for "missing", "other tenant", "behind a wall"
         raise HTTPException(404, "document not found")
+    if doc.deal and doc.deal in visible_mnpi_deal_names(db, who):
+        log_event(db, who.tenant, actor(who), "document.mnpi_access", {"doc_id": doc.id, "deal": doc.deal})
+        db.commit()
     return doc
 
 
@@ -330,8 +341,9 @@ def get_page(doc_id: str, number: int, db: Db, who: Who):
 
 @app.get("/documents")
 def list_documents(db: Db, who: Who):
+    hidden = hidden_deal_names(db, who)
     return [{"id": d.id, "filename": d.filename, "n_pages": d.n_pages, "deal": d.deal}
-            for d in db.query(Document).filter_by(tenant_id=who.tenant).all() if doc_visible(d, who)]
+            for d in db.query(Document).filter_by(tenant_id=who.tenant).all() if doc_visible(d, who, hidden)]
 
 
 class FactIn(BaseModel):
@@ -521,7 +533,7 @@ def dd_update(rid: int, body: DDUpdate, db: Db, who: Writer):
         raise HTTPException(422, f"status must be one of {STATUSES}")
     if body.document_id is not None:
         doc = db.get(Document, body.document_id)
-        if not doc_visible(doc, who):
+        if not doc_visible(doc, who, hidden_deal_names(db, who)):
             raise HTTPException(404, "document not found")
         if doc.deal != r.deal:
             raise HTTPException(422, "document belongs to a different deal")
@@ -587,7 +599,8 @@ def deal_create(body: DealIn, db: Db, who: Writer):
         raise HTTPException(422, "name required")
     if db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first():
         raise HTTPException(409, "deal already exists")
-    d = Deal(tenant_id=who.tenant, name=name, stage=body.stage, note=body.note, mnpi=body.mnpi, updated_at=_now_iso())
+    d = Deal(tenant_id=who.tenant, name=name, stage=body.stage, note=body.note, mnpi=body.mnpi,
+             created_by=who.key_id if body.mnpi else None, updated_at=_now_iso())
     db.add(d)
     db.commit()
     log_event(db, who.tenant, actor(who), "deal.create", {"name": name, "stage": d.stage})
@@ -597,16 +610,23 @@ def deal_create(body: DealIn, db: Db, who: Writer):
 @app.get("/deals")
 def deal_list(db: Db, who: Who):
     rows = db.query(Deal).filter_by(tenant_id=who.tenant).order_by(Deal.id).all()
-    return [_deal_out(db, who, d) for d in rows if _dd_scope_ok(who, d.name) and not deal_hidden(d.name, d.mnpi, who)]
+    shown = [d for d in rows if _dd_scope_ok(who, d.name) and not deal_hidden(d, who)]
+    mnpi_shown = [d.name for d in shown if d.mnpi]
+    if mnpi_shown:
+        log_event(db, who.tenant, actor(who), "deal.mnpi_access", {"deals": mnpi_shown, "via": "list"})
+        db.commit()
+    return [_deal_out(db, who, d) for d in shown]
 
 
 @app.patch("/deals/{name}")
 def deal_update(name: str, body: DealUpdate, db: Db, who: Writer):
     d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
-    if d is None or not _dd_scope_ok(who, name) or deal_hidden(name, d.mnpi, who):
+    if d is None or not _dd_scope_ok(who, name) or deal_hidden(d, who):
         raise HTTPException(404, "deal not found")
     if body.mnpi is not None:
         d.mnpi = body.mnpi
+        if body.mnpi and d.created_by is None:
+            d.created_by = who.key_id or None
     if body.stage is not None:
         if body.stage not in STAGES:
             raise HTTPException(422, f"stage must be one of {STAGES}")
@@ -624,7 +644,7 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Writer):
 @app.delete("/deals/{name}")
 def deal_delete(name: str, db: Db, who: Writer):
     d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
-    if d is None or not _dd_scope_ok(who, name) or deal_hidden(name, d.mnpi, who):
+    if d is None or not _dd_scope_ok(who, name) or deal_hidden(d, who):
         raise HTTPException(404, "deal not found")
     # Holds and linked documents are refused rather than cascaded: deleting evidence the team
     # still relies on is the one step here that cannot be walked back.
