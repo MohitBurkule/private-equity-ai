@@ -133,6 +133,9 @@ class IngestJob(Base):
     status: Mapped[str] = mapped_column(String(16), default="queued")  # queued|running|done|failed
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     stage: Mapped[str] = mapped_column(String(64), default="queued")
+    files_total: Mapped[int] = mapped_column(Integer, default=0)  # members of the archive being read
+    files_done: Mapped[int] = mapped_column(Integer, default=0)
+    current_file: Mapped[str | None] = mapped_column(String(512), default=None)
     error: Mapped[str | None] = mapped_column(Text, default=None)
     result: Mapped[str | None] = mapped_column(Text, default=None)  # JSON
     spool_path: Mapped[str] = mapped_column(String(512), default="")

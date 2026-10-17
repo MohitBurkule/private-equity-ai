@@ -6,6 +6,7 @@ import io
 import os
 import tempfile
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -252,7 +253,13 @@ def _looks_like_email(data: bytes) -> bool:
     return head.startswith((b"from:", b"received:", b"return-path:", b"mime-version:", b"date:")) and b"\nsubject:" in head
 
 
-def ingest_any(db: Session, tenant_id: str, data: bytes, filename: str, _depth: int = 0) -> IngestResult:
+# (files done, files in archive, member just started). Called for top-level archives only, so a job shows
+# progress through the files the user sent, not through nested attachments.
+ProgressFn = Callable[[int, int, str], None]
+
+
+def ingest_any(db: Session, tenant_id: str, data: bytes, filename: str, _depth: int = 0,
+               progress: ProgressFn | None = None) -> IngestResult:
     """Single entry for data-room uploads. Archives and emails expand into several documents whose
     names keep the folder path (`folder/sub/file.pdf`, `msg.eml/attachment.pdf`). Anything not
     ingested is reported in `skipped` with a reason."""
@@ -271,7 +278,7 @@ def ingest_any(db: Session, tenant_id: str, data: bytes, filename: str, _depth: 
                     p.write_bytes(data)
                     res.documents.append(ingest_xlsx(db, tenant_id, p, filename))
             elif kind == "archive":
-                _ingest_archive(db, tenant_id, data, filename, res, _depth)
+                _ingest_archive(db, tenant_id, data, filename, res, _depth, progress)
             else:
                 res.skipped.append({"name": filename, "reason": "corrupt zip file"})
         elif low.endswith(".eml") or _looks_like_email(data):
@@ -290,7 +297,7 @@ def ingest_any(db: Session, tenant_id: str, data: bytes, filename: str, _depth: 
 
 
 def _ingest_archive(db: Session, tenant_id: str, data: bytes, filename: str, res: IngestResult,
-                    depth: int) -> None:
+                    depth: int, progress: ProgressFn | None = None) -> None:
     if depth >= MAX_DEPTH:
         res.skipped.append({"name": filename, "reason": f"archive nested deeper than {MAX_DEPTH}"})
         return
@@ -302,8 +309,10 @@ def _ingest_archive(db: Session, tenant_id: str, data: bytes, filename: str, res
     if sum(i.file_size for i in infos) > MAX_ARCHIVE_BYTES:  # declared sizes; also bounded per read below
         res.skipped.append({"name": filename, "reason": "uncompressed size over limit (zip bomb guard)"})
         return
-    for info in infos:
+    for n, info in enumerate(infos):
         name = info.filename.lstrip("/")
+        if progress is not None and depth == 0:
+            progress(n, len(infos), name)
         if ".." in Path(name).parts:
             res.skipped.append({"name": name, "reason": "path escapes archive"})
             continue

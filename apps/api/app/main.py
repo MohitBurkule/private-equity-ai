@@ -311,6 +311,7 @@ def _job_out(j: IngestJob) -> dict:
     import json as _json
     return {"job_id": j.id, "filename": j.filename, "status": j.status, "stage": j.stage, "attempts": j.attempts,
             "error": j.error, "created_at": j.created_at, "updated_at": j.updated_at,
+            "progress": {"files_done": j.files_done, "files_total": j.files_total, "current_file": j.current_file},
             "result": _json.loads(j.result) if j.result else None}
 
 
