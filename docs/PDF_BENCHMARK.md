@@ -55,6 +55,13 @@ Harness: `evals/ocr_scan_accuracy.py`. Each filing in `data/sec` (10 digital PDF
 |---|---|---|---|---|---|
 | clean | 200 dpi | none | 96.9% | 98.8% | 23 / 29 |
 | degraded | 150 dpi | skew +/-0.8 deg, Gaussian noise sigma 8, JPEG q40 | 83.1% | 85.9% | 4 / 29 |
+| degraded, vote | 150 dpi | as above; a number counts only if RapidOCR and Tesseract both read it | 75.2% | 98.4% | not measured |
+
+Vote: 1,381 numbers that only one engine read go to the review queue as `disputed` and are not counted as recall. Precision rises from 85.9% to 98.4%; recall falls by about 8 points. Vote is the chosen degraded path because a wrong figure costs more than a missed one, and missed figures stay visible in review.
+
+Preprocessing tried and dropped: deskew (minAreaRect), denoise (non-local means), Otsu binarise, 2x upscale on the degraded render. Degraded recall fell to 78.1% and precision to 81.0%, so it was removed from the harness.
+
+Ambiguous tokens: a token like `3.071` could be a decimal or a thousands separator. Unless the page has comma-thousands numbers, these are counted apart from scored recall (9 in the degraded run) and never guessed.
 
 Clean recall by filing: Adobe 100%, Netflix 99.2%, 3M 98.9%, Apple 98.4%, Pfizer 98.3%, Best Buy 98.1%, AMD 96.9%, Amcor 95.6%, Boeing 90.0%, Costco 88.6%.
 
@@ -67,8 +74,8 @@ Degraded recall by filing: Adobe 91.2%, AMD 90.3%, Best Buy 89.2%, 3M 88.9%, Amc
 
 **Fixes implied, not yet made**
 
-1. Normaliser: treat `d{1,3}([.,]ddd)+` as a thousands-grouped integer on both sides. This should lift the Costco number directly.
-2. Table cells: check for stray punctuation such as `,.`, and read it as a separator before comparing.
-3. Degraded scans lose about 15 points of recall, so a real scan path needs deskew and denoise before OCR, and any figure from it stays `ocr_unverified`.
+1. Normaliser: `d.ddd` tokens are ambiguous. They are flagged for review unless the page's other numbers use comma thousands, and are never guessed as thousands groups.
+2. Table cells: check for stray punctuation such as `,.`, and read it as a separator before comparing. Not done yet.
+3. Degraded scans: vote between two engines, with disagreements sent to review. Preprocessing did not help and was dropped. Any figure from a scan stays `ocr_unverified`.
 
 **Verification guarantee.** OCR-sourced figures are stored with status `ocr_unverified` (`apps/api/app/facts.py`). Only a human `review_fact` call promotes them to `verified`. This is pinned by `tests/test_unverified_citations.py`. No OCR figure is auto-verified by the text-layer comparison.
