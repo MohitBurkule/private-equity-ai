@@ -58,3 +58,20 @@ def test_non_https_or_empty_feed_is_refused(monkeypatch):
         assert c.post("/market/tev-sync", json=empty, headers=h).status_code == 422
     finally:
         app.dependency_overrides.clear()
+
+
+def test_peer_ev_respects_document_scope():
+    from app.main import _peer_ev
+    app.dependency_overrides[m.get_market_fetch] = lambda: _feed([])
+    try:
+        h = new_tenant(c, "tev-scope")
+        body = {"entity": "SCOPED", "period": "LTM", "source": "capiq", "url": URL, "token": "tok"}
+        out = c.post("/market/tev-sync", json=body, headers=h).json()
+        doc_id = out["document_id"]
+        with m.SessionLocal() as db:
+            tenant = db.get(Fact, out["fact_id"]).tenant_id
+            assert _peer_ev(db, tenant, "SCOPED", None).id == out["fact_id"]
+            assert _peer_ev(db, tenant, "SCOPED", {doc_id}).id == out["fact_id"]
+            assert _peer_ev(db, tenant, "SCOPED", set()) is None
+    finally:
+        app.dependency_overrides.clear()
