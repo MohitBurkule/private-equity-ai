@@ -189,6 +189,9 @@ class DDQuestion(Base):
     document_id: Mapped[str | None] = mapped_column(ForeignKey("document.id"), default=None)
     asked_at: Mapped[str] = mapped_column(String(40), default="")
     answered_at: Mapped[str | None] = mapped_column(String(40), default=None)
+    # The citation for an answer: the page or block the answer came from, and the quote that is printed there.
+    page: Mapped[int | None] = mapped_column(Integer, default=None)
+    quote: Mapped[str | None] = mapped_column(Text, default=None)
 
 
 class ICDecision(Base):
