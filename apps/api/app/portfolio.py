@@ -39,8 +39,8 @@ class KpiObservation(Base):
     fact_id: Mapped[int] = mapped_column(ForeignKey("fact.id"), nullable=False)  # citation
     observed_at: Mapped[str] = mapped_column(String(40))
     superseded_by: Mapped[int | None] = mapped_column(Integer, default=None)
-    # "actual" or "budget". A budget figure is cited like an actual but never supersedes one, so both can stand
-    # for the same metric and period and be compared.
+    # "actual", "budget" or "mark". A budget or mark figure is cited like an actual but never supersedes one, so
+    # they can stand for the same metric and period and be compared.
     kind: Mapped[str] = mapped_column(String(16), default="actual", server_default="actual")
 
 
@@ -145,3 +145,15 @@ def budget_variance(actual: Decimal, budget: Decimal) -> tuple[Decimal, Decimal 
     there is no base to measure against."""
     diff = actual - budget
     return diff, (diff / abs(budget) * 100 if budget != 0 else None)
+
+
+MARK_METRIC = "equity_value"  # the holding's value, cited, at each period end
+
+
+def roll_forward(opening: Decimal | None, closing: Decimal | None, contributions: Decimal | None,
+                 distributions: Decimal | None) -> Decimal | None:
+    """Change in value over the period: closing mark, less opening mark, less the cash put in, plus the cash taken
+    out. None unless all four are present, so a gap never reads as a gain or a loss."""
+    if None in (opening, closing, contributions, distributions):
+        return None
+    return closing - opening - contributions + distributions
