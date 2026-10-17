@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
 from app.citations import numbers_in, quote_in_page
+from app.hybrid import default_index
 from app.llm import LLM
 from app.models import Document, PageRow
 from app.search import PageIndex, expand_query, tokenize
@@ -96,9 +97,10 @@ def answer_question(db: Session, tenant_id: str, llm: LLM, question: str,
     if scope is not None:
         q = q.filter(PageRow.document_id.in_(scope))
     rows = q.all()
-    index = PageIndex([(r.document_id, r.number, r.text) for r in rows])
+    pages = [(r.document_id, r.number, r.text) for r in rows]
     text = {(r.document_id, r.number): r.text for r in rows}
-    hits = index.search(question, k=k)
+    # Dense ranking always returns neighbours, so require a lexical term match before calling the model.
+    hits = default_index(pages).search(question, k=k) if PageIndex(pages).search(question, k=1) else []
     if not hits:
         return Answer("not_found", detail="no relevant pages")
     ctx = "\n".join(f'<document id="{h.doc_id}" page="{h.page}">\n{text[(h.doc_id, h.page)][:6000]}\n'

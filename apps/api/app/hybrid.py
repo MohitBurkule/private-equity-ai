@@ -7,8 +7,9 @@ they are not evaluated yet because model weights are not reachable from the buil
 """
 from __future__ import annotations
 
+import hashlib
 import math
-from collections import Counter
+from collections import Counter, OrderedDict
 from typing import Protocol
 
 from app.search import Hit, PageIndex, expand_query
@@ -72,6 +73,31 @@ class HybridIndex:
         lists = [self.bm25.search(query, depth, doc_ids)]
         lists += [r.search(query, depth, doc_ids) for r in self.rankers]
         return rrf(lists, k)
+
+
+_CACHE: OrderedDict[str, HybridIndex] = OrderedDict()  # dense embeddings are costly: reuse per page set
+
+
+def default_index(pages: list[tuple[str, int, str]]) -> HybridIndex:
+    """The retriever the product uses: BM25 + char-trigram + dense (bge-small) fused with RRF.
+
+    Falls back to the lexical pair when fastembed is not installed. The cross-encoder rerank is
+    not in the default: the eval showed it hurts recall@1/3/5 on the golden set.
+    """
+    key = hashlib.sha256(repr(pages).encode()).hexdigest()
+    if key in _CACHE:
+        _CACHE.move_to_end(key)
+        return _CACHE[key]
+    extra: list[Ranker] = []
+    if pages:
+        try:
+            extra.append(DenseRanker(pages))
+        except ImportError:  # the `dense` extra is not installed
+            pass
+    _CACHE[key] = HybridIndex(pages, extra)
+    while len(_CACHE) > 4:
+        _CACHE.popitem(last=False)
+    return _CACHE[key]
 
 
 class DenseRanker:
