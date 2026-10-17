@@ -63,3 +63,19 @@ def test_document_reads_are_in_the_audit_trail():
     c.get(f"/documents/{doc_id}/pages/1", headers=h)
     rows = c.get("/audit", params={"action": "document.read"}, headers=h).json()["items"]
     assert any(r["payload"]["doc_id"] == doc_id for r in rows)
+
+
+def test_outbound_helper_scrubs_only_when_the_flag_is_on(monkeypatch):
+    from types import SimpleNamespace
+
+    from app import main
+    d = Document()
+    d.add_paragraph("Reach ana@fund.com")
+    b = io.BytesIO()
+    d.save(b)
+    raw = b.getvalue()
+    who = SimpleNamespace(tenant="t")
+    monkeypatch.setattr(main.outbound, "pii_on", lambda db, tenant: False)
+    assert main._outbound(None, who, "docx", raw) == raw
+    monkeypatch.setattr(main.outbound, "pii_on", lambda db, tenant: True)
+    assert b"ana@fund.com" not in main._outbound(None, who, "docx", raw)
