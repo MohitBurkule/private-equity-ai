@@ -1351,9 +1351,17 @@ class WfDealIn(BaseModel):
     distributions: list[WfFlowIn] = Field(default_factory=list, max_length=500)
 
 
+class EscrowIn(BaseModel):
+    pct: Decimal = Field(ge=0, lt=1)
+    days: int = Field(ge=0, le=3650)
+    source: str = Field(min_length=1, max_length=512)
+
+
 class WaterfallIn(BaseModel):
     mode: str = Field(default="european", pattern="^(european|american)$")
     terms: TermsIn
+    escrow: EscrowIn | None = None  # american only: holdback on each deal distribution
+    clawback: bool = False  # american only: GP returns carry above carry owed on total fund profit
     contributions: list[WfFlowIn] = Field(default_factory=list, max_length=500)
     distributions: list[WfFlowIn] = Field(default_factory=list, max_length=500)
     deals: list[WfDealIn] = Field(default_factory=list, max_length=200)
@@ -1385,13 +1393,28 @@ def waterfall_lp(body: WaterfallIn, who: Writer, db: Db):
         else:
             if not body.deals:
                 raise ValueError("american needs deals")
-            deals = {d.name: (_wf_flows(d.contributions), _wf_flows(d.distributions)) for d in body.deals}
+            deals = {}
+            for d in body.deals:
+                dists = _wf_flows(d.distributions)
+                if body.escrow:
+                    dists, later = wf_lp_mod.hold_back(dists, wf_lp_mod.Escrow(
+                        body.escrow.pct, body.escrow.days, body.escrow.source))
+                    dists = dists + later
+                deals[d.name] = (_wf_flows(d.contributions), dists)
             results = wf_lp_mod.american(deals, terms)
             lp_totals = wf_lp_mod.Tiers()
             for r in results.values():
                 lp_totals.add(r.totals)
             res = {"mode": "american", "totals": _tiers_dict(lp_totals),
                    "deals": {n: {"totals": _tiers_dict(r.totals)} for n, r in results.items()}}
+            if body.clawback:
+                all_c = [f for d in body.deals for f in _wf_flows(d.contributions)]
+                all_d = [f for d in body.deals for f in _wf_flows(d.distributions)]
+                cb = wf_lp_mod.clawback(all_c, all_d, results, terms)
+                res["clawback"] = {"gp_received": str(cb.gp_received), "gp_owed": str(cb.target),
+                                   "returned_to_lps": str(cb.amount)}
+                lp_totals.to_lp_split += cb.amount  # returned to LPs; the GP gives it back
+                res["lp_total_after_clawback"] = str(lp_totals.lp())
         if body.commitments:
             amounts = {k: Decimal(v.value.replace(",", "")) for k, v in body.commitments.items()}
             shares = wf_lp_mod.per_lp(lp_totals, amounts)

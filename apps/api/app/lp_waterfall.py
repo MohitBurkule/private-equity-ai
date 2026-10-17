@@ -10,7 +10,7 @@ distribution exactly, to the cent; the rounding gap goes to the LP split. Per-LP
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 CENT = Decimal("0.01")
@@ -131,3 +131,42 @@ def per_lp(totals: Tiers, commitments: dict[str, Decimal]) -> dict[str, Decimal]
 def american(deals: dict[str, tuple[list[Flow], list[Flow]]], terms: Terms) -> dict[str, Result]:
     """Deal by deal: each deal's contributions and proceeds run through the tiers on their own."""
     return {name: run(c, d, terms) for name, (c, d) in deals.items()}
+
+
+@dataclass(frozen=True)
+class Escrow:
+    pct: Decimal  # share of each deal distribution held back, e.g. 0.10
+    days: int  # days the holdback waits before release
+    source: str  # the LPA clause that sets the holdback
+
+
+def hold_back(dists: list[Flow], escrow: Escrow) -> tuple[list[Flow], list[Flow]]:
+    """Splits each distribution into the part paid now and the holdback released after `days`. The holdback
+    runs through the tiers on its release date, as a distribution of its own."""
+    if not (0 <= escrow.pct < 1) or escrow.days < 0:
+        raise ValueError("escrow share must be below 1 and days not negative")
+    now: list[Flow] = []
+    later: list[Flow] = []
+    for d in dists:
+        held = (d.amount * escrow.pct).quantize(CENT, ROUND_HALF_UP)
+        now.append(Flow(d.on, d.amount - held, d.source))
+        if held:
+            later.append(Flow(d.on + timedelta(days=escrow.days), held, f"{d.source}; escrow ({escrow.source})"))
+    return now, later
+
+
+@dataclass
+class Clawback:
+    gp_received: Decimal  # carry paid to the GP across all deals
+    target: Decimal  # carry the GP is owed on the whole fund's profit
+    amount: Decimal  # excess the GP returns to LPs; carry tax is not modelled
+
+
+def clawback(contributions: list[Flow], distributions: list[Flow], results: dict[str, Result],
+             terms: Terms) -> Clawback:
+    """Deal-by-deal carry can overshoot the carry owed on the fund's total profit. The excess is clawed back.
+    Assumes the catch-up is complete at fund level, which holds once the fund profit exceeds the pref."""
+    received = sum((r.totals.gp() for r in results.values()), ZERO)
+    profit = sum((d.amount for d in distributions), ZERO) - sum((c.amount for c in contributions), ZERO)
+    owed = (terms.carry * profit).quantize(CENT, ROUND_HALF_UP) if profit > 0 else ZERO
+    return Clawback(received, owed, max(ZERO, received - owed))
