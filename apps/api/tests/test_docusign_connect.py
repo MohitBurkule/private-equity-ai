@@ -66,3 +66,12 @@ def test_nested_connect_json_moves_the_deal(monkeypatch):
                headers={"Content-Type": "application/json", "X-DocuSign-Signature-1": _sign(raw)})
     assert r.status_code == 200, r.text
     assert r.json()["envelope"] == "N1" and r.json()["changed"]["stage_after"] == "signed"
+
+
+def test_second_key_header_also_verifies(monkeypatch):
+    tid, _ = _setup(monkeypatch, "connect-key2")
+    raw = json.dumps({"envelopeId": "K2", "status": "completed", "emailSubject": "Atlas LOI"}).encode()
+    r = c.post(f"/webhooks/docusign?tenant={tid}", content=raw, headers={
+        "Content-Type": "application/json", "X-DocuSign-Signature-1": _sign(raw, "other-key"),
+        "X-DocuSign-Signature-2": _sign(raw)})
+    assert r.status_code == 200, r.text

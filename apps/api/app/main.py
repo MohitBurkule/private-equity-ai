@@ -3213,8 +3213,12 @@ async def docusign_connect(request: Request, tenant: str, db: Db):
     if not key:
         raise HTTPException(503, "DocuSign Connect is not configured")
     raw = await request.body()
+    # One header per HMAC key defined on the Connect config (X-DocuSign-Signature-1 .. -100); any one matching is
+    # enough. Source: https://www.docusign.com/blog/event-notifications-using-json-sim-and-hmac (header names, HMAC-SHA256
+    # over the body). The base64 encoding is not confirmed by that page; see docs/MOCKS.md.
     expected = base64.b64encode(hmac.new(key.encode(), raw, hashlib.sha256).digest()).decode()
-    if not hmac.compare_digest(request.headers.get("X-DocuSign-Signature-1", ""), expected):
+    sent = [v for n, v in ((n, request.headers.get(f"X-DocuSign-Signature-{n}")) for n in range(1, 101)) if v]
+    if not any(hmac.compare_digest(v, expected) for v in sent):
         raise HTTPException(401, "bad signature")
     if db.get(TenantRow, tenant) is None:
         raise HTTPException(404, "tenant not found")
