@@ -61,3 +61,13 @@ def test_non_solicit_years_become_months_and_may_come_first():
 def test_termination_fee_is_not_read_from_an_expense_cap():
     out = extract([(34, "fees and expenses shall not exceed $6,500,000 in the aggregate, the Termination Fee payable by Parent.")], "spa")
     assert [f for f in out["findings"] if f["term"] == "termination_fee"] == []
+
+
+def test_governing_law_reads_governed_and_interpreted_under_laws():
+    out = extract([(7, "This Agreement shall be governed and interpreted under the Laws of the State of New York.")], "nda")
+    assert [f["value"] for f in out["findings"] if f["term"] == "governing_law"] == ["New York"]
+
+
+def test_non_solicit_second_anniversary_is_24_months():
+    out = extract([(4, "Buyer shall not solicit any employee until the second (2nd) anniversary of the Closing Date.")], "spa")
+    assert [f["value"] for f in out["findings"] if f["term"] == "non_solicit_months"] == ["24"]
