@@ -112,7 +112,8 @@ from app.crunchbase import read_funding_rounds_numbered
 from app.db import make_engine, make_session_factory
 from app.dd import STATUSES, TEMPLATE
 from app.edgar import fetch_companyfacts
-from app.email_links import links_for
+from app.email_links import EMAIL_CONNECTORS, links_for
+from app.email_routing import unattached_emails
 from app.envelope_stage import advance, deal_for_subject, parse_connect
 from app.expert_calls import flags, parse
 from app.extract.rows import _ROWS as ROW_SCHEMAS
@@ -2003,6 +2004,39 @@ async def uk_psc_extract(file: Annotated[UploadFile, File()], who: Who, companie
 def email_links(db: Db, who: Who):
     """Emails this key can see, matched to deals by company name or website domain, each with its source link."""
     return {"links": links_for(db, who)}
+
+
+class EmailAttachIn(BaseModel):
+    deal: str = Field(min_length=1, max_length=128)
+
+
+@app.get("/email/review")
+def email_review(db: Db, who: Who):
+    """Ingested emails no deal matched, waiting for someone to attach them. Only unscoped keys see them."""
+    if who.deals is not None:
+        return {"emails": []}
+    return {"emails": unattached_emails(db, who.tenant)}
+
+
+@app.post("/email/review/{doc_id}/attach")
+def email_attach(doc_id: str, body: EmailAttachIn, db: Db, who: Writer):
+    """Attach one unattached email to a deal by hand. The deal must be one this key may write to, and not an MNPI
+    deal the key cannot see."""
+    _require(who, "write", "attach an email to a deal", deal=body.deal)
+    if who.deals is not None and body.deal not in who.deals:
+        raise HTTPException(403, "this key is not scoped to that deal")
+    d = db.query(Deal).filter_by(tenant_id=who.tenant, name=body.deal).first()
+    if d is None or deal_hidden(d, who):
+        raise HTTPException(404, "no such deal")
+    doc = db.query(Document).filter_by(tenant_id=who.tenant, id=doc_id).first()
+    is_email = db.query(DocumentSource).filter(DocumentSource.document_id == doc_id,
+                                               DocumentSource.connector.in_(EMAIL_CONNECTORS)).first()
+    if doc is None or doc.deal is not None or is_email is None:
+        raise HTTPException(404, "no unattached email with that id")
+    doc.deal = body.deal
+    log_event(db, who.tenant, actor(who), "email.attach", {"doc_id": doc_id, "deal": body.deal})
+    db.commit()
+    return {"document_id": doc_id, "deal": body.deal}
 
 
 @app.get("/facts.xlsx")
