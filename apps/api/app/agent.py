@@ -138,7 +138,7 @@ def _facts(ctx: Ctx, entity: str | None = None):
     if entity:
         q = q.filter(Fact.entity == entity)
     return [{"id": f.id, "entity": f.entity, "metric": f.metric, "period": f.period, "value": str(f.value),
-             "unit": f.unit, "sources": [{"doc_id": s.document_id, "page": s.page, "quote": s.quote} for s in f.sources]}
+             "unit": f.unit, "sources": [{"doc_id": s.document_id, "page": s.page, "section": s.section, "heading": s.heading, "quote": s.quote} for s in f.sources]}
             for f in q.order_by(Fact.id).limit(200)]
 
 

@@ -81,3 +81,13 @@ def verify_number(claimed: Decimal, span_text: str, scale: Decimal = Decimal(1),
         if v > 0 and claimed < 0 and _LOSS_CUE.search(span_text):
             return True
     return False
+
+
+def locator_label(page: int, section: str | None = None, heading: str | None = None) -> str:
+    """How a citation is shown to a reader. PDFs have pages. HTML filings have none, so they are labelled by
+    section and heading; page 0 is a storage sentinel and must never reach a reader."""
+    if page:
+        return f"p.{page}"
+    if section:
+        return f"§{section}" + (f" {heading}" if heading else "")
+    return "HTML filing"

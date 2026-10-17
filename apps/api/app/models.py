@@ -98,6 +98,7 @@ class FactSource(Base):
     page: Mapped[int] = mapped_column(Integer, nullable=False)
     quote: Mapped[str] = mapped_column(Text, nullable=False)
     section: Mapped[str | None] = mapped_column(String(32), default=None)
+    heading: Mapped[str | None] = mapped_column(String(256), default=None)
     anchor: Mapped[str | None] = mapped_column(String(128), default=None)
     offset: Mapped[int | None] = mapped_column(Integer, default=None)
     fact: Mapped[Fact] = relationship(back_populates="sources")
