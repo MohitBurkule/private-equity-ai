@@ -2,7 +2,8 @@
 system), reduced to revenue and net income per month and rendered into the 'Monthly' workbook template
 (app/accounting.py). The sync stores a normal workbook, so the cited-fact reader works on it unchanged.
 
-opts: base_url (https, required), company (required), periods (comma list of YYYY-MM, required).
+opts: base_url (https, required), company (required), periods (comma list of YYYY-MM, required),
+portfolio_company_id (required: the portfolio company these figures belong to; its covenants are tested on them).
 Token is a bearer token, used per request, never stored. The API shape is SYNTHETIC until a real ledger's docs
 are in hand:
   GET {base_url}/v1/companies/{company}/trial-balance?period=YYYY-MM
@@ -50,6 +51,8 @@ class PortcoAccounting(Connector):
         periods = [p.strip() for p in self.opts.get("periods", "").split(",") if p.strip()]
         if not base.startswith("https://") or not company or not periods:
             raise ConnectorError("opts.base_url (https), opts.company and opts.periods are required")
+        if not self.opts.get("portfolio_company_id", "").isdigit():
+            raise ConnectorError("opts.portfolio_company_id is required: map the ledger to one portfolio company")
         if any(not _PERIOD.fullmatch(p) for p in periods):
             raise ConnectorError("opts.periods must be YYYY-MM months")
         headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json"}

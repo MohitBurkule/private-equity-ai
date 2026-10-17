@@ -27,7 +27,8 @@ ROUTES = {f"{BASE}/v1/companies/ACME/trial-balance?period={p}": v for p, v in TB
 
 def _sync(h, monkeypatch):
     monkeypatch.setattr(m, "CONNECTOR_HTTP", fake({k: json.dumps(v).encode() for k, v in ROUTES.items()}))
-    body = {"token": "tok", "deal": "acme", "options": {"base_url": BASE, "company": "ACME", "periods": "2026-08,2026-09"}}
+    co = c.post("/portfolio/companies", json={"name": "ACME"}, headers=h).json()["id"]
+    body = {"token": "tok", "deal": "acme", "options": {"base_url": BASE, "company": "ACME", "periods": "2026-08,2026-09", "portfolio_company_id": str(co)}}
     return c.post("/connectors/accounting/sync", json=body, headers=h)
 
 

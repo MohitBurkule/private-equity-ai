@@ -33,10 +33,21 @@ def test_monthly_loss_breaches_a_minimum_net_income_covenant(monkeypatch):
 
     monkeypatch.setattr(m, "CONNECTOR_HTTP", fake(ROUTES))
     body = {"token": "tok", "deal": "ACME", "options": {"base_url": BASE, "company": "ACME",
-                                                        "periods": "2026-08,2026-09"}}
+                                                        "periods": "2026-08,2026-09",
+                                                        "portfolio_company_id": str(co)}}
     assert c.post("/connectors/accounting/sync", json=body, headers=h).status_code == 200
 
     alerts = c.post("/alerts/scan", headers=h).json()["created"]
     breaches = [a for a in alerts if a["kind"] == "covenant"]
     assert len(breaches) == 1, alerts
     assert "2026-09" in breaches[0]["detail"] and "-300" in breaches[0]["detail"]
+
+
+def test_unmapped_ledger_is_refused_and_stores_nothing(monkeypatch):
+    h = new_tenant(c, "monthly-unmapped")
+    c.post("/portfolio/companies", json={"name": "ACME"}, headers=h)
+    monkeypatch.setattr(m, "CONNECTOR_HTTP", fake(ROUTES))
+    body = {"token": "tok", "options": {"base_url": BASE, "company": "ACME", "periods": "2026-08"}}
+    r = c.post("/connectors/accounting/sync", json=body, headers=h)
+    assert r.status_code == 502 and "portfolio_company_id" in r.text
+    assert c.get("/documents", headers=h).json() == []

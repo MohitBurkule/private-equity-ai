@@ -102,7 +102,7 @@ from app.db import make_engine, make_session_factory
 from app.dd import STATUSES, TEMPLATE
 from app.edgar import fetch_companyfacts
 from app.email_links import links_for
-from app.envelope_stage import advance, deal_for_subject
+from app.envelope_stage import advance, deal_for_subject, parse_connect
 from app.expert_calls import flags, parse
 from app.extract.rows import _ROWS as ROW_SCHEMAS
 from app.extract.rows import extract_rows
@@ -3210,10 +3210,12 @@ async def docusign_connect(request: Request, tenant: str, db: Db):
         raise HTTPException(404, "tenant not found")
     bind_tenant(db, tenant)  # no bearer token on this route: the signature is the only credential
     try:
-        payload = json.loads(raw)
-        envelope_id, status, subject = (str(payload[k]) for k in ("envelopeId", "status", "emailSubject"))
-    except (ValueError, KeyError, TypeError) as e:
-        raise HTTPException(422, "envelopeId, status and emailSubject are required") from e
+        parsed = parse_connect(json.loads(raw))
+    except ValueError as e:
+        raise HTTPException(422, "body is not JSON") from e
+    if parsed is None:
+        raise HTTPException(422, "envelopeId, status and emailSubject are required")
+    envelope_id, status, subject = parsed
     deal = deal_for_subject(db, tenant, subject)
     changed = None
     if deal is not None:

@@ -55,3 +55,14 @@ def test_unconfigured_key_and_unknown_tenant_are_refused(monkeypatch):
                  sig="").status_code == 503
     monkeypatch.setenv("DOCUSIGN_CONNECT_HMAC_KEY", KEY)
     assert _post("nope", {"envelopeId": "C3", "status": "completed", "emailSubject": "x"}).status_code == 404
+
+
+def test_nested_connect_json_moves_the_deal(monkeypatch):
+    tid, _ = _setup(monkeypatch, "connect-nested")
+    raw = json.dumps({"event": "envelope-completed", "apiVersion": "v2.1", "data": {
+        "accountId": "ACC1", "envelopeId": "N1", "envelopeSummary": {
+            "status": "completed", "emailSubject": "Atlas LOI"}}}).encode()
+    r = c.post(f"/webhooks/docusign?tenant={tid}", content=raw,
+               headers={"Content-Type": "application/json", "X-DocuSign-Signature-1": _sign(raw)})
+    assert r.status_code == 200, r.text
+    assert r.json()["envelope"] == "N1" and r.json()["changed"]["stage_after"] == "signed"

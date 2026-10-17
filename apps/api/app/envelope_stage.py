@@ -23,3 +23,18 @@ def deal_for_subject(db: Session, tenant_id: str, subject: str) -> Deal | None:
     matches = [d for d in db.query(Deal).filter_by(tenant_id=tenant_id)
                if subject == d.name or subject.startswith(d.name + " ")]
     return max(matches, key=lambda d: len(d.name), default=None)
+
+
+def parse_connect(payload: object) -> tuple[str, str, str] | None:
+    """(envelopeId, status, emailSubject) from a DocuSign Connect JSON event. The documented shape nests them under
+    data and data.envelopeSummary; a flat body with the same keys is accepted too. None when any is missing."""
+    if not isinstance(payload, dict):
+        return None
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    summary = data.get("envelopeSummary") if isinstance(data.get("envelopeSummary"), dict) else {}
+    found = (data.get("envelopeId", payload.get("envelopeId")),
+             summary.get("status", payload.get("status")),
+             summary.get("emailSubject", payload.get("emailSubject")))
+    if any(v is None for v in found):
+        return None
+    return tuple(str(v) for v in found)  # type: ignore[return-value]

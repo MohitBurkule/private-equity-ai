@@ -52,7 +52,8 @@ def _pull(db: Session, who, conn: Connector, deal: str | None, limit: int, run_i
                                   external_id=it.external_id, version=it.version, url=it.url, sync_run_id=run_id))
             out["ingested"].append({"document_id": d.id, "filename": d.filename, "source_url": it.url})
             # fund-admin workbooks and capital-call notices become cited facts on arrival; other files yield none
-            fund_admin_facts_mod.extract_facts(db, who.tenant, d, d.deal or d.filename)
+            fund_admin_facts_mod.extract_facts(db, who.tenant, d, d.deal or d.filename,
+                                               company_id=_mapped_company(conn))
         db.commit()
     if out["ingested"]:
         _alert_new_documents(db, who.tenant, conn.name, deal, out["ingested"])
@@ -60,6 +61,12 @@ def _pull(db: Session, who, conn: Connector, deal: str | None, limit: int, run_i
     if isinstance(conn, CalendarConnector):
         record_events(db, who.tenant, conn.name, conn.last_events)
     return out
+
+
+def _mapped_company(conn: Connector) -> int | None:
+    """The portfolio company a connector's figures belong to, from its explicit portfolio_company_id option."""
+    raw = conn.opts.get("portfolio_company_id", "")
+    return int(raw) if raw.isdigit() else None
 
 
 def _now() -> str:

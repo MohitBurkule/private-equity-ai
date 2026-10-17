@@ -31,7 +31,8 @@ def test_ledger_sync_through_wiremock_is_cited(wm, monkeypatch):
                                             {"name": "Staff", "type": "expense", "amount_usd": exp}]}))
     monkeypatch.setattr(m, "CONNECTOR_HTTP", rewrite_http({BASE + "/": wm.base + "/synthetic/"}))
     h = new_tenant(c, "accounting-wm")
-    body = {"token": "tok", "deal": "acme", "options": {"base_url": BASE, "company": "ACME", "periods": "2026-08,2026-09"}}
+    co = c.post("/portfolio/companies", json={"name": "ACME"}, headers=h).json()["id"]
+    body = {"token": "tok", "deal": "acme", "options": {"base_url": BASE, "company": "ACME", "periods": "2026-08,2026-09", "portfolio_company_id": str(co)}}
     out = c.post("/connectors/accounting/sync", json=body, headers=h).json()
     (d,) = out["ingested"]
     assert c.get(f"/documents/{d['document_id']}/source", headers=h).json()["connector"] == "accounting"
