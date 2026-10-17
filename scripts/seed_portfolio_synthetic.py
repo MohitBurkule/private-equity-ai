@@ -42,8 +42,8 @@ def pack_pdf(path: str) -> None:
     for line in PACK_LINES:
         c.drawString(72, y, line)
         y -= 24
-    # A wide row: the label and figure sit far apart, so plain text splits them but layout text keeps the row.
-    # The fact cut from it is stored as unverified, for the review queue.
+    # A wide row: the label and figure sit far apart on one baseline. The text layer keeps them on one line,
+    # so the fact cut from it is verified on the text layer.
     c.drawString(72, y, WIDE_ROW[0])
     c.drawString(450, y, WIDE_ROW[1])
     c.save()
@@ -88,7 +88,7 @@ FIGURES = [
     ("equity_value", "2024", 310, "GAAP", "Equity value 2024 310.0", "mark"),
     ("equity_value", "2025", 330, "GAAP", "Equity value 2025 330.0", "mark"),
 ]
-# Layout-only: the quote matches only layout text, so /facts stores it unverified and it waits in the review queue.
+# Wide row: the quote matches the text layer, so /facts stores it verified (no layout fallback needed).
 LAYOUT_ONLY = ("revenue", "2026", 430, "forecast", "Revenue forecast 2026 430.0")
 
 doc = upload_pack()
@@ -112,7 +112,7 @@ metric, period, value, basis, quote = LAYOUT_ONLY
 s, fact = call("POST", "/facts", {"entity": HOLDING, "metric": metric, "period": period, "value": str(value * M),
                                    "unit": "USD", "document_id": doc, "page": 1, "quote": quote,
                                    "scale": str(M), "basis": basis})
-print("layout-only fact:", fact.get("status") if s == 201 else fact)
+print("wide-row fact:", fact.get("status") if s == 201 else fact)
 
 s, _ = call("POST", "/targets", [{"name": TARGET, "source": "manual", "source_ref": "SYNTH-001",
                                   "sector": "Industrials", "country": "GB"}])
