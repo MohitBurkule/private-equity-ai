@@ -39,9 +39,8 @@ for _ in $(seq 1 30); do curl -sf "localhost:$API_PORT/health" >/dev/null && bre
 curl -sf "localhost:$API_PORT/health" >/dev/null || { echo "API did not start, see $DEMO_DIR/api.log"; exit 1; }
 
 # Fetch the public filings when they are not local yet. Without a User-Agent the fetch is skipped, not faked.
-if [ ! -f "$DATA_DIR/filings/3M_2019_10K.htm" ]; then
-  python3 scripts/fetch_demo_filings.py "$DATA_DIR" || echo "EDGAR filings not fetched; the UI starts empty."
-fi
+# Cached files are checked by hash, so running this every time only downloads what is missing.
+python3 scripts/fetch_demo_filings.py "$DATA_DIR" || echo "EDGAR filings not fetched; the UI starts empty."
 
 if [ -f "$DATA_DIR/filings/3M_2019_10K.htm" ]; then
   SEED=$(python3 scripts/seed_ixbrl_facts.py "http://localhost:$API_PORT" "$ADMIN_TOKEN" "$DATA_DIR")

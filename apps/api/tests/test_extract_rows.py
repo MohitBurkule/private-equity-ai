@@ -77,3 +77,31 @@ def test_unknown_schema_is_refused():
     finally:
         app.dependency_overrides.pop(llm_dependency)
     assert r.status_code == 422
+
+
+def test_customer_concentration_rows_keep_their_own_period():
+    h = new_tenant(c, "rows4")
+    doc = upload(h, {"A1": "Acme Corp", "B1": "12.5%", "C1": "FY23"})
+    good = {"page": 1, "quote": "Sheet!B1: 12.5% | row: Acme Corp",
+            "fields": {"customer": "Acme Corp", "period": "FY24", "revenue_pct": 12.5}}
+    over = {"page": 1, "quote": "Sheet!B1: 12.5% | row: Acme Corp",
+            "fields": {"customer": "Acme Corp", "period": "FY24", "revenue_pct": 140}}
+    out = run(h, doc, "customer_concentration", [good, over])
+    assert [r["status"] for r in out["rows"]] == ["accepted", "rejected"]
+    facts = c.get("/facts", headers=h).json()
+    pct = [f for f in facts if f["metric"] == "revenue_pct"]
+    assert len(pct) == 1 and pct[0]["period"] == "FY24" and pct[0]["entity"] == "Acme Corp"
+
+
+def test_ebitda_bridge_rows_keep_each_line_as_stated():
+    h = new_tenant(c, "rows5")
+    doc = upload(h, {"A1": "Reported EBITDA", "B1": 100, "C1": "FY24"})
+    rep = {"page": 1, "quote": "Sheet!B1: 100 | row: Reported EBITDA",
+           "fields": {"period": "FY24", "item": "Reported EBITDA", "kind": "reported", "amount": 100}}
+    bad = {"page": 1, "quote": "Sheet!B1: 100 | row: Reported EBITDA",
+           "fields": {"period": "FY24", "item": "Restructuring", "kind": "add_back", "amount": 7}}
+    out = run(h, doc, "ebitda_bridge", [rep, bad])
+    assert [r["status"] for r in out["rows"]] == ["accepted", "rejected"]
+    assert "not printed" in out["rows"][1]["reason"]
+    facts = c.get("/facts", headers=h).json()
+    assert [f["metric"] for f in facts if f["metric"].startswith("ebitda_bridge")] == ["ebitda_bridge reported"]

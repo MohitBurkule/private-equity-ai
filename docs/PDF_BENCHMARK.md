@@ -95,3 +95,12 @@ Harness: `evals/pdf_benchmark.py`, 31 golden PDF items (13 from `golden_v1`, 18 
 The `golden_v1` subset scores 13/13 for every engine, so the gap is in the sh01 forms (router 14/18 rows, Docling 13/18).
 
 Decision: keep the router. Docling does not win on row pairing and costs about 9x the time per page. Not adopted. Docling stays available as an engine in `apps/api/app/parse/engines.py`.
+
+## SH01 router misses (golden_sh01)
+
+Harness fix: a golden quote joins two cells with ` ... `, which sit on separate lines of the same form. The harness now scores each side as its own part, so `s02` p1 `Number allotted 53819 ... Amount paid: 7.41` no longer needs both numbers on one line. Router row integrity moves from 27/31 to 28/31.
+
+Left as misses, not fixed:
+- `s02` p1 (monzo_20250303): `Totals 11,234,414` is not in the router's OCR text for that page. OCR limit on a scanned form.
+- `s03` p1 (monzo_20240330 SH02): the date `14/03/2024` is not in the OCR text of that scan. OCR limit.
+- `s08` p10 (revolut_20210519): `£1,000,000` is read as `E1,000,000`. The router flags OCR glyph faults like this and never rewrites them, by policy (`data/uk/sh01/README.md`). Deliberate miss.

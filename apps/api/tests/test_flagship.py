@@ -1,9 +1,9 @@
 from decimal import Decimal
 
-from app.flagship import lbo_inputs, lbo_step
-from app.main import app
 from fastapi.testclient import TestClient
 
+from app.flagship import lbo_inputs, lbo_step
+from app.main import app
 from tests.helpers import new_tenant
 
 c = TestClient(app)
@@ -131,7 +131,7 @@ VERIFYME = ("This Amendment, and all claims or causes of action based upon, aris
 def test_governing_law_anchors_on_the_clause_and_returns_the_named_law():
     from app import legal
     out = legal.extract([(1, "Notices shall go to Austin, Texas. " + VERIFYME)], "spa")
-    assert [f["value"] for f in out["findings"] if f["term"] == "governing_law"][0] == "Delaware"
+    assert next(f["value"] for f in out["findings"] if f["term"] == "governing_law") == "Delaware"
     bare = legal.extract([(1, "The Company is organised in the Cayman Islands and its office is in Texas.")], "spa")
     assert "governing_law" in bare["absent"]
 
@@ -148,11 +148,35 @@ def test_reader_flags_a_rule_model_disagreement_for_review_without_picking():
     pages = [(1, VERIFYME)]
     rule = [{"term": "governing_law", "value": "Cayman Islands"}]
     out = legal_reader.read(pages, "spa", [], Local(
-        ['{"quote": "This Amendment, and all claims or causes of action based upon, arising out of, or related to the '
+        [('{"quote": "This Amendment, and all claims or causes of action based upon, arising out of, or related to the '
          'Agreement or the transactions contemplated hereby, shall be governed by, and construed in accordance with, the '
-         'Laws of the State of Delaware, without giving effect to principles or rules of conflict of laws.", "page": 1}']),
-        found=rule)
+         'Laws of the State of Delaware, without giving effect to principles or rules of conflict of laws.", "page": 1}')]), found=rule)
     assert out["findings"] == []
     assert out["review"][0]["status"] == "conflict"
     assert out["review"][0]["rule_value"] == "Cayman Islands" and out["review"][0]["model_value"] == "Delaware"
     assert legal.TERMS["governing_law"]["doc"]
+
+
+def test_legal_model_reader_positive_case_from_a_real_merger_exhibit():
+    """VerifyMe EX-2.1 (2026-08-12): governing law is written 'shall be governed by, and construed in accordance with,
+    the Laws of the State of Delaware'. The reader keeps the real quote and rejects a quote the page does not contain."""
+    from app import legal, legal_reader
+
+    class Local:
+        def __init__(self, replies):
+            self.replies = list(replies)
+
+        def complete(self, system, prompt):
+            return self.replies.pop(0)
+    sentence = ("This Amendment, and all claims or causes of action based upon, arising out of, or related to the Agreement "
+                "or the transactions contemplated hereby, shall be governed by, and construed in accordance with, the Laws "
+                "of the State of Delaware, without giving effect to principles or rules of conflict of laws.")
+    pages = [(1, "5. Governing Law. " + sentence)]
+    assert [f["value"] for f in legal.extract(pages, "spa")["findings"] if f["term"] == "governing_law"] == ["Delaware"]
+    real = legal_reader.read(pages, "spa", ["governing_law"], Local(
+        ['{"quote": "' + sentence + '", "page": 1}']))
+    assert [f["term"] for f in real["findings"]] == ["governing_law"]
+    assert real["findings"][0]["value"] == "Delaware"
+    fake = legal_reader.read(pages, "spa", ["governing_law"], Local(
+        ['{"quote": "This Agreement is governed by the laws of the State of New York.", "page": 1}']))
+    assert fake["findings"] == [] and fake["dropped"][0]["reason"] == "quote is not on the cited page"

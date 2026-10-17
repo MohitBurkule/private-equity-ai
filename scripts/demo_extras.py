@@ -4,6 +4,7 @@
 
 1. Term Loan A covenant terms from the XPO exhibit in DATA_DIR/filings (skipped if the file is absent).
 2. An LBO run with derived EBITDA and labelled assumptions, saved as a run in the app (lbo_run.json has the row).
+2b. The one-click flagship run on the XPO FY2025 10-K (flagship_run.json) and its legal step on Amendment No. 11.
 3. One candidate watch run over a cached, dated EDGAR result (data/demo/cache). The firm screening rule is
    SYNTHETIC demo text, uploaded as its own document and labelled as such; it is not a real firm's rule.
 Nothing personal is written. Re-running adds nothing new (facts and alerts are deduplicated).
@@ -63,6 +64,36 @@ request = {"inputs": inputs, "entry_multiples": AXIS, "exit_multiples": AXIS}
 saved = call("POST", "/lbo/runs", {"name": "3M base case (demo assumptions)", "request": request})
 (DEMO / "lbo_run.json").write_text(json.dumps(saved, indent=1))
 print("lbo run:", {k: saved.get(k) for k in ("name", "moic", "irr", "error")})
+
+# 2b. One-click flagship on the XPO FY2025 10-K: tagged facts, comps, precedents, LBO, memo. Each step reports its
+#     own status. Legal reads the Amendment No. 11 exhibit in a second call, since one flagship call reads one document.
+LBO_ASSUMPTIONS = {
+    "entry_multiple": ("12", "illustrative entry multiple of EBITDA"),
+    "exit_multiple": ("12", "exit at entry multiple"),
+    "leverage": ("5", "illustrative leverage, x EBITDA"),
+    "interest_rate": ("0.08", "illustrative cost of debt"),
+    "tax_rate": ("0.21", "US federal statutory rate"),
+    "cash_conversion": ("0.7", "illustrative FCF / EBITDA"),
+    "fees_pct": ("0.02", "illustrative deal fees"),
+    "years": ("5", "holding period"),
+}
+flag_lbo = {k: {"value": v, "assumption": why} for k, (v, why) in LBO_ASSUMPTIONS.items()}
+tenk = DATA / "filings" / "XPO_10-K_FY2025.htm"
+amend = DATA / "filings" / "XPO_Ex10-1_CreditAgreementAmend11_2026-05.htm"
+if tenk.exists():
+    base = {"entity": "XPO", "extract": True, "sic": "4213", "cik": "1166003", "peers_pages": 1,
+            "precedents": {"since": "2025-10-17", "until": "2026-10-16", "limit": 3}, "lbo": {"inputs": flag_lbo}}
+    doc = upload(tenk, "text/html")
+    flag = call("POST", "/flagship/run", {**base, "document_id": doc["id"]})
+    (DEMO / "flagship_run.json").write_text(json.dumps(flag, indent=1))
+    print("flagship:", {s["step"]: s["status"] for s in flag.get("steps", [])} or flag)
+    if amend.exists():
+        legal_doc = upload(amend, "text/html")
+        legal = call("POST", "/flagship/run", {"entity": "XPO", "document_id": legal_doc["id"], "legal_doc_type": "credit"})
+        (DEMO / "flagship_legal.json").write_text(json.dumps(legal, indent=1))
+        print("flagship legal:", {s["step"]: s["status"] for s in legal.get("steps", [])} or legal)
+else:
+    print("flagship: XPO 10-K not in DATA_DIR, skipped")
 
 # 3. Candidate watch over the cached EDGAR result, with a synthetic firm rule
 from sqlalchemy import select  # noqa: E402

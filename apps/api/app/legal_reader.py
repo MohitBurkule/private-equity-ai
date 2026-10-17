@@ -20,6 +20,12 @@ KEYWORDS = {
     "min_interest_coverage": ("interest coverage",),
     "margin": ("margin", "applicable rate"),
     "maturity": ("maturity", "matures"),
+    "non_solicit_months": ("solicit",),
+    "non_compete_months": ("non-compet", "noncompet", "non compet"),
+    "purchase_price": ("purchase price",),
+    "escrow": ("escrow",),
+    "indemnity_cap": ("cap", "indemnif"),
+    "basket": ("basket", "deductible"),
 }
 MAX_SENTENCES = 12
 SYSTEM = ("You read one legal document excerpt. Copy one sentence, exactly as written, that states the term named. "

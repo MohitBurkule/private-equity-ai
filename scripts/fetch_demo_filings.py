@@ -20,6 +20,10 @@ FILES = [
      "https://www.sec.gov/Archives/edgar/data/66740/000155837020000581/mmm-20191231x10k62bf35.htm"),
     ("XPO_Ex10-2_TermLoanA_Agreement_2026-06.htm",
      "https://www.sec.gov/Archives/edgar/data/1166003/000110465926068522/tm2616097d1_ex10-2.htm"),
+    ("XPO_10-K_FY2025.htm",
+     "https://www.sec.gov/Archives/edgar/data/1166003/000116600326000016/xpo-20251231.htm"),
+    ("XPO_Ex10-1_CreditAgreementAmend11_2026-05.htm",
+     "https://www.sec.gov/Archives/edgar/data/1166003/000110465926068522/tm2616097d1_ex10-1.htm"),
 ]
 
 

@@ -64,6 +64,14 @@ export interface LboRequest {
   inputs: Record<string, { fact_id: number } | { derived: { formula: string; entity: string; period: string } } | { value: string; assumption: Omit<LboAssumption, "value"> }>;
   entry_multiples?: string[]; exit_multiples?: string[];
 }
+export interface FlagshipStep { step: string; status: "ok" | "skipped" | "failed"; reason: string; result: Record<string, unknown> }
+export interface FlagshipResult { document_id: string; steps: FlagshipStep[] }
+export interface FlagshipBody {
+  document_id: string; entity: string; extract: boolean; sic?: string; cik?: string; peers_pages?: number;
+  precedents?: { since: string; until: string; limit: number }; legal_doc_type?: "nda" | "spa" | "credit" | null;
+  lbo: { inputs: Record<string, { value: string; assumption: string }> };
+}
+
 export interface LboRunRow {
   id: number; name: string; created_at: string; created_by: string;
   moic: string; irr: string | null; entry_ev: string; exit_equity: string;
@@ -181,6 +189,10 @@ export const api2 = {
     call<SearchOut>("/targets/search/edgar", "POST", body),
   searchCompaniesHouse: (body: { query: string; limit?: number }) => call<SearchOut>("/targets/search/companies-house", "POST", body),
   lboReturns: (body: LboRequest) => call<LboResult>("/lbo/returns", "POST", body),
+  flagship: (body: FlagshipBody) => call<FlagshipResult>("/flagship/run", "POST", body),
+  // A plain link would not send the key, so the memo is fetched with it and saved from a blob.
+  memoBlob: (entity: string) => fetch(`/api/memo.pptx?entity=${encodeURIComponent(entity)}`, { headers: auth() })
+    .then((r) => { if (!r.ok) throw new Error(`memo: ${r.status}`); return r.blob(); }),
   lboRuns: () => call<LboRunRow[]>("/lbo/runs"),
   lboRun: (id: number) => call<LboRunDetail>(`/lbo/runs/${id}`),
   lboSave: (name: string, request: LboRequest) => call<LboRunRow>("/lbo/runs", "POST", { name, request }),

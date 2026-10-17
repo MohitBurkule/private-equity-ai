@@ -11,7 +11,7 @@ import re
 from decimal import Decimal
 
 _SENT = re.compile(r"(?<=[.;])\s+(?=[A-Z(\d“\"])")
-_FACILITY = re.compile(r"\b(Term Loan [A-Z]|Term Loan|Revolving (?:Credit )?(?:Facility|Loans?)|Revolver)\b")
+_FACILITY = re.compile(r"\b(Term Loan [A-Z](?:-\d)?|Term B-\d(?: Loans?)?|Term Loan|Revolving (?:Credit )?(?:Facility|Loans?)|Revolver)\b")
 _AMOUNT = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})+(?:\.\d+)?)")
 _CUE = re.compile(r"principal amount|Commitment", re.IGNORECASE)
 _MATURITY = re.compile(r"Maturity Date[^.]{0,80}?(\w+ years? after the Closing Date|\d{4})", re.IGNORECASE)
@@ -34,6 +34,31 @@ def extract(pages: list[tuple[int, str]]) -> list[dict]:
                 "page": num,
                 "quote": s,
                 "maturity_terms": [m.group(1) for m in _MATURITY.finditer(s)],
+            })
+    return out
+
+
+# The debt note states the year-end principal of each floating facility in one sentence, in millions.
+_OUTSTANDING = re.compile(
+    r"As of ([A-Z][a-z]+ \d{1,2}, \d{4}), we had an aggregate principal amount outstanding of "
+    r"\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d+)?) (million|billion) on our ((?:Term Loan|Revolving Credit)[^.;,]{0,30}?)(?=[.;,]| is| was)"
+)
+_SCALE = {"million": 10**6, "billion": 10**9}
+
+
+def floating_principal(pages: list[tuple[int, str]]) -> list[dict]:
+    """Principal outstanding on a floating-rate facility at a stated date (SOFR or Base Rate pricing), cited to
+    its sentence. Amounts are full USD. Commitments and averages are not matched: only the outstanding sentence."""
+    out = []
+    for num, text in pages:
+        flat = re.sub(r"\s+", " ", text)
+        for m in _OUTSTANDING.finditer(flat):
+            out.append({
+                "facility": m.group(4).strip(),
+                "as_of": m.group(1),
+                "amount": int(Decimal(m.group(2).replace(",", "")) * _SCALE[m.group(3)]),
+                "page": num,
+                "quote": m.group(0),
             })
     return out
 
