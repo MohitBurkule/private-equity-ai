@@ -1,9 +1,11 @@
 """Outbound webhooks: tell a tenant's own systems when a document moves between deals.
 
-Each event is one HMAC-signed JSON POST per endpoint. A tenant webhook has no reader to check walls
-against, so it fails closed: if the event touches an MNPI deal, a document under a source access list,
-or a deal that is itself walled, nothing is sent. Payloads carry ids and deal names only, never document
-text, and free text goes through the tenant's PII redaction when that flag is on.
+A move writes its events to an outbox table in the same transaction, so a move and its notice are kept
+or lost together. A drainer posts due rows later, with backoff, and survives restarts because the outbox
+is durable. A tenant webhook has no reader to check walls against, so it fails closed, twice: when the
+event is queued and again when it is sent, since a deal may be flagged MNPI in between. Payloads carry
+ids and deal names only, never document text, and free text goes through the tenant's PII redaction when
+that flag is on.
 """
 from __future__ import annotations
 
@@ -14,26 +16,29 @@ import json
 import logging
 import os
 import secrets
+import threading
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session, sessionmaker
 
 from app import outbound
 from app.acl import Principal, acl_hidden_doc_ids
-from app.models import Deal, Document, WebhookEndpoint
+from app.audit import log_event
+from app.models import Deal, Document, Tenant, WebhookEndpoint, WebhookOutbox
 from app.rls import bind_tenant
 
 TIMEOUT_SECONDS = 5
-log = logging.getLogger("pe.webhooks")
-# Sends run off the request thread so a slow receiver never holds up a bulk move. The queue is in-process:
-# an event queued when the server stops is lost, which is the trade-off for not adding a broker.
-_pool = ThreadPoolExecutor(max_workers=int(os.environ.get("WEBHOOK_WORKERS", "2")), thread_name_prefix="webhook")
+MAX_ATTEMPTS = 8
+BACKOFF_SECONDS = 30  # doubles per attempt: 30 s, 1 min, 2 min, ... up to about 1 h 20 min before giving up
+DRAIN_BATCH = 50
 SIGNATURE_HEADER = "X-PE-Signature"
 RETRY_STATUS = {429, 502, 503, 504}
+log = logging.getLogger("pe.webhooks")
 
 Post = Callable[[str, bytes, dict[str, str]], int]
 
@@ -66,6 +71,10 @@ def sign(secret: str, body: bytes) -> str:
     return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
 
 
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
 def tenant_wide_safe(db: Session, tenant: str, doc_ids: list[str], deal_names: set[str]) -> bool:
     """True only when every document and deal in the event is open to any reader in the tenant."""
     known = {d.name: d.mnpi for d in db.query(Deal).filter(Deal.tenant_id == tenant, Deal.name.in_(deal_names)).all()}
@@ -90,6 +99,26 @@ def build_body(tenant: str, event: str, doc_ids: list[str], before: str | None, 
     return json.dumps(payload, sort_keys=True).encode()
 
 
+def queue(db: Session, tenant: str, event: str, doc_ids: list[str], before: str | None, after: str | None,
+          *, pii: bool) -> int:
+    """Write one outbox row per active endpoint. Call inside the transaction that made the move, so the
+    notice exists exactly when the move does. Returns the number queued; a withheld event is audited."""
+    endpoints = db.query(WebhookEndpoint).filter_by(tenant_id=tenant, active=True).all()
+    if not endpoints:
+        return 0
+    deal_names = {d for d in (before, after) if d}
+    if not tenant_wide_safe(db, tenant, doc_ids, deal_names):
+        log_event(db, tenant, "webhooks", "webhook.withheld", {"event": event, "document_ids": sorted(doc_ids)})
+        return 0
+    body = build_body(tenant, event, doc_ids, before, after, pii).decode()
+    scope = json.dumps({"doc_ids": sorted(doc_ids), "deals": sorted(deal_names)})
+    now = _now().isoformat()
+    for e in endpoints:
+        db.add(WebhookOutbox(tenant_id=tenant, endpoint_id=e.id, event=event, body=body, scope=scope,
+                             status="pending", attempts=0, next_attempt_at=now, created_at=now))
+    return len(endpoints)
+
+
 def default_post(url: str, body: bytes, headers: dict[str, str]) -> int:
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *args, **kwargs):  # a redirect would send the signed body somewhere unchecked
@@ -104,54 +133,77 @@ def default_post(url: str, body: bytes, headers: dict[str, str]) -> int:
         return e.code
 
 
-def emit(db: Session, tenant: str, event: str, doc_ids: list[str], before: str | None, after: str | None,
-         *, pii: bool, post: Post = default_post) -> dict[str, str]:
-    """Send one event to every active endpoint of the tenant. Returns the outcome per endpoint id."""
-    endpoints = db.query(WebhookEndpoint).filter_by(tenant_id=tenant, active=True).all()
-    if not endpoints:
-        return {}
-    deal_names = {d for d in (before, after) if d}
-    if not tenant_wide_safe(db, tenant, doc_ids, deal_names):
-        return {str(e.id): "withheld" for e in endpoints}
-    body = build_body(tenant, event, doc_ids, before, after, pii)
-    outcome: dict[str, str] = {}
-    for e in endpoints:
-        headers = {"Content-Type": "application/json", SIGNATURE_HEADER: sign(e.secret, body)}
-        outcome[str(e.id)] = _send(post, e.url, body, headers)
-    return outcome
-
-
-def _send(post: Post, url: str, body: bytes, headers: dict[str, str]) -> str:
-    # One retry, and only on transient failures. A write may have landed, so no more than that.
-    for attempt in range(2):
-        try:
-            status = post(url, body, headers)
-        except UnsafeWebhookUrl:
-            return "unsafe url"
-        except OSError:
-            if attempt == 0:
-                continue
-            return "failed"
-        if status < 300:
-            return "sent"
-        if status not in RETRY_STATUS or attempt == 1:
-            return f"http {status}"
-    return "failed"
-
-
-def enqueue(session_factory: sessionmaker, tenant: str, event: str, doc_ids: list[str], before: str | None,
-            after: str | None, *, pii: bool, post: Post = default_post) -> Future:
-    """Send in the background. The walls are checked there, in a fresh session bound to the tenant, so they
-    see the same data a request would, not whatever the request session had loaded."""
-    return _pool.submit(_deliver, session_factory, tenant, event, doc_ids, before, after, pii, post)
-
-
-def _deliver(session_factory: sessionmaker, tenant: str, event: str, doc_ids: list[str], before: str | None,
-             after: str | None, pii: bool, post: Post) -> dict[str, str]:
+def drain(session_factory: sessionmaker, *, post: Post = default_post) -> int:
+    """Send every due outbox row. Rows are tenant-scoped under RLS, so this walks tenants one by one, as
+    the ingest requeue does. Returns the number of rows attempted."""
     with session_factory() as db:
-        bind_tenant(db, tenant)
-        try:
-            return emit(db, tenant, event, doc_ids, before, after, pii=pii, post=post)
-        except Exception:
-            log.exception("webhook delivery failed for tenant %s", tenant)
-            return {"error": "delivery failed"}
+        tenants = [t.id for t in db.query(Tenant).all()]
+    attempted = 0
+    for tid in tenants:
+        with session_factory() as db:
+            bind_tenant(db, tid)
+            attempted += _drain_tenant(db, tid, post)
+            db.commit()
+    return attempted
+
+
+def _drain_tenant(db: Session, tenant: str, post: Post) -> int:
+    now = _now().isoformat()
+    rows = (db.query(WebhookOutbox)
+            .filter(WebhookOutbox.tenant_id == tenant, WebhookOutbox.status == "pending",
+                    WebhookOutbox.next_attempt_at <= now)
+            .order_by(WebhookOutbox.id).limit(DRAIN_BATCH)
+            .with_for_update(skip_locked=True)  # two app processes must not post the same row
+            .all())
+    for row in rows:
+        ep = db.get(WebhookEndpoint, row.endpoint_id)
+        if ep is None or not ep.active:
+            row.status = "cancelled"
+            continue
+        scope = json.loads(row.scope)
+        # Re-checked at send time: a deal flagged MNPI after the move must not reach the receiver.
+        if not tenant_wide_safe(db, tenant, scope["doc_ids"], set(scope["deals"])):
+            row.status = "withheld"
+            continue
+        body = row.body.encode()
+        headers = {"Content-Type": "application/json", SIGNATURE_HEADER: sign(ep.secret, body)}
+        ok, transient, error = _post_once(post, ep.url, body, headers)
+        row.attempts += 1
+        if ok:
+            row.status, row.last_error = "sent", None
+        elif transient and row.attempts < MAX_ATTEMPTS:
+            row.next_attempt_at = (_now() + timedelta(seconds=BACKOFF_SECONDS * 2 ** (row.attempts - 1))).isoformat()
+            row.last_error = error
+        else:
+            row.status, row.last_error = "failed", error
+    return len(rows)
+
+
+def _post_once(post: Post, url: str, body: bytes, headers: dict[str, str]) -> tuple[bool, bool, str]:
+    """(delivered, worth retrying, reason). Only transient failures are retried; a 4xx will not change."""
+    try:
+        status = post(url, body, headers)
+    except UnsafeWebhookUrl:
+        return False, False, "unsafe url"
+    except OSError as e:
+        return False, True, type(e).__name__
+    if status < 300:
+        return True, False, ""
+    return False, status in RETRY_STATUS, f"http {status}"
+
+
+def start_drainer(session_factory: sessionmaker) -> threading.Thread:
+    """Daemon thread that drains the outbox every WEBHOOK_DRAIN_SECONDS (default 15)."""
+    interval = float(os.environ.get("WEBHOOK_DRAIN_SECONDS", "15"))
+
+    def loop() -> None:
+        while True:
+            try:
+                drain(session_factory)
+            except Exception:
+                log.exception("webhook drain failed; will retry")
+            time.sleep(interval)
+
+    t = threading.Thread(target=loop, name="webhook-drain", daemon=True)
+    t.start()
+    return t

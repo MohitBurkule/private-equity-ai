@@ -289,6 +289,23 @@ class WebhookEndpoint(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class WebhookOutbox(Base):
+    """One event bound for one endpoint, written with the move that caused it and sent by the drainer.
+    `scope` keeps the ids and deal names the walls were checked on, so the send-time check is repeatable."""
+    __tablename__ = "webhook_outbox"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    endpoint_id: Mapped[int] = mapped_column(Integer)
+    event: Mapped[str] = mapped_column(String(64))
+    body: Mapped[str] = mapped_column(Text)
+    scope: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16))  # pending, sent, failed, withheld, cancelled
+    attempts: Mapped[int] = mapped_column(Integer)
+    next_attempt_at: Mapped[str] = mapped_column(String(32))
+    last_error: Mapped[str | None] = mapped_column(String(256), default=None)
+    created_at: Mapped[str] = mapped_column(String(32))
+
+
 class Holding(Base):
     """One row of a user-supplied secondary-market holdings export, tied to the file it came from."""
     __tablename__ = "holding"

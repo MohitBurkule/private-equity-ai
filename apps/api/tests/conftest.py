@@ -9,3 +9,5 @@ if "DATABASE_URL" not in os.environ:
     os.environ["DATABASE_URL"] = f"sqlite:///{_dir}/app.db"
     atexit.register(lambda: __import__("shutil").rmtree(_dir, ignore_errors=True))
 os.environ["ADMIN_TOKEN"] = "test-admin"
+# Tests drain the outbox by calling drain() themselves, so no background thread posts during a test.
+os.environ["WEBHOOK_DRAIN"] = "0"
