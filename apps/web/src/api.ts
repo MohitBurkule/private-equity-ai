@@ -30,6 +30,17 @@ export const api = {
       if (!r.ok) throw new Error(`page image ${r.status}`);
       return { url: URL.createObjectURL(await r.blob()), highlighted: r.headers.get("X-Quote-Highlighted") === "1" };
     }),
+  /** A filing page as filed (HTML), with the tagged figure for the quote marked and scrollable. */
+  /** Target by quote, or by `anchor` (an element id) or `offset` (a character offset) when a citation names one. */
+  pageHtml: (docId: string, n: number, quote: string, target: { anchor?: string; offset?: number } = {}) => {
+    const params = new URLSearchParams({ quote });
+    if (target.anchor) params.set("anchor", target.anchor);
+    if (target.offset !== undefined) params.set("offset", String(target.offset));
+    return fetch(`/api/documents/${docId}/pages/${n}/html?${params}`, { headers: auth() }).then(async (r) => {
+      if (!r.ok) throw new Error(`page html ${r.status}`);
+      return { html: await r.text(), highlighted: r.headers.get("X-Quote-Highlighted") === "1" };
+    });
+  },
   ask: (question: string, docId?: string) =>
     fetch("/api/ask", {
       method: "POST",

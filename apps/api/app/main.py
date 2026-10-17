@@ -4,6 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from datetime import date as DateT
 from decimal import Decimal
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import (
@@ -84,10 +85,12 @@ from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
 from app.facts import CitationError, add_verified_fact, review_fact
 from app.factsxlsx import build_facts_xlsx, fact_rows
+from app.filing_view import filing_page_html
 from app.fundmetrics import fund_metrics
 from app.holdings import parse_holdings
 from app.hybrid import default_index
 from app.ingest import finalize_upload, ingest_any
+from app.ixbrl_full import read_filing
 from app.llm import LLM, NoLLMConfigured, get_llm
 from app.memo import build_memo, build_memo_docx, build_memo_pptx
 from app.migrate import migrate
@@ -361,8 +364,8 @@ def get_page_image(doc_id: str, number: int, db: Db, who: Who, quote: str = Quer
     """The page as filed, PNG, with the quote highlighted when it is found on the page."""
     _own_doc(db, who, doc_id)
     original = db.get(DocumentFile, doc_id)
-    if original is None:
-        raise HTTPException(404, "no original file kept for this document")
+    if original is None or original.media_type != "application/pdf":
+        raise HTTPException(404, "no PDF kept for this document")
     if number < 1 or number > db.query(PageRow).filter_by(document_id=doc_id).count():
         raise HTTPException(404, "page not found")
     png, highlighted = render_page(original.data, number, quote)
@@ -431,6 +434,30 @@ def credit_agreement_facts(doc_id: str, db: Db, who: Writer):
     log_event(db, who.tenant, actor(who), "credit_agreement.facts", {"document_id": doc.id, "created": created})
     # Maturity is a defined tenor, not a number, so it is returned cited and not stored as a fact.
     return {"created": created, "skipped": skipped, "maturity_clauses": debt_parse_mod.maturity_clauses(pages)}
+
+
+@lru_cache(maxsize=4)
+def _filing_tags(data: bytes):
+    return read_filing(data.decode("utf-8", errors="replace"))[1]
+
+
+@app.get("/documents/{doc_id}/pages/{number}/html")
+def get_page_html(doc_id: str, number: int, db: Db, who: Who, quote: str = Query("", max_length=1000),
+                  anchor: str | None = Query(None, max_length=200), offset: int | None = Query(None, ge=0)):
+    """A filing page as filed, with the target highlighted and scrollable. The target is the element with
+    id `anchor`, or the character `offset` in the filing, when given; otherwise the figure matching `quote`."""
+    _own_doc(db, who, doc_id)
+    original = db.get(DocumentFile, doc_id)
+    if original is None or original.media_type != "text/html":
+        raise HTTPException(404, "no filing HTML kept for this document")
+    html = original.data.decode("utf-8", errors="replace")
+    shown = filing_page_html(html, _filing_tags(original.data), number, quote, anchor, offset)
+    if shown is None:
+        raise HTTPException(404, "no target on this page")
+    doc, highlighted = shown
+    return Response(doc, media_type="text/html; charset=utf-8", headers={
+        "X-Quote-Highlighted": "1" if highlighted else "0",
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:"})
 
 
 @app.get("/documents/{doc_id}/pages/{number}")
