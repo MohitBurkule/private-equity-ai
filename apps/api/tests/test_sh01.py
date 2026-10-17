@@ -1,4 +1,6 @@
 """Page text of Monzo Bank Ltd SH01 received 02/09/2025 (Companies House, public), as extracted from the PDF."""
+import hashlib
+
 from app.parse.sh01 import parse_capital_form
 
 P1 = """                                                    SH01(ef)
@@ -102,14 +104,16 @@ def test_endpoint_returns_citations_and_hides_other_tenants():
     c = TestClient(app)
     t = c.post("/admin/tenants", json={"name": "shx"}, headers={"X-Admin-Token": "test-admin"}).json()
     h = {"Authorization": f"Bearer {t['api_key']}"}
+    # Document ids are a global primary key, so derive one per tenant rather than reuse a fixed id.
+    doc_id = hashlib.sha256(f"sh01:{t['tenant_id']}".encode()).hexdigest()
     with SessionLocal() as db:
         from app.rls import bind_tenant
         bind_tenant(db, t["tenant_id"])
-        d = Document(id="s" * 64, tenant_id=t["tenant_id"], sha256="x", filename="sh01.pdf", n_pages=2)
+        d = Document(id=doc_id, tenant_id=t["tenant_id"], sha256="x", filename="sh01.pdf", n_pages=2)
         d.pages = [PageRow(number=1, text=P1, method="ocr", ocr_confidence=0.85), PageRow(number=2, text=P2, method="ocr")]
         db.add(d)
         db.commit()
-    r = c.get(f"/documents/{'s' * 64}/capital-form", headers=h).json()
+    r = c.get(f"/documents/{doc_id}/capital-form", headers=h).json()
     assert r["form"] == "SH01" and r["allotments"][0]["number"]["value"] == "15000000"
     assert r["allotments"][0]["number"]["ocr"] is True and r["allotments"][0]["number"]["page"] == 1
-    assert c.get(f"/documents/{'s' * 64}/capital-form", headers=new_tenant(c, "shy")).status_code == 404
+    assert c.get(f"/documents/{doc_id}/capital-form", headers=new_tenant(c, "shy")).status_code == 404

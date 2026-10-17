@@ -1,11 +1,13 @@
 from app import notify
 from app.main import SessionLocal
 from app.models import Alert
+from app.rls import bind_tenant
 from tests.test_oidc import _sso, _tenant, _token, c
 
 
 def _add(tenant, kind, title):
     db = SessionLocal()
+    bind_tenant(db, tenant)
     db.add(Alert(tenant_id=tenant, kind=kind, severity="warning", title=title, detail="d",
                  dedupe_key=f"{title}-{kind}", fact_ids="[]", status="new", created_at="2026-10-17"))
     db.commit()

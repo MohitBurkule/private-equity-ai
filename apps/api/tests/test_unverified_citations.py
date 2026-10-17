@@ -1,3 +1,4 @@
+import hashlib
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -11,15 +12,17 @@ c = TestClient(app)
 
 
 def _seed(tenant_id: str) -> int:
+    # Document ids are a global primary key, so derive one per tenant rather than reuse a fixed id.
+    doc_id = hashlib.sha256(f"cim:{tenant_id}".encode()).hexdigest()
     with SessionLocal() as db:
         bind_tenant(db, tenant_id)
-        db.add(Document(id="u" * 64, tenant_id=tenant_id, sha256="u", filename="cim.pdf", n_pages=1, kind="pdf"))
+        db.add(Document(id=doc_id, tenant_id=tenant_id, sha256=doc_id, filename="cim.pdf", n_pages=1, kind="pdf"))
         db.flush()
         db.add(Fact(tenant_id=tenant_id, entity="Acme", metric="revenue", period="FY24", value=Decimal(1000),
-                    unit="USD", status="verified", sources=[FactSource(document_id="u" * 64, page=1, quote="x")]))
+                    unit="USD", status="verified", sources=[FactSource(document_id=doc_id, page=1, quote="x")]))
         pending = Fact(tenant_id=tenant_id, entity="Acme", metric="ebitda", period="FY24", value=Decimal(90),
                        unit="USD", status="ocr_unverified",
-                       sources=[FactSource(document_id="u" * 64, page=1, quote="y")])
+                       sources=[FactSource(document_id=doc_id, page=1, quote="y")])
         db.add(pending)
         db.commit()
         return pending.id
