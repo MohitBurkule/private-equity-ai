@@ -96,7 +96,8 @@ def crosscheck_step(extraction: Step | None, cik: str | None, fetch) -> Step:
     period_end = extraction.result.get("period_end")
     try:
         facts = edgar.fetch_companyfacts(cik, fetch)
-    except (OSError, ValueError) as e:
+    # RuntimeError is the missing SEC_USER_AGENT case: reported as a failed step so the memo still returns.
+    except (OSError, ValueError, RuntimeError) as e:
         return Step("crosscheck", "failed", f"companyfacts unavailable: {e}")
     us_gaap = facts.get("facts", {}).get("us-gaap", {})
     matched, conflicts, unchecked = [], [], []
