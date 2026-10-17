@@ -56,3 +56,30 @@ def test_queue_is_not_reachable_from_agents_or_workflows():
     from app.main import ag, wf_mod
     assert not any("outreach" in name for name in ag.TOOLS)
     assert not any("outreach" in k for k in wf_mod.KINDS)
+
+
+def test_send_uses_saved_contacts_and_refuses_without_any(monkeypatch):
+    _, h = _tenant()
+    item = _queue_one(h, "Theta Ltd")
+    tid = c.get("/targets/outreach/queue?status=pending", headers=h).json()["items"][0]["target_id"]
+    monkeypatch.setattr("app.notify.send_email", lambda *a, **k: None)
+    c.post(f"/targets/outreach/queue/{item['id']}/review", headers=h, json={"decision": "approve"})
+    assert c.post(f"/targets/outreach/queue/{item['id']}/send", headers=h, json={}).status_code == 422
+    assert c.post(f"/targets/{tid}/contacts", headers=h, json={"email": "cfo@theta.example", "name": "CFO"}).status_code == 201
+    assert [x["email"] for x in c.get(f"/targets/{tid}/contacts", headers=h).json()["items"]] == ["cfo@theta.example"]
+    assert c.post(f"/targets/outreach/queue/{item['id']}/send", headers=h, json={}).status_code == 200
+
+
+def test_daily_limit_stops_sends(monkeypatch):
+    from app import main as main_mod
+    _, h = _tenant()
+    a, b = _queue_one(h, "Iota Ltd"), _queue_one(h, "Kappa Ltd")
+    monkeypatch.setattr("app.notify.send_email", lambda *x, **k: None)
+    monkeypatch.setattr(main_mod, "OUTREACH_DAILY_LIMIT", 1)
+    for it in (a, b):
+        c.post(f"/targets/outreach/queue/{it['id']}/review", headers=h, json={"decision": "approve"})
+    tids = {x["id"]: x["target_id"] for x in c.get("/targets/outreach/queue", headers=h).json()["items"]}
+    for it in (a, b):
+        c.post(f"/targets/{tids[it['id']]}/contacts", headers=h, json={"email": f"x{it['id']}@k.example"})
+    assert c.post(f"/targets/outreach/queue/{a['id']}/send", headers=h, json={}).status_code == 200
+    assert c.post(f"/targets/outreach/queue/{b['id']}/send", headers=h, json={}).status_code == 429
