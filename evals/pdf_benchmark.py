@@ -55,6 +55,10 @@ def items(data: Path):
                 if f.exists():
                     # " ... " joins two cells that sit on different lines of the same form, so each side is its own part
                     out.append({"id": r["id"], "file": f, "page": s["page"], "parts": [("", " ".join(nums(q)) or q) for q in re.split(r";| \.\.\. ", s["quote"])], "kind": "sh01"})
+    for l in (gdir / "golden_table_v1.jsonl").open():
+        r = json.loads(l)
+        f = data / f"sec/{r['doc']}.pdf"
+        out.append({"id": r["id"], "file": f, "page": r["pdf_page_1based"], "parts": [(r["row_label"], r["raw"])], "kind": "table_v1"})
     return out
 
 

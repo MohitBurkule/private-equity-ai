@@ -104,3 +104,18 @@ Left as misses, not fixed:
 - `s02` p1 (monzo_20250303): `Totals 11,234,414` is not in the router's OCR text for that page. OCR limit on a scanned form.
 - `s03` p1 (monzo_20240330 SH02): the date `14/03/2024` is not in the OCR text of that scan. OCR limit.
 - `s08` p10 (revolut_20210519): `£1,000,000` is read as `E1,000,000`. The router flags OCR glyph faults like this and never rewrites them, by policy (`data/uk/sh01/README.md`). Deliberate miss.
+
+## Table golden set v1 (63 rows, data/sec)
+
+File: `evals/golden/golden_table_v1.jsonl` (copied to `data/golden/`). Seven rows per 10-K/10-Q/earnings filing where the row label has no digits, the value has 2+ digits, and the label and value both appear on the cited page of pymupdf text. Rows are sampled with seed 7. Scanned or image-only forms are not included.
+
+Caveat: these rows were selected from the same text layer that the router and pymupdf read, so this set cannot separate those engines well. Each row still needs a hand check against the rendered page before it counts as a true golden item. The `verified` field says so.
+
+| Engine | Page hit | Row hit | Bbox on row | s/page |
+|---|---|---|---|---|
+| pypdf | 63/63 | 62/63 | 0 | 0.12 |
+| pymupdf_text | 63/63 | 63/63 | 0 | 0.03 |
+| pdfplumber | 63/63 | 56/63 | 63 | 0.25 |
+| router | 63/63 | 63/63 | 63 | 0.34 |
+
+The router keeps every row with a bbox, at about 0.34 s/page. pdfplumber misses 7 rows, mostly where the value sits in a separate cell.
