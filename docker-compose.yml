@@ -45,7 +45,7 @@ services:
     environment:
       GREENMAIL_OPTS: >-
         -Dgreenmail.setup.test.imap -Dgreenmail.setup.test.smtp -Dgreenmail.hostname=0.0.0.0
-        -Dgreenmail.users=ic@firm.test:app-pass
+        -Dgreenmail.users=ic@firm.test:app-pass -Dgreenmail.auth.disabled=false
     ports: ["3025:3025", "3143:3143"]
 volumes:
   pgdata:
