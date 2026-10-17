@@ -106,3 +106,14 @@ def test_dd_seed_track_summary_and_walls():
     other_t = new_tenant(c, "dd2")
     assert c.patch(f"/dd/requests/{tax['id']}", json={"note": "x"}, headers=other_t).status_code == 404
     assert c.get("/dd/requests", headers=other_t).json() == []
+
+
+def test_cross_document_only_drops_same_document_conflicts():
+    h = new_tenant(c, "cf2")
+    d1 = up(h, [("rev", 1000), ("ebitda", 200), ("ebitda", 250)], "cim.xlsx")
+    d2 = up(h, [("rev", 1100)], "qoe.xlsx")
+    fact(h, d1, 1000), fact(h, d2, 1100)
+    fact(h, d1, 200, 2, "ebitda"), fact(h, d1, 250, 3, "ebitda")  # same document disagrees
+    assert len(c.get("/facts/conflicts", headers=h).json()) == 2
+    out = c.get("/facts/conflicts?cross_document_only=true", headers=h).json()
+    assert [x["metric"] for x in out] == ["revenue"] and out[0]["cross_document"] is True

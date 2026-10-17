@@ -430,13 +430,14 @@ def _calc_out(c: Calc) -> dict:
 
 
 @app.get("/facts/conflicts")
-def fact_conflicts(db: Db, who: Who, entity: str | None = None):
+def fact_conflicts(db: Db, who: Who, entity: str | None = None, cross_document_only: bool = False):
     """Same entity, metric, period and basis with different values across facts. Reports only."""
     return [{"entity": c.entity, "metric": c.metric, "period": c.period, "basis": c.basis,
              "spread_pct": str(c.spread_pct.quantize(Decimal("0.01"))), "likely_rounding": c.likely_rounding,
              "severity": c.severity, "cross_document": c.cross_document, "sources": c.sources,
              "values": [{"value": str(v), "fact_id": fid} for v, fid in c.values]}
-            for c in find_conflicts(db, who.tenant, visible_doc_ids(db, who), entity)]
+            for c in find_conflicts(db, who.tenant, visible_doc_ids(db, who), entity)
+            if c.cross_document or not cross_document_only]
 
 
 @app.get("/calc/ltm")
