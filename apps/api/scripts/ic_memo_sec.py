@@ -25,6 +25,8 @@ TAGS = {  # metric -> us-gaap tags, earlier tags win per period
     "total_assets": ("Assets",),
 }
 TENANT = "ic-demo"
+SIC = "7372"  # prepackaged software; the peer rule matches this code
+PEER_COUNT = 5
 YEARS = 3
 
 
@@ -69,13 +71,13 @@ def ingest(db, cik: str, edgar, store_pages, add_verified_fact, Decimal) -> str:
     return entity
 
 
-def peer_slide(prs, db, peers: list[str], build_memo_data, Pt) -> None:
+def peer_slide(prs, db, peers: list[str], build_memo_data, Pt, rule: str = "") -> None:
     """Peer table: latest revenue and net income per peer, each with its own source note."""
     from pptx.util import Inches
 
     sl = prs.slides.add_slide(prs.slide_layouts[5])
     sl.shapes.title.text = "Peers (cited figures, latest year)"
-    lines, notes = [], []
+    lines, notes = ([f"Selection: {rule}"] if rule else []), []
     for k, name in enumerate(peers, start=1):
         m = build_memo_data(db, TENANT, name)  # each peer keeps its own note numbers, prefixed P<k>
         rev = m.series.get("revenue", [])
@@ -86,6 +88,8 @@ def peer_slide(prs, db, peers: list[str], build_memo_data, Pt) -> None:
         per, val, n = rev[-1]
         notes.append(f"P{k}-{n} {name} {per} revenue: " + m.notes[n - 1].split(": ", 1)[-1])
         ni_txt = f", net income {_money(ni[-1][1])} [P{k}-{ni[-1][2]}]" if ni and ni[-1][0] == per else ""
+        if ni_txt:
+            notes.append(f"P{k}-{ni[-1][2]} {name} {per} net income: " + m.notes[ni[-1][2] - 1].split(": ", 1)[-1])
         lines.append(f"{name} ({per}): revenue {_money(val)} [P{k}-{n}]{ni_txt}")
     tf = sl.shapes.add_textbox(Inches(0.5), Inches(1.5), Inches(9), Inches(2.5)).text_frame
     tf.word_wrap = True
@@ -104,15 +108,49 @@ def peer_slide(prs, db, peers: list[str], build_memo_data, Pt) -> None:
             para.font.size = Pt(11)
 
 
+LEGAL_CHUNK = 6000  # characters per cited "page" of an exhibit with no page breaks in its HTML
+
+
+def legal_slide(prs, url: str, Pt) -> None:
+    """Red flags from a material contract (credit agreement). Pages are character chunks of the exhibit text,
+    so each quote cites its chunk number and the exhibit link."""
+    from pptx.util import Inches
+
+    from app import edgar, legal
+    from app.legal import red_flags
+    from app.precedent_fetch import filing_text
+
+    text = filing_text(edgar._default_get(url))
+    pages = [(n, text[i:i + LEGAL_CHUNK]) for n, i in enumerate(range(0, len(text), LEGAL_CHUNK), start=1)]
+    result = legal.extract(pages, "credit")
+    flags = sorted(red_flags(result), key=lambda f: f['severity'] != 'high')
+    sl = prs.slides.add_slide(prs.slide_layouts[5])
+    sl.shapes.title.text = "Legal review items (credit agreement, Ex. 10.1)"
+    body = [f"Automated, not legal advice. Source: {url}. Chunk = {LEGAL_CHUNK} characters of exhibit text."]
+    body += [f"[{f['severity']}] {f['term']}: {f['value']} [chunk {f['page']}: \"{f['quote'][:140]}\"]"
+             for f in flags[:12]]
+    if len(flags) > 12:
+        body.append(f"{len(flags) - 12} more items in the workbook output")
+    body += [f"Not found in exhibit: {', '.join(result['absent'])}"] if result.get("absent") else []
+    tf = sl.shapes.add_textbox(Inches(0.5), Inches(1.5), Inches(9), Inches(5)).text_frame
+    tf.word_wrap = True
+    for i, t in enumerate(body):
+        para = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        para.text = t
+        para.font.size = Pt(11)
+
+
 def _money(v) -> str:
     return f"{float(v) / 1e6:,.1f}M USD"
 
 
 def main(argv: list[str]) -> int:
+    legal_url = os.environ.get("LEGAL_EXHIBIT_URL", "")
     if len(argv) < 2:
         print("usage: ic_memo_sec.py <cik> <out.pptx> [peer_cik ...]", file=sys.stderr)
         return 2
     cik, out, peer_ciks = argv[0], argv[1], argv[2:]
+    auto = peer_ciks == ["auto"]
     if not os.environ.get("SEC_USER_AGENT"):
         print("set SEC_USER_AGENT", file=sys.stderr)
         return 2
@@ -125,6 +163,7 @@ def main(argv: list[str]) -> int:
     from sqlalchemy.orm import sessionmaker
 
     from app import edgar
+    from app import peers as peers_mod
     from app.db import Base, make_engine
     from app.facts import add_verified_fact
     from app.ingest import _store_pages
@@ -136,11 +175,24 @@ def main(argv: list[str]) -> int:
     with sessionmaker(bind=engine)() as db:
         bind_tenant(db, TENANT)
         entity = ingest(db, cik, edgar, _store_pages, add_verified_fact, Decimal)
+        rule = ""
+        if auto:
+            target = build_memo_data(db, TENANT, entity).series.get("revenue", [])
+            found = peers_mod.discover(target[-1][1], SIC, {cik.zfill(10)}) if target else []
+            closest = sorted(found, key=lambda p: abs(p.revenue - target[-1][1]))[:PEER_COUNT]
+            rule = closest[0].rule if closest else "no peers matched the rule"
+            peer_ciks = [p.cik for p in closest]
         peer_names = [ingest(db, pc, edgar, _store_pages, add_verified_fact, Decimal) for pc in peer_ciks]
         data = build_memo_pptx(db, TENANT, entity)
+        if legal_url:
+            prs_l = Presentation(BytesIO(data))
+            legal_slide(prs_l, legal_url, Pt)
+            buf_l = BytesIO()
+            prs_l.save(buf_l)
+            data = buf_l.getvalue()
         if peer_names:
             prs = Presentation(BytesIO(data))
-            peer_slide(prs, db, peer_names, build_memo_data, Pt)
+            peer_slide(prs, db, peer_names, build_memo_data, Pt, rule)
             buf = BytesIO()
             prs.save(buf)
             data = buf.getvalue()
