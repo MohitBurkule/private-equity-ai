@@ -31,7 +31,7 @@ def test_negation_flagged_and_bad_type():
     f = next(x for x in r["findings"] if x["term"] == "non_compete_months")
     assert f["needs_review"] is True
     try:
-        extract([], "lease")
+        extract([], "loan")
         raise AssertionError
     except ValueError:
         pass
@@ -71,3 +71,32 @@ def test_governing_law_reads_governed_and_interpreted_under_laws():
 def test_non_solicit_second_anniversary_is_24_months():
     out = extract([(4, "Buyer shall not solicit any employee until the second (2nd) anniversary of the Closing Date.")], "spa")
     assert [f["value"] for f in out["findings"] if f["term"] == "non_solicit_months"] == ["24"]
+
+
+def test_lease_assignment_restriction_is_present_but_not_a_mortgage_carve_out():
+    out = extract([(3, "Tenant shall not assign this Lease or sublet the Premises without Landlord’s prior written consent."),
+                   (4, "The making of a Leasehold Mortgage shall not be deemed an assignment of this Lease.")], "lease")
+    assert [f["page"] for f in out["findings"] if f["term"] == "assignment"] == [3]
+
+
+def test_employment_termination_notice_in_days_and_words_before_the_number():
+    out = extract([(9, "Executive may terminate employment upon at least thirty (30) days’ advance written notice to the Company."),
+                   (10, "Tenant shall, upon 5 days’ written notice from Landlord, discontinue any use of the Premises.")], "employment")
+    assert [f["value"] for f in out["findings"] if f["term"] == "termination_notice_days"] == ["30"]
+
+
+def test_employment_non_compete_months_read_when_the_period_follows_the_term():
+    out = extract([(5, "For a period of 12 months following your Termination Date (the “Non-Compete Period”), you shall not compete.")], "employment")
+    assert [f["value"] for f in out["findings"] if f["term"] == "non_compete_months"] == ["12"]
+
+
+def test_employment_non_compete_over_12_months_fires_the_playbook_rule():
+    from app.legal import PLAYBOOK
+    out = extract([(5, "Executive agrees to a non-compete for a period of twenty-four months after termination.")], "employment")
+    rule = next(r for r in PLAYBOOK if r["id"] == "employment_non_compete_long")
+    assert [f["value"] for f in out["findings"] if f["term"] == rule["term"]] == ["24"]
+
+
+def test_lease_and_employment_are_valid_doc_types():
+    assert extract([(1, "This Lease shall be governed by the laws of the State of Florida.")], "lease")["doc_type"] == "lease"
+    assert extract([(1, "This Agreement shall be governed by the laws of the State of Texas.")], "employment")["doc_type"] == "employment"

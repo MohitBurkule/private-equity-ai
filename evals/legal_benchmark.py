@@ -18,6 +18,9 @@ from app.html_doc import parse_units
 
 VALUE_TERMS = ("governing_law", "termination_fee", "non_solicit_months")
 PRESENCE_TERMS = ("escrow", "material_adverse_effect")
+NEW_VALUE_TERMS = ("termination_notice_days", "non_compete_months")  # lease and employment gold only
+NEW_PRESENCE_TERMS = ("assignment", "change_of_control", "severance")
+ALL_TERMS = VALUE_TERMS + PRESENCE_TERMS + NEW_VALUE_TERMS + NEW_PRESENCE_TERMS
 WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
          "ten": 10, "eleven": 11, "twelve": 12, "eighteen": 18, "twenty-four": 24, "thirty-six": 36}
 
@@ -54,26 +57,27 @@ def main() -> None:
     if not args.no_reader:
         from app.llm import get_llm
         llm = get_llm()
-    counts = {m: {t: [0, 0, 0] for t in VALUE_TERMS + PRESENCE_TERMS} for m in ("rules", "reader", "combined")}
+    counts = {m: {t: [0, 0, 0] for t in ALL_TERMS} for m in ("rules", "reader", "combined")}
     rows = []
     for stem, g in gold.items():
         pages = [(u.idx + 1, u.text) for u in parse_units((Path(args.data) / f"{stem}.htm").read_bytes())]
-        rules = legal.extract(pages, "spa")
+        doc = g.get("doc_type", "spa")
+        rules = legal.extract(pages, doc)
         first = {}
         for f in rules["findings"]:
             first.setdefault(f["term"], f)
         rd = {}
         if llm is not None:
             absent = [t for t in rules["absent"] if t in legal_reader.KEYWORDS]
-            for f in legal_reader.read(pages, "spa", absent, llm)["findings"]:
+            for f in legal_reader.read(pages, doc, absent, llm)["findings"]:
                 rd.setdefault(f["term"], f)
         row = {"stem": stem}
-        for t in VALUE_TERMS + PRESENCE_TERMS:
+        for t in [t for t in ALL_TERMS if t in VALUE_TERMS + PRESENCE_TERMS or t in g]:
             want = g.get(t)
-            want = norm(t, want) if t in VALUE_TERMS else bool(want)
+            want = norm(t, want) if t in VALUE_TERMS + NEW_VALUE_TERMS else bool(want)
             got_r = first.get(t)
             got_d = rd.get(t)
-            if t in PRESENCE_TERMS:
+            if t in PRESENCE_TERMS + NEW_PRESENCE_TERMS:
                 pr, pd = (got_r is not None), (got_d is not None)
                 pc = pr or pd
                 preds = {"rules": pr, "reader": pd if not pr else None, "combined": pc}
@@ -108,7 +112,9 @@ def main() -> None:
                 row[t] = {"want": want, "rules": pr, "reader": pd}
         rows.append(row)
     print(f"{'term':26}{'mode':10}{'precision':>10}{'recall':>9}{'tp/fp/fn':>12}")
-    for t in VALUE_TERMS + PRESENCE_TERMS:
+    for t in ALL_TERMS:
+        if not any(sum(counts[m][t]) for m in counts):
+            continue
         for m in ("rules", "reader", "combined"):
             if m == "reader" and llm is None:
                 continue

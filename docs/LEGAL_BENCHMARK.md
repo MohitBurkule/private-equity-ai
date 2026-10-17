@@ -67,3 +67,31 @@ Two held-out misses fixed in code, each with a regression test: governing law "g
 
 ## Not yet covered
 Reader precision on this set, and the rules' remaining false-positive types (for example, a fee cap written as a fee). Next: run the reader on the gold-null terms of these 28 exhibits to measure false findings.
+
+## Lease and employment (GAPS #13)
+Doc types `lease` and `employment` added. Terms: `governing_law`, `change_of_control`, `assignment` (lease, employment), `termination_notice_days` (lease, employment), `non_compete_months` (employment), `severance` (employment). Playbook rules: `assignment_restricted`, `employment_non_compete_long` (over 12 months), `termination_notice_short` (under 30 days), `severance_present` (review).
+
+Set: 12 lease and 17 employment exhibits from EDGAR 8-K filings (full-text search, EX-10 type), in `evals/legal_gold_lease_employment.json` (`doc_type` per entry). Run: `python evals/legal_benchmark.py --data <dir with lease/ and employment/> --gold evals/legal_gold_lease_employment.json --no-reader`.
+
+**Caveat, read first:** these labels were written after the new rules ran on these exhibits, then spot-checked against the text. This is a tuning-style set, not held-out, so the numbers are optimistic. The reader was not run on it.
+
+| term | precision | recall | tp/fp/fn |
+|---|---|---|---|
+| governing_law | 1.00 | 1.00 | 16/0/0 |
+| change_of_control | 1.00 | 1.00 | 14/0/0 |
+| severance | 1.00 | 1.00 | 17/0/0 |
+| assignment | 0.93 | 0.93 | 14/1/1 |
+| non_compete_months | 0.86 | 1.00 | 6/1/0 |
+| termination_notice_days | 0.67 | 1.00 | 4/2/0 |
+
+Known errors:
+- Assignment FN: PPIH 0001437749-25-011051 "not assignable to another person without prior written consent" (no rule pattern for "not assignable").
+- Assignment FP: DUKE 0001213900-26-067570 "shall not be required to bear any expenses" matched by the keyword.
+- Termination notice FP: Foghorn 0001628280-25-033784 "60 days prior written notice" is for ending a shuttle service, not the lease. WillScot 0001647088-25-000050 "60 days" is a Good Reason cure notice, not a termination notice.
+- Non-compete FP: Fidelity & D&D 0001437749-25-038321 is an amendment that reduces a covenant; the rule reads the 24 months, the label is null.
+- Governing law recall was fixed for "construed ... in accordance with", "Commonwealth of", and "laws of the United States and the State of"; no misses left in this set.
+
+Not covered: lease rent and term; change-of-control language that is a consent right rather than a payment trigger (labelled present, not classified); equity-plan "may not be assigned" clauses inside employment agreements (not counted in gold, not filtered in code).
+
+Next: a fresh lease and employment set, labelled before rules run, to measure these terms honestly.
+
