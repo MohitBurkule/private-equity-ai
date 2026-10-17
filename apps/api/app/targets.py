@@ -115,6 +115,16 @@ def ch_targets(csv_text: str) -> list[TargetIn]:
     return out
 
 
+def live_sec_fetch(cik: str) -> tuple[dict, dict]:
+    """Live SEC submissions and company facts for one CIK, in the shape sec_target expects."""
+    import json
+
+    from app.edgar import fetch_companyfacts
+    from app.secfeed import default_fetch
+    subs = json.loads(default_fetch(f"https://data.sec.gov/submissions/CIK{cik.zfill(10)}.json"))
+    return subs, fetch_companyfacts(cik)
+
+
 def refresh_universe(db: Session, tenant: str, fetch_sec: Callable, fetch_ch: Callable,
                      limit: int = 200) -> dict:
     """Re-pull each stored SEC or Companies House target from its source and update the row in place.

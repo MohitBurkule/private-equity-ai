@@ -141,6 +141,14 @@ export type Target = {
   sector: string | null; country: string | null; region: string | null; lat: string | null; lng: string | null;
   revenue: string | null; currency: string | null; revenue_period: string | null; revenue_url: string | null; status: string;
 };
+export interface ScreenBody {
+  sectors?: string[]; countries?: string[]; min_revenue?: string; max_revenue?: string; weights?: Record<string, number>;
+}
+export interface ScreenOut {
+  matches: number; review: number;
+  applied: { sectors: string[]; countries: string[]; weights: Record<string, number>; weights_source: { key: string; value: string; quote: string } | null };
+  items: (Target & { verdict: string; score: number | null; criteria: Record<string, string> })[];
+}
 export type TargetBenchmark = {
   sector: string | null; peers: number; excluded_no_revenue: number; median: string | null; q1: string | null; q3: string | null;
   target?: { id: number; name: string; revenue: string; percentile: number };
@@ -159,6 +167,7 @@ export const api2 = {
   targetBenchmark: (targetId: number, sector: string) =>
     call<TargetBenchmark>(`/targets/benchmark?target_id=${targetId}&sector=${encodeURIComponent(sector)}`),
   targetFacets: () => call<Facets>("/targets/facets"),
+  screen: (body: ScreenBody) => call<ScreenOut>("/targets/screen", "POST", body),
   facts: (status?: string) => call<FactRow[]>(`/facts${status ? `?status=${status}` : ""}`),
   review: (id: number, action: "accept" | "reject", note?: string) => call<FactRow>(`/facts/${id}/review`, "POST", { action, note }),
   deals: () => call<DealRow[]>("/deals"),

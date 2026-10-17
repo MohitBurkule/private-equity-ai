@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import { api2, Target, TargetFilter } from "./api";
+import { api2, ScreenBody, ScreenOut, Target, TargetFilter } from "./api";
 import { fmtAmount } from "./format";
 import { useLoad } from "./hooks";
-import { Badge, Card, CardHead, Empty, ErrorLine, Input } from "./ui";
+import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input } from "./ui";
 
 const W = 720, H = 360;
 const PALETTE = ["#0f9d8a", "#c2410c", "#4f6bd8", "#a21caf", "#b45309", "#0369a1", "#be123c", "#4d7c0f"];
@@ -39,6 +39,65 @@ function MapView({ items, sel, onPick }: { items: Target[]; sel: number | null; 
         {items.length > placed.length && <span>{items.length - placed.length} with no location are listed below only</span>}
       </div>
     </div>
+  );
+}
+
+/** Screen with firm-set weights. A weight left blank is not sent, so the accepted firm weight rule (or 1) applies. */
+function ScreenPanel() {
+  const [sectors, setSectors] = useState("");
+  const [countries, setCountries] = useState("");
+  const [minRev, setMinRev] = useState("");
+  const [w, setW] = useState<Record<string, string>>({ sector: "", country: "", revenue: "" });
+  const [out, setOut] = useState<ScreenOut | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true); setErr("");
+    const weights: Record<string, number> = {};
+    Object.entries(w).forEach(([k, v]) => v !== "" && (weights[k] = Number(v)));
+    const body: ScreenBody = {
+      sectors: sectors.split(",").map((x) => x.trim()).filter(Boolean),
+      countries: countries.split(",").map((x) => x.trim()).filter(Boolean),
+      min_revenue: minRev || undefined,
+      weights: Object.keys(weights).length ? weights : undefined,
+    };
+    try { setOut(await api2.screen(body)); } catch (e) { setErr(String(e)); } finally { setBusy(false); }
+  };
+  const wIn = (k: string, label: string) => (
+    <label className="flex items-center gap-1 text-xs text-mut">{label}
+      <Input aria-label={`Weight ${k}`} type="number" min={0} max={10} step="0.5" placeholder="rule" value={w[k]}
+        onChange={(e) => setW({ ...w, [k]: e.target.value })} className="w-16" /></label>
+  );
+  return (
+    <Card className="lg:col-span-2">
+      <CardHead title="Screen" hint="Score = weighted share of tests passing. Unknown counts as not passed." />
+      <div className="space-y-3 p-4 text-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input aria-label="Screen sectors" placeholder="Sectors, comma separated" value={sectors} onChange={(e) => setSectors(e.target.value)} className="w-56" />
+          <Input aria-label="Screen countries" placeholder="Countries, comma separated" value={countries} onChange={(e) => setCountries(e.target.value)} className="w-56" />
+          <Input aria-label="Screen minimum revenue" type="number" placeholder="Min revenue" value={minRev} onChange={(e) => setMinRev(e.target.value)} className="w-36" />
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-mut">Weights:</span>
+          {wIn("sector", "sector")}{wIn("country", "country")}{wIn("revenue", "revenue")}
+          <Button variant="primary" onClick={run} disabled={busy}>{busy ? "Running" : "Run screen"}</Button>
+        </div>
+        <ErrorLine e={err} />
+        {out && (
+          <>
+            <p className="text-mut">
+              {out.matches} match, {out.review} to review.{" "}
+              {out.applied.weights_source ? <>Weights from firm rule: <span className="text-fg">{out.applied.weights_source.value}</span>.</> : null}
+            </p>
+            <table className="w-full text-sm"><thead className="text-left text-xs text-mut"><tr><th className="py-2">Name</th><th>Verdict</th><th className="text-right">Score</th></tr></thead>
+              <tbody>{out.items.slice(0, 50).map((t) => (
+                <tr key={t.id} className="border-t border-line"><td className="py-2">{t.name}</td>
+                  <td><Badge tone={t.verdict === "match" ? "ok" : "warn"}>{t.verdict}</Badge></td>
+                  <td className="tnum text-right">{t.score ?? "-"}</td></tr>))}</tbody></table>
+          </>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -93,6 +152,7 @@ export function Targets() {
               )}
             </div>
           </Card>
+          <ScreenPanel />
           <Card className="lg:col-span-2">
             <CardHead title="Targets" />
             <table className="w-full text-sm"><thead className="text-left text-xs text-mut"><tr><th className="px-4 py-2">Name</th><th>Sector</th><th>Country</th><th className="pr-4 text-right">Revenue</th></tr></thead>
