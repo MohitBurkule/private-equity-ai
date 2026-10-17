@@ -62,3 +62,32 @@ def test_targets_flow_filters_facets_screen_and_isolation():
     assert c.patch(f"/targets/{tid}", headers=h, json={"status": "contacted"}).json()["status"] == "contacted"
     assert c.get("/targets", headers=other).json()["total"] == 0
     json.dumps(sc)
+
+
+def test_outreach_drafts_use_only_known_facts():
+    h, other = new_tenant(c, "tg3"), new_tenant(c, "tg4")
+    c.post("/targets", headers=h, json=[
+        {"name": "Acme", "source_ref": "a", "sector": "Software (SIC 62012)", "revenue": "150000000",
+         "currency": "USD", "revenue_period": "FY2023", "revenue_url": "http://sec/x"},
+        {"name": "Bare", "source_ref": "b"}])
+    ids = [t["id"] for t in c.get("/targets", headers=h).json()["items"]]
+    out = c.post("/targets/outreach", headers=h, json={"target_ids": ids, "sender": "Sam", "firm": "Fund I"}).json()
+    full, bare = out[0]["body"], out[1]["body"]
+    assert "USD 150.0 million for FY2023 (http://sec/x)" in full and "software" in full
+    assert "revenue" not in bare and "invest in" not in bare  # nothing invented for the sparse target
+    assert c.post("/targets/outreach", headers=other, json={"target_ids": ids, "sender": "s", "firm": "f"}).status_code == 404
+
+
+def test_sector_benchmark_excludes_unknown_and_places_target():
+    h = new_tenant(c, "tg5")
+    rows = [{"name": f"S{v}", "source_ref": f"s{v}", "sector": "Software", "revenue": str(v),
+             "revenue_url": "http://x"} for v in (10, 20, 30, 40)]
+    rows += [{"name": "NoRev", "source_ref": "nr", "sector": "Software"},
+             {"name": "Other", "source_ref": "o", "sector": "Mining", "revenue": "999", "revenue_url": "http://x"}]
+    c.post("/targets", headers=h, json=rows)
+    tid = next(t["id"] for t in c.get("/targets?q=S30", headers=h).json()["items"])
+    b = c.get(f"/targets/benchmark?sector=software&target_id={tid}", headers=h).json()
+    assert b["peers"] == 3 and b["excluded_no_revenue"] == 1  # S30 is not its own peer
+    assert Decimal(b["median"]) == 20 and Decimal(b["min"]) == 10 and Decimal(b["max"]) == 40
+    assert b["target"]["percentile"] == 67  # 30 is above 10 and 20 of 3 peers
+    assert c.get("/targets/benchmark?target_id=999999", headers=h).status_code == 404

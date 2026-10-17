@@ -13,10 +13,13 @@ function KpiBoard({ report }: { report: Report }) {
   const metrics = useMemo(() => [...new Set(report.companies.flatMap((c) => c.kpis.map((k) => k.metric)))], [report]);
   const [metric, setMetric] = useState("");
   const [company, setCompany] = useState("all");
+  const [period, setPeriod] = useState("all");
   const [pick, setPick] = useState<number | null>(null);
   const m = metric || metrics[0] || "";
+  const periods = useMemo(() => [...new Set(report.companies.flatMap((c) => c.kpis.map((k) => k.period)))].sort(), [report]);
   const rows = report.companies.filter((c) => company === "all" || String(c.id) === company)
-    .flatMap((c) => c.kpis.filter((k) => k.metric === m).map((k) => ({ ...k, company: c.name })));
+    .flatMap((c) => c.kpis.filter((k) => k.metric === m && (period === "all" || k.period === period)).map((k) => ({ ...k, company: c.name })))
+    .sort((a, b) => a.period.localeCompare(b.period) || a.company.localeCompare(b.company));
   const unit = rows[0]?.unit ?? "";
   const data = rows.map((r) => ({ label: `${r.company.slice(0, 18)} ${r.period}`, v: Number(r.value) }));
   const sel = pick !== null ? rows[pick] : null;
@@ -28,8 +31,10 @@ function KpiBoard({ report }: { report: Report }) {
             {metrics.map((x) => <option key={x}>{x}</option>)}</select>
           <select aria-label="Company" value={company} onChange={(e) => { setCompany(e.target.value); setPick(null); }} className="rounded-lg border border-line bg-bg px-2 py-1 text-sm">
             <option value="all">All companies</option>{report.companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+          <select aria-label="Period" value={period} onChange={(e) => { setPeriod(e.target.value); setPick(null); }} className="rounded-lg border border-line bg-bg px-2 py-1 text-sm">
+            <option value="all">All periods</option>{periods.map((p) => <option key={p}>{p}</option>)}</select>
         </div>} />
-      {rows.length === 0 ? <Empty>No KPI observations yet. Record one from a verified fact.</Empty> : (
+      {rows.length === 0 ? <Empty>No KPI observations for this filter. Try another metric, company or period, or record one from a verified fact.</Empty> : (
         <div className="p-5">
           <div className="h-64">
             <ResponsiveContainer>

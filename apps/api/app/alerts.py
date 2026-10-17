@@ -9,12 +9,18 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.models import Alert
-from app.portfolio import Covenant, PortfolioCompany, evaluate_covenant
+from app import firm_knowledge as fk
+from app.models import Alert, DDRequest, Deal
+from app.portfolio import (
+    Covenant,
+    PortfolioCompany,
+    current_kpis,
+    evaluate_covenant,
+)
 
 SEVERITIES = ("info", "warning", "critical")
 STATUSES = ("new", "read", "dismissed")
@@ -62,6 +68,79 @@ def covenant_watch(db: Session, tenant_id: str) -> list[AlertDraft]:
             out.append(AlertDraft("covenant", sev, title, detail,
                                   f"covenant:{cov.id}:{t['period']}:{t['status']}:{t['value']}", ids))
     return out
+
+
+STALL_DAYS = 30  # default when the firm has no accepted deal_stall_days rule
+DD_OPEN_DAYS = 14  # default when the firm has no accepted dd_response_days rule
+
+
+def _age_days(stamp: str | None) -> int | None:
+    try:
+        return (datetime.now(UTC) - datetime.fromisoformat(stamp)).days if stamp else None
+    except ValueError:
+        return None
+
+
+def _firm_days(db: Session, tenant_id: str, key: str, default: int) -> int:
+    """The firm's accepted number for `key` (cited, human-accepted), else the default."""
+    found = fk.limit(db, tenant_id, key)
+    if found is None or found[0] <= 0:
+        return default
+    return int(found[0])
+
+
+def _week() -> str:
+    return (datetime.now(UTC) - timedelta(days=datetime.now(UTC).weekday())).date().isoformat()
+
+
+@register_watcher("firm_leverage_limit")
+def firm_leverage_limit(db: Session, tenant_id: str) -> list[AlertDraft]:
+    """Portfolio net leverage above the firm's accepted leverage_limit. The limit and its quote come
+    from the firm profile, so the alert shows the rule it broke."""
+    found = fk.limit(db, tenant_id, "leverage_limit")
+    if found is None:
+        return []
+    cap, rule = found
+    out = []
+    for co in db.query(PortfolioCompany).filter_by(tenant_id=tenant_id):
+        for o in current_kpis(db, tenant_id, co.id):
+            if o.metric != "net_leverage_x" or o.unit != "x" or o.value <= cap:
+                continue
+            out.append(AlertDraft(
+                "leverage", "critical",
+                f"{co.name}: net leverage {o.value}x exceeds firm limit {cap}x ({o.period})",
+                f"Firm rule (document {rule.document_id}, page {rule.page}): \"{rule.quote}\"",
+                f"leverage:{co.id}:{o.period}:{o.value}:{cap}",
+                [o.fact_id]))
+    return out
+
+
+@register_watcher("stalled_deals")
+def stalled_deals(db: Session, tenant_id: str) -> list[AlertDraft]:
+    """Live deals untouched for the firm's stall days. Re-alerts weekly while still stalled."""
+    stall_days = _firm_days(db, tenant_id, "deal_stall_days", STALL_DAYS)
+    out = []
+    for d in db.query(Deal).filter_by(tenant_id=tenant_id):
+        age = _age_days(d.updated_at)
+        if d.stage in ("signed", "closed", "passed") or age is None or age < stall_days:
+            continue
+        out.append(AlertDraft("deal", "warning", f"{d.name}: no update for {age} days (stage {d.stage})",
+                              f"Last change {d.updated_at}.", f"stalled:{d.id}:{_week()}"))
+    return out
+
+
+@register_watcher("overdue_dd")
+def overdue_dd(db: Session, tenant_id: str) -> list[AlertDraft]:
+    """Open DD requests unchanged for the firm's response days, one alert per deal per week."""
+    response_days = _firm_days(db, tenant_id, "dd_response_days", DD_OPEN_DAYS)
+    per_deal: dict[str, list[DDRequest]] = {}
+    for r in db.query(DDRequest).filter_by(tenant_id=tenant_id, status="open"):
+        age = _age_days(r.updated_at)
+        if age is not None and age >= response_days:
+            per_deal.setdefault(r.deal, []).append(r)
+    return [AlertDraft("dd", "warning", f"{deal}: {len(rows)} DD request(s) open for {response_days}+ days",
+                       "; ".join(f"{r.category}: {r.title}" for r in rows[:5]) + (" ..." if len(rows) > 5 else ""),
+                       f"dd_overdue:{deal}:{_week()}") for deal, rows in per_deal.items()]
 
 
 def _now() -> str:

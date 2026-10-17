@@ -1,0 +1,71 @@
+Notes to Consolidated Financial Statements
+Pfizer Inc. and Subsidiary Companies
+
+
+
+
+
+Cash flows for financial instruments designated as fair value or cash flow hedges may be included in operating, investing or financing activities, depending on the classification of the
+items being hedged. Cash flows for financial instruments designated as net investment hedges are classified according to the nature of the hedging instrument. Cash flows for
+financial instruments that do not qualify for hedge accounting treatment are classified according to their purpose and accounting nature.
+
+P. Investments and Derivative Financial Instruments
+
+The classification of an investment depends on the nature of the investment, our intent and ability to hold the investment, and the degree to which we may exercise influence. Our
+investments are primarily comprised of the following:
+•  Public equity securities with readily determinable fair values, which are carried at fair value, with changes in fair value reported in Other (income)/deductions—net.
+•  Available-for-sale debt securities, which are carried at fair value, with changes in fair value reported in Other comprehensive income/(loss) until realized.
+•  Held-to-maturity debt securities, which are carried at amortized cost.
+•  Private equity securities without readily determinable fair values and where we have no significant influence are measured at cost minus any impairment and plus or minus changes
+   resulting from observable price changes in orderly transactions for the identical or a similar investment of the same issuer.
+•  For equity investments in common stock or in-substance common stock where we have significant influence over the financial and operating policies of the investee, we use the
+   equity-method of accounting. Under the equity-method, we record our share of the investee’s income and expenses in Other (income)/deductions—net. The excess of the cost of
+   the investment over our share of the underlying equity in the net assets of the investee as of the acquisition date is allocated to the identifiable assets and liabilities of the investee,
+   with any remaining excess amount allocated to goodwill. Such investments are initially recorded at cost, which is the fair value of consideration paid and typically does not include
+   contingent consideration.
+
+Realized gains or losses on sales of investments are determined by using the specific identification cost method.
+
+We regularly evaluate all of our financial assets for impairment. For investments in debt and equity, when a decline in fair value, if any, is determined, an impairment charge is
+recorded and a new cost basis in the investment is established.
+
+Derivative financial instruments are carried at fair value in various balance sheet categories (see Note 7A), with changes in fair value reported in Net income or, for derivative financial
+instruments in certain qualifying hedging relationships, in Other comprehensive income/(loss) (see Note 7E).
+
+Q. Tax Assets and Liabilities and Income Tax Contingencies
+
+Tax Assets and Liabilities
+
+Current tax assets primarily include (i) tax effects for intercompany transfers of inventory within our combined group, which are recognized in the consolidated statements of income
+when the inventory is sold to a third party and (ii) income tax receivables that are expected to be recovered either via refunds from taxing authorities or reductions to future tax
+obligations.
+
+Deferred tax assets and liabilities are recognized for the expected future tax consequences of differences between the financial reporting and tax bases of assets and liabilities using
+enacted tax rates and laws. We provide a valuation allowance when we believe that our deferred tax assets are not recoverable based on an assessment of estimated future taxable
+income that incorporates ongoing, prudent and feasible tax-planning strategies, that would be implemented, if necessary, to realize the deferred tax assets. Amounts recorded for
+valuation allowances requires judgments about future income which can depend heavily on estimates and assumptions. All deferred tax assets and liabilities within the same tax
+jurisdiction are presented as a net amount in the noncurrent section of our consolidated balance sheet.
+The TCJA subjects a U.S. shareholder to current tax on global intangible low-taxed income earned by certain foreign subsidiaries. The FASB Staff Q&A, Topic 740, No. 5, Accounting
+for Global Intangible Low-Taxed Income, states that we are permitted to make an accounting policy election to either recognize deferred taxes for temporary basis differences
+expected to reverse as global intangible low-taxed income in future years or provide for the tax expense related to such income in the year the tax is incurred. We elected to recognize
+deferred taxes for temporary differences expected to reverse as global intangible low-taxed income in future years.
+
+Other non-current tax assets primarily represent our estimate of the potential tax benefits in one tax jurisdiction that could result from the payment of income taxes in another tax
+jurisdiction. These potential benefits generally result from cooperative efforts among taxing authorities, as required by tax treaties to minimize double taxation, commonly referred to as
+the competent authority process. The recoverability of these assets, which we believe to be more likely than not, is dependent upon the actual payment of taxes in one tax jurisdiction
+and, in some cases, the successful petition for recovery in another tax jurisdiction.
+
+Other taxes payable as of December 31, 2021 and 2020 include liabilities for uncertain tax positions and the noncurrent portion of the repatriation tax liability for which we elected
+payment over eight years through 2026. For additional information, see Note 5D for uncertain tax positions and Note 5A for the repatriation tax liability and other estimates and
+assumptions in connection with the TCJA.
+
+Income Tax Contingencies
+
+We account for income tax contingencies using a benefit recognition model. If we consider that a tax position is more likely than not to be sustained upon audit, based solely on the
+technical merits of the position, we recognize all or a portion of the benefit. We measure the benefit by determining the amount that is greater than 50% likely of being realized upon
+settlement, presuming that the tax position is examined by the taxing authority with full knowledge of all relevant information.
+
+
+
+
+                                                                              Pfizer Inc.               2021 Form 10-K                    63

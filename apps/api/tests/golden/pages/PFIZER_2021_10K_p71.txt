@@ -1,0 +1,68 @@
+Notes to Consolidated Financial Statements
+Pfizer Inc. and Subsidiary Companies
+
+
+
+
+
+Array’s portfolio includes Braftovi (encorafenib) and Mektovi (binimetinib), a broad pipeline of targeted cancer medicines in different stages of R&D, as well as a portfolio of out-
+licensed medicines, which may generate milestones and royalties over time.
+
+The final allocation of the consideration transferred to the assets acquired and the liabilities assumed was completed in 2020. In connection with this acquisition, we recorded: (i) $6.3
+billion in Identifiable intangible assets, consisting of $2.0 billion of Developed technology rights with a useful life of 16 years, $2.8 billion of IPR&D and $1.5 billion of Licensing
+agreements and other ($1.2 billion for technology in development––indefinite-lived licensing agreements and $360 million for developed technology––finite-lived licensing agreements
+with a useful life of 10 years), (ii) $6.1 billion of Goodwill, (iii) $1.1 billion of net deferred tax liabilities and (iv) $451 million of assumed long-term debt, which was paid in full in 2019.
+In 2020, we recorded measurement period adjustments to the estimated fair values initially recorded in 2019, which resulted in a reduction in Identifiable intangible assets of
+approximately $900 million with a corresponding change to Goodwill and net deferred tax liabilities. The measurement period adjustments were recorded to better reflect market
+participant assumptions about facts and circumstances existing as of the acquisition date and did not have a material impact on our consolidated statement of income for the year
+ended December 31, 2020.
+Therachon
+
+On July 1, 2019, we acquired all the remaining shares of Therachon, a privately-held clinical-stage biotechnology company focused on rare diseases, with assets in development for
+the treatment of achondroplasia, a genetic condition and the most common form of short-limb dwarfism, for $340 million upfront, plus potential milestone payments of up to $470
+million contingent on the achievement of key milestones in the development and commercialization of the lead asset. We accounted for the transaction as an asset acquisition since
+the lead asset represented substantially all the fair value of the gross assets acquired. The total fair value of the consideration transferred for Therachon was $322 million, which
+consisted of $317 million of cash and our previous $5 million investment in Therachon. In connection with this asset acquisition, we recorded a charge of $337 million in Research and
+development expenses.
+
+B. Divestitures
+
+Meridian
+On December 31, 2021, we completed the sale of our Meridian subsidiary for approximately $51 million in cash and recognized a loss of approximately $167 million, net of tax, in
+Discontinued operations––net of tax. In connection with the sale, Pfizer and the purchaser of Meridian entered into various agreements to provide a framework for our relationship
+after the sale, including interim TSAs and a manufacturing supply agreement (MSA). The TSAs primarily involve Pfizer providing services related to information technology, among
+other activities, and are generally expected to be for terms of no more than 12 to 18 months post sale. The MSA is for a term of three years post sale with a two year extension period.
+No amounts were recorded under the above arrangements in 2021.
+Upjohn Separation and Combination with Mylan
+On November 16, 2020, we completed the spin-off and the combination of the Upjohn Business with Mylan (the Transactions) to form Viatris.
+The Transactions were structured as an all-stock, Reverse Morris Trust transaction. Specifically, (i) we contributed the Upjohn Business to a wholly owned subsidiary, which was
+renamed Viatris, so that the Upjohn Business was separated from the remainder of our business (the Separation), (ii) following the Separation, we distributed, on a pro rata basis, all
+of the shares of Viatris common stock held by Pfizer to Pfizer stockholders as of the November 13, 2020 record date, such that each Pfizer stockholder as of the record date received
+approximately 0.124079 shares of Viatris common stock per share of Pfizer common stock (the Distribution); and (iii) immediately after the Distribution, the Upjohn Business combined
+with Mylan in a series of transactions in which Mylan shareholders received one share of Viatris common stock for each Mylan ordinary share held by such shareholder, subject to any
+applicable withholding taxes (the Combination). Prior to the Distribution, Viatris made a cash payment to Pfizer equal to $12.0 billion as partial consideration for the contribution of the
+Upjohn Business to Viatris. As of the closing of the Combination, Pfizer stockholders owned approximately 57% of the outstanding shares of Viatris common stock, and Mylan
+shareholders owned approximately 43% of the outstanding shares of Viatris common stock, in each case on a fully diluted, as-converted and as-exercised basis. The Transactions are
+generally expected to be tax free to Pfizer and Pfizer stockholders for U.S. tax purposes. Beginning November 16, 2020, Viatris operates both the Upjohn Business and Mylan as an
+independent publicly traded company, which is traded under the symbol “VTRS” on the NASDAQ.
+In connection with the Transactions, in June 2020, Upjohn Inc. and Upjohn Finance B.V. completed privately placed debt offerings of $7.45 billion and €3.60 billion aggregate principal
+amounts, respectively, (approximately $11.4 billion) of senior unsecured notes and entered into other financing arrangements, including a $600 million delayed draw term loan
+agreement and a revolving credit facility agreement for up to $4.0 billion. Proceeds from the debt offerings and other financing arrangements were used to fund the $12.0 billion cash
+distribution Viatris made to Pfizer prior to the Distribution. We used the cash distribution proceeds to pay down commercial paper borrowings and redeem the $1.15 billion aggregate
+principal amount outstanding of our 1.95% senior unsecured notes that were due in June 2021 and $342 million aggregate principal amount outstanding of our 5.80% senior
+unsecured notes that were due in August 2023, before the maturity date. Interest expense for the $11.4 billion in debt securities incurred during 2020 is included in Discontinued
+operations––net of tax. Following the Separation and Combination of the Upjohn Business with Mylan, we are no longer the obligor or guarantor of any Upjohn debt or Upjohn
+financing arrangements.
+As a result of the spin-off of the Upjohn Business, we distributed net assets of $1.6 billion as of November 16, 2020, which was reflected as a reduction to Retained earnings and
+reflects the change in accounting principle in the first quarter of 2021 to MTM Accounting. See Note 1C. Of this amount, $412 million represents cash transferred to the Upjohn
+Business, with the remainder considered a non-cash activity in the consolidated statement of cash flows for the year ended December 31, 2020. The spin-off also resulted in a net
+increase to Accumulated other comprehensive loss of $423 million for the derecognition of net gains on foreign currency translation adjustments of $397 million and prior service net
+credits associated with benefit plans of $26 million, which were reclassified to Retained earnings.
+As a result of the separation of Upjohn, we incurred separation-related costs of $434 million in 2020 and $83 million in 2019, which are included in Discontinued operations––net of
+tax. These costs primarily relate to professional fees for regulatory filings and separation activities within finance, tax, legal and information system functions as well as investment
+banking fees.
+
+
+
+
+                                                                             Pfizer Inc.               2021 Form 10-K                    65

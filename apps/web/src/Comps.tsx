@@ -35,7 +35,7 @@ export function Comps() {
         <>
           <Card>
             <CardHead title="Implied valuation" hint={`${out.target}, ${out.period}`} />
-            {out.implied.length === 0 && <Empty>No result.</Empty>}
+            {out.implied.length === 0 && <Empty>No implied range. It needs at least 3 peers with a usable multiple. Check the peer rows below for the reason each one was left out.</Empty>}
             <table className="w-full text-sm"><thead><tr className="text-left text-[11px] uppercase tracking-wider text-mut">
               <th className="px-5 py-2">Basis</th><th className="text-right">Low</th><th className="text-right">Mid</th><th className="px-5 text-right">High</th></tr></thead>
               <tbody>{out.implied.map((i) => (

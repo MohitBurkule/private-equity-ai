@@ -1,0 +1,52 @@
+PART I — FINANCIAL INFORMATION
+
+Item 1.    Financial Statements
+
+                                                                                          Apple Inc.
+
+                                               CONDENSED CONSOLIDATED STATEMENTS OF OPERATIONS (Unaudited)
+                                       (In millions, except number of shares which are reflected in thousands and per share amounts)
+
+
+                                                                                                            Three Months Ended                                Nine Months Ended
+                                                                                                        July 1,2023            June 25,2022              July 1,2023            June 25,2022
+
+Net sales:
+   Products                                                                                     $            60,584      $            63,355      $          230,901      $           245,241
+   Services                                                                                                  21,213                   19,604                   62,886                  58,941
+     Total net sales                                                                                         81,797                   82,959                 293,787                  304,182
+
+Cost of sales:
+   Products                                                                                                  39,136                   41,485                 146,696                  155,084
+   Services                                                                                                    6,248                   5,589                   18,370                  16,411
+     Total cost of sales                                                                                     45,384                   47,074                 165,066                  171,495
+           Gross margin                                                                                      36,413                   35,885                 128,721                  132,687
+
+
+Operating expenses:
+     Research and development                                                                                  7,442                   6,797                   22,608                  19,490
+     Selling, general and administrative                                                                       5,973                   6,012                   18,781                  18,654
+           Total operating expenses                                                                          13,415                   12,809                   41,389                  38,144
+
+Operating income                                                                                             22,998                   23,076                   87,332                  94,543
+Other income/(expense), net                                                                                     (265)                     (10)                   (594)                     (97)
+Income before provision for income taxes                                                                     22,733                   23,066                   86,738                  94,446
+Provision for income taxes                                                                                     2,852                   3,624                   12,699                  15,364
+Net income                                                                                      $            19,881      $            19,442      $            74,039     $            79,082
+
+
+Earnings per share:
+     Basic                                                                                      $               1.27     $               1.20     $               4.69    $               4.86
+     Diluted                                                                                    $               1.26     $               1.20     $               4.67    $               4.82
+
+Shares used in computing earnings per share:
+     Basic                                                                                              15,697,614               16,162,945              15,792,497               16,277,824
+     Diluted                                                                                            15,775,021               16,262,203              15,859,263               16,394,937
+
+
+                                                  See accompanying Notes to Condensed Consolidated Financial Statements.
+
+
+
+
+                                                                             Apple Inc. | Q3 2023 Form 10-Q | 1
