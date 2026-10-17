@@ -3925,6 +3925,30 @@ def change(company_id: int, metric: str, new: str, old: str, db: Db, tenant: Ten
             "pct_change": None if v is None else str(v.quantize(Decimal("0.01")))}
 
 
+@app.get("/compliance/access-report")
+def access_report(deal: str, db: Db, who: Who, limit: int = Query(500, ge=1, le=5000)):
+    """Who did what to one deal, from the audit chain: every logged event that names the deal, with a count per
+    person. Only actions the trail records appear. Reading a document is not logged, so it is not here."""
+    if who.restricted:
+        raise HTTPException(403, "the access report covers the whole tenant; use an unrestricted key")
+    _require(who, "govern", "read the access report", deal=deal)
+    rows = (db.query(AuditEvent).filter_by(tenant_id=who.tenant).order_by(AuditEvent.id.desc())
+            .limit(limit * 10).all())
+    events = []
+    for r in rows:
+        payload = json.loads(r.payload)
+        names = {payload.get("name"), payload.get("deal"), *(payload.get("deals") or [])}
+        if deal in names:
+            events.append({"ts": r.ts, "actor": r.actor, "action": r.action, "payload": payload})
+        if len(events) >= limit:
+            break
+    per_actor: dict[str, int] = {}
+    for e in events:
+        per_actor[e["actor"]] = per_actor.get(e["actor"], 0) + 1
+    return {"deal": deal, "events": events, "by_actor": per_actor,
+            "note": "Logged actions only. Document reads are not in the audit trail."}
+
+
 @app.get("/audit")
 def audit_list(db: Db, who: Who, action: str | None = None, limit: int = Query(100, ge=1, le=500)):
     """The tenant's audit chain, newest first. Whole-tenant keys only: the trail names every deal."""
