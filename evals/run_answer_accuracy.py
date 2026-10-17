@@ -64,6 +64,19 @@ def _read(path: Path) -> dict[str, dict]:
     return {r["id"]: r for r in (json.loads(line) for line in path.read_text().splitlines() if line.strip())}
 
 
+class _Trimmed:
+    """Cuts each <document> body in the prompt to page_chars. Retrieval and the verifier still see full pages,
+    so this is a separate setup from the default, and results are labelled with it."""
+
+    def __init__(self, inner, page_chars: int):
+        self.inner, self.page_chars = inner, page_chars
+
+    def complete(self, system, prompt):
+        cut = re.sub(r"(<document [^>]*>\n)(.*?)(\n</document>)",
+                     lambda m: m.group(1) + m.group(2)[: self.page_chars] + m.group(3), prompt, flags=re.S)
+        return self.inner.complete(system, cut)
+
+
 class _Logged:
     """Keeps the model's raw output for the question in progress, so the checkpoint shows what it said."""
 
@@ -75,13 +88,15 @@ class _Logged:
         return self.last
 
 
-def run(data: Path, n: int, chunk: int, checkpoint: Path, k: int = 2, ids: set[str] | None = None) -> dict:
+def run(data: Path, n: int, chunk: int, checkpoint: Path, k: int = 2, ids: set[str] | None = None,
+        page_chars: int | None = None) -> dict:
     items = _load_items(data, n)
     done = _read(checkpoint)
     todo = [g for g in items if g["financebench_id"] not in done and (ids is None or g["financebench_id"] in ids)][:chunk]
     if todo:
         db = _db(data, todo, checkpoint.with_suffix(".pages"))  # only this chunk's filings
-        llm = _Logged(LlamaCppLLM(max_tokens=512, n_ctx=8192 if k > 2 else 4096))  # room for the JSON; prompt is the top-k pages only
+        base = LlamaCppLLM(max_tokens=512, n_ctx=8192 if k > 2 else 4096)  # room for the JSON; prompt is the top-k pages only
+        llm = _Logged(_Trimmed(base, page_chars) if page_chars else base)
         with checkpoint.open("a") as out:
             for g in todo:
                 want = float(g["answer"].replace("$", "").replace(",", ""))
@@ -117,5 +132,6 @@ if __name__ == "__main__":
     ap.add_argument("--checkpoint", type=Path, default=Path("answer_accuracy.checkpoint.jsonl"))
     ap.add_argument("--k", type=int, default=2, help="pages retrieved per question")
     ap.add_argument("--ids", nargs="*", help="only these financebench_ids")
+    ap.add_argument("--page-chars", type=int, default=None, help="trim each stored page to this many chars")
     a = ap.parse_args()
-    print(json.dumps(run(a.data, a.n, a.chunk, a.checkpoint, a.k, set(a.ids) if a.ids else None), indent=1))
+    print(json.dumps(run(a.data, a.n, a.chunk, a.checkpoint, a.k, set(a.ids) if a.ids else None, a.page_chars), indent=1))
