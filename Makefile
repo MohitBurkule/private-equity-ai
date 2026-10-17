@@ -27,6 +27,7 @@ demo-mocks:  ## Run the firm-system mock flows: compose mocks when Docker runs, 
 		apps/api/tests/test_sftp_mina.py apps/api/tests/test_datasite_flow.py \
 		apps/api/tests/test_dealcloud_stage_sync.py apps/api/tests/test_fund_admin_flow.py \
 		apps/api/tests/test_fundadmin_api_flow.py apps/api/tests/test_keycloak_sso.py \
-		apps/api/tests/test_outlook_sync_flow.py apps/api/tests/test_chat_delivery_e2e.py
+		apps/api/tests/test_outlook_sync_flow.py apps/api/tests/test_chat_delivery_e2e.py \
+		apps/api/tests/test_sharepoint_wiremock.py apps/api/tests/test_gsheets_wiremock.py
 
 .PHONY: demo-mocks
