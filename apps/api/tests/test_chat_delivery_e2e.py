@@ -27,7 +27,7 @@ def test_digest_is_posted_to_slack_and_teams_once(monkeypatch):
         posted.append((url, headers["X-Post-Body"]))
         return b""
 
-    monkeypatch.setattr(m, "chat_poster", lambda: chat_alerts.chat_poster(http=recorder))
+    monkeypatch.setattr(m, "chat_poster", lambda pii=False: chat_alerts.chat_poster(http=recorder, pii=pii))
     h = new_tenant(c, "chat-e2e")
     tid = principal_for_key(SessionLocal(), h["Authorization"].split()[1]).tenant
     with SessionLocal() as s:

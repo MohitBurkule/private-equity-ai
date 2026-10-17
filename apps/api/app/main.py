@@ -36,6 +36,7 @@ from app import (
     enrich,
     notify,
     opendata_tools,  # noqa: F401  (registers open-data agent tools)
+    outbound,
 )
 from app import agent as ag
 from app import alerts as al
@@ -362,6 +363,23 @@ def admin_sync_key_groups(tenant_id: str, kid: str, body: GroupSyncIn, db: Db,
     return {"key_id": kid, "groups": list(groups)}
 
 
+@app.put("/admin/tenants/{tenant_id}/pii-redaction")
+def admin_pii_redaction(tenant_id: str, body: dict, db: Db, x_admin_token: Annotated[str | None, Header()] = None):
+    """Turn the tenant's PII flag on or off. Admin token only; the change is audited under the tenant."""
+    if not admin_token_ok(x_admin_token):
+        raise HTTPException(403, "admin token required")
+    bind_tenant(db, tenant_id)  # no key here, so RLS would hide the tenant's rows unless bound to it
+    t = db.get(TenantRow, tenant_id)
+    if t is None:
+        raise HTTPException(404, "tenant not found")
+    if not isinstance(body.get("on"), bool):
+        raise HTTPException(422, "body must be {\"on\": true or false}")
+    t.pii_redaction = body["on"]
+    db.commit()
+    log_event(db, tenant_id, "admin", "tenant.pii_redaction", {"on": t.pii_redaction})
+    return {"tenant_id": tenant_id, "pii_redaction": t.pii_redaction}
+
+
 @app.post("/admin/tenants/{tenant_id}/keys", status_code=201)
 def admin_add_key(tenant_id: str, db: Db, body: KeyIn | None = None, x_admin_token: Annotated[str | None, Header()] = None):
     if not admin_token_ok(x_admin_token):
@@ -495,7 +513,9 @@ def _own_doc(db: Session, who: Principal, doc_id: str) -> Document:
         raise HTTPException(404, "document not found")
     if doc.deal and doc.deal in visible_mnpi_deal_names(db, who):
         log_event(db, who.tenant, actor(who), "document.mnpi_access", {"doc_id": doc.id, "deal": doc.deal})
-        db.commit()
+    # Every route that opens a document goes through here, so every read leaves a line in the trail.
+    log_event(db, who.tenant, actor(who), "document.read", {"doc_id": doc.id, "deal": doc.deal})
+    db.commit()
     return doc
 
 
@@ -942,7 +962,10 @@ def lbo_returns(body: dict, db: Db, who: Who, fetch: Annotated[Callable, Depends
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     if xlsx:
-        return Response(lbo_mod.build_xlsx(cited, res, grid), headers={
+        data = lbo_mod.build_xlsx(cited, res, grid)
+        if outbound.pii_on(db, who.tenant):
+            data = outbound.xlsx(data)
+        return Response(data, headers={
             "Content-Disposition": 'attachment; filename="lbo_returns.xlsx"'},
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     return {"entry_ev": str(res.entry_ev), "debt": str(res.debt), "fees": str(res.fees),
@@ -2318,8 +2341,10 @@ def email_attach(doc_id: str, body: EmailAttachIn, db: Db, who: Writer):
 def facts_xlsx(db: Db, who: Who, entity: str | None = None):
     """Verified and reviewed facts as a workbook; each value cell's comment lists its sources."""
     log_event(db, who.tenant, actor(who), "facts.export", {"entity": entity, "format": "xlsx"})
-    return Response(build_facts_xlsx(db, who.tenant, entity, visible_doc_ids(db, who)), headers={
-        "Content-Disposition": 'attachment; filename="facts.xlsx"'},
+    data = build_facts_xlsx(db, who.tenant, entity, visible_doc_ids(db, who))
+    if outbound.pii_on(db, who.tenant):
+        data = outbound.xlsx(data)
+    return Response(data, headers={"Content-Disposition": 'attachment; filename="facts.xlsx"'},
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
@@ -2365,14 +2390,18 @@ class CapitalCallIn(BaseModel):
     lp: str | None = Field(default=None, max_length=256)
 
 
-def _lp_output(model: lp_mod.Model, fmt: str, name: str, style: dict | None = None):
+def _lp_output(model: lp_mod.Model, fmt: str, name: str, style: dict | None = None, pii: bool = False):
     if fmt == "json":
         return {**model.to_dict(), **({"style": style} if style is not None else {})}
     if fmt == "docx":
-        return Response(lp_mod.to_docx(model), headers={"Content-Disposition": f'attachment; filename="{name}.docx"'},
+        data = lp_mod.to_docx(model)
+        return Response(outbound.docx(data) if pii else data,
+                        headers={"Content-Disposition": f'attachment; filename="{name}.docx"'},
                         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
     if fmt == "pptx":
-        return Response(lp_mod.to_pptx(model), headers={"Content-Disposition": f'attachment; filename="{name}.pptx"'},
+        data = lp_mod.to_pptx(model)
+        return Response(outbound.pptx(data) if pii else data,
+                        headers={"Content-Disposition": f'attachment; filename="{name}.pptx"'},
                         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
     raise HTTPException(422, "format must be json, docx or pptx")
 
@@ -2522,7 +2551,7 @@ def lp_letter(body: LpLetterIn, who: Writer, db: Db, format: str = "json", style
             except NoLLMConfigured:
                 outcome = {"status": "not_requested", "reason": "no local model configured"}
     log_event(db, who.tenant, actor(who), "lp.letter", {"fund": body.fund, "format": format})
-    return _lp_output(model, format, "lp-letter", outcome)
+    return _lp_output(model, format, "lp-letter", outcome, pii=outbound.pii_on(db, who.tenant))
 
 
 @app.post("/lp/capital-call")
@@ -2537,7 +2566,7 @@ def lp_capital_call(body: CapitalCallIn, who: Writer, db: Db, format: str = "jso
     except (ValueError, ArithmeticError) as e:
         raise HTTPException(422, str(e)) from e
     log_event(db, who.tenant, actor(who), "lp.capital_call", {"fund": body.fund, "format": format})
-    return _lp_output(model, format, "capital-call")
+    return _lp_output(model, format, "capital-call", pii=outbound.pii_on(db, who.tenant))
 
 
 @app.get("/memo.docx")
@@ -2859,7 +2888,7 @@ def portfolio_lp_report(period: str, prior: str, db: Db, who: Writer, format: st
             model.para((text, _fact_cite(db, rf["closing"]["fact_id"], rf["closing"]["value"])))
         if not kpi_rows:
             model.para((f"No figures on file for {period}.", None))
-    return _lp_output(model, format, "portfolio-lp-report")
+    return _lp_output(model, format, "portfolio-lp-report", pii=outbound.pii_on(db, who.tenant))
 
 
 @app.get("/portfolio/submissions")
@@ -3315,7 +3344,8 @@ def workflow_delete(wid: int, db: Db, who: Writer):
 @app.post("/workflows/run-due")
 def workflow_run_due(db: Db, who: Writer):
     """Run every due schedule of this tenant now. Call from cron; emails when SMTP_HOST is set."""
-    runs = wf_mod.run_due(db, who.tenant, visible_doc_ids(db, who), wf_mod.smtp_mailer(), chat=chat_poster())
+    runs = wf_mod.run_due(db, who.tenant, visible_doc_ids(db, who), wf_mod.smtp_mailer(),
+                          chat=chat_poster(pii=outbound.pii_on(db, who.tenant)))
     log_event(db, who.tenant, actor(who), "workflow.run_due", {"ran": len(runs)})
     return runs
 
