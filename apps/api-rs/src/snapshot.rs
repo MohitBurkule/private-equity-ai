@@ -2,6 +2,7 @@
 //! Built from the same rows the workspace reads, so the numbers agree with the screens.
 
 use crate::auth::principal;
+use crate::dd::pct_complete;
 use crate::error::ApiError;
 use crate::visibility::{require_visible_deal, Visibility};
 use crate::AppState;
@@ -118,13 +119,7 @@ pub async fn deal_snapshot(
         .await?;
     let dd_total = dd_rows.len();
     let dd_closed = dd_rows.iter().filter(|r| r.0 != "open").count();
-    let pct: Value = if dd_total == 0 {
-        Value::Null
-    } else {
-        // Python round(x, 1): same ties-to-even result as Rust's fixed-precision formatting.
-        let raw = 100.0 * dd_closed as f64 / dd_total as f64;
-        json!(format!("{raw:.1}").parse::<f64>().unwrap_or(raw))
-    };
+    let pct = pct_complete(dd_closed as i64, dd_total as i64);
 
     let open_alerts: (i64,) =
         sqlx::query_as("SELECT count(*) FROM alert WHERE deal = $1 AND status = 'new'")

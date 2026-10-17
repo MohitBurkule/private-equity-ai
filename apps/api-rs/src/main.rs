@@ -6,6 +6,7 @@ mod audit;
 mod auth;
 mod checklist;
 mod citations;
+mod dd;
 mod deals;
 mod documents;
 mod error;
@@ -54,6 +55,9 @@ pub fn app(state: AppState) -> Router {
         .route("/facts", get(facts::list_facts).post(facts::create_fact))
         .route("/documents", get(documents::list_documents))
         .route("/deals", get(deals::list_deals))
+        .route("/dd/requests", get(dd::list_requests))
+        .route("/dd/questions", get(dd::list_questions))
+        .route("/dd/summary", get(dd::dd_summary))
         .route("/alerts", get(alerts::list_alerts))
         .route("/alerts/brief", get(alerts::alerts_brief))
         .route("/deals/:name/checklist", get(checklist::list_checklist))
