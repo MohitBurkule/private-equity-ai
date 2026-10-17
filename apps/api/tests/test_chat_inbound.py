@@ -1,5 +1,5 @@
-"""Slack and Teams inbound: signed requests only, answers with citations, run as the app's key so deal scope and
-MNPI walls apply. The model is faked; the signature, scope and reply formats are real."""
+"""Slack and Teams inbound: signed requests only, answers with citations, run as the linked person's key so deal
+scope and MNPI walls apply. The model is faked; the signature, scope and reply formats are real."""
 import base64
 import hashlib
 import hmac
@@ -63,25 +63,27 @@ def world(monkeypatch):
     monkeypatch.setenv("TEAMS_SECURITY_TOKEN", TEAMS_TOKEN)
     t = c.post("/admin/tenants", json={"name": "chat-inbound"}, headers=ADMIN).json()
     owner = {"Authorization": f"Bearer {t['api_key']}"}
-    open_key = c.post(f"/admin/tenants/{t['tenant_id']}/keys", json={"role": "analyst"}, headers=ADMIN).json()["api_key"]
-    monkeypatch.setenv("SLACK_INBOUND_API_KEY", open_key)
-    monkeypatch.setenv("TEAMS_INBOUND_API_KEY", open_key)
     c.post("/deals", headers=owner, json={"name": "Alpha"})
     c.post("/deals", headers=owner, json={"name": "Secret", "mnpi": True})
     open_doc = upload(owner, "alpha revenue", "Alpha")
     secret_doc = upload(owner, "secret revenue", "Secret")
-    return {"owner": owner, "open_key": open_key, "open_doc": open_doc, "secret_doc": secret_doc,
-            "tenant": t["tenant_id"]}
+    link(t["tenant_id"], "slack:U_ANALYST")
+    return {"owner": owner, "open_doc": open_doc, "secret_doc": secret_doc, "tenant": t["tenant_id"]}
 
 
-def slack_call(body_fields: dict, headers: dict):
-    body = urlencode(body_fields).encode()
+def link(tenant, identity, **scope):
+    return c.post(f"/admin/tenants/{tenant}/keys", json={"role": "analyst", "identity": identity, **scope},
+                  headers=ADMIN).json()
+
+
+def slack_call(fields: dict, headers: dict):
+    body = urlencode(fields).encode()
     return c.post("/chat/slack/inbound", content=body, headers=headers)
 
 
 def test_signed_slack_question_gets_cited_ephemeral_answer(world, monkeypatch):
     monkeypatch.setattr(app_main, "get_llm", lambda: Cites(world["open_doc"], "Sheet!A1: alpha revenue\nSheet!B1: 1,234"))
-    body = urlencode({"text": "what was alpha revenue?"}).encode()
+    body = urlencode({"text": "what was alpha revenue?", "user_id": "U_ANALYST"}).encode()
     r = c.post("/chat/slack/inbound", content=body, headers=slack_headers(body))
     assert r.status_code == 200, r.text
     out = r.json()
@@ -89,26 +91,41 @@ def test_signed_slack_question_gets_cited_ephemeral_answer(world, monkeypatch):
     assert "Alpha revenue was 1,234" in out["text"] and "p.1" in out["text"]
 
 
+def test_unlinked_chat_user_gets_no_answer(world, monkeypatch):
+    monkeypatch.setattr(app_main, "get_llm", lambda: Cites(world["open_doc"], "Sheet!A1: alpha revenue\nSheet!B1: 1,234"))
+    body = urlencode({"text": "alpha revenue 1234?", "user_id": "U_STRANGER"}).encode()
+    out = c.post("/chat/slack/inbound", content=body, headers=slack_headers(body)).json()
+    assert "not linked" in out["text"] and "Alpha revenue" not in out["text"]
+
+
 def test_bad_or_stale_slack_signature_is_refused(world):
-    body = urlencode({"text": "alpha revenue 1234?"}).encode()
+    body = urlencode({"text": "alpha revenue 1234?", "user_id": "U_ANALYST"}).encode()
     assert c.post("/chat/slack/inbound", content=body, headers=slack_headers(body, secret="wrong")).status_code == 401
     assert c.post("/chat/slack/inbound", content=body,
                   headers=slack_headers(body, ts=int(time.time()) - 3600)).status_code == 401
 
 
-def test_scoped_bot_key_cannot_cite_a_walled_deal(world, monkeypatch):
-    scoped = c.post(f"/admin/tenants/{world['tenant']}/keys", json={"role": "analyst", "deals": ["Alpha"]},
-                    headers=ADMIN).json()["api_key"]
-    monkeypatch.setenv("SLACK_INBOUND_API_KEY", scoped)
+def test_each_person_runs_with_their_own_scope(world, monkeypatch):
+    link(world["tenant"], "slack:U_SCOPED", deals=["Alpha"])
     monkeypatch.setattr(app_main, "get_llm", lambda: Cites(world["secret_doc"], "Sheet!A1: alpha revenue\nSheet!B1: 1,234"))
-    body = urlencode({"text": "alpha revenue 1234?"}).encode()
+    body = urlencode({"text": "alpha revenue 1234?", "user_id": "U_SCOPED"}).encode()
     out = c.post("/chat/slack/inbound", content=body, headers=slack_headers(body)).json()
     assert "Alpha revenue" not in out["text"]
 
 
-def test_teams_mention_is_stripped_and_answer_is_a_message(world, monkeypatch):
+def test_shared_identity_is_not_linked(world, monkeypatch):
     monkeypatch.setattr(app_main, "get_llm", lambda: Cites(world["open_doc"], "Sheet!A1: alpha revenue\nSheet!B1: 1,234"))
-    body = json.dumps({"text": "<at>PE Bot</at> what was alpha revenue?"}).encode()
+    link(world["tenant"], "slack:U_ANALYST")  # same identity on a second key: ambiguous, so refused
+    body = urlencode({"text": "alpha revenue 1234?", "user_id": "U_ANALYST"}).encode()
+    out = c.post("/chat/slack/inbound", content=body, headers=slack_headers(body)).json()
+    assert "not linked" in out["text"]
+
+
+def test_teams_mention_is_stripped_and_answer_is_a_message(world, monkeypatch):
+    link(world["tenant"], "teams:aad-analyst")
+    monkeypatch.setattr(app_main, "get_llm", lambda: Cites(world["open_doc"], "Sheet!A1: alpha revenue\nSheet!B1: 1,234"))
+    body = json.dumps({"text": "<at>PE Bot</at> what was alpha revenue?",
+                       "from": {"id": "29:x", "aadObjectId": "aad-analyst"}}).encode()
     r = c.post("/chat/teams/inbound", content=body, headers=teams_headers(body))
     assert r.status_code == 200 and r.json()["type"] == "message"
     assert "Alpha revenue was 1,234" in r.json()["text"]
@@ -117,7 +134,7 @@ def test_teams_mention_is_stripped_and_answer_is_a_message(world, monkeypatch):
 
 
 def test_empty_question_gets_help_and_unknown_app_is_404(world):
-    body = urlencode({"text": "   "}).encode()
+    body = urlencode({"text": "   ", "user_id": "U_ANALYST"}).encode()
     r = c.post("/chat/slack/inbound", content=body, headers=slack_headers(body))
     assert r.status_code == 200 and "Ask a question" in r.json()["text"]
     assert c.post("/chat/discord/inbound", content=b"{}").status_code == 404

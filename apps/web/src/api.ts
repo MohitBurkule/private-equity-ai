@@ -188,6 +188,18 @@ export interface AlertBrief { since: string; total: number; by_kind: Record<stri
 
 export interface RefreshOut { checked: number; refreshed: number; failed: number; dissolved: number }
 
+export interface Note { id: number; author: string; body: string; created_at: string; edited_at: string | null }
+
+// Deal and target notes share one shape; only the path differs. The server decides who may edit (author, or a whole-tenant key).
+export const notesFor = (base: string) => ({
+  list: () => call<Note[]>(`${base}/notes`),
+  add: (body: string) => call<Note>(`${base}/notes`, "POST", { body }),
+  edit: (id: number, body: string) => call<Note>(`${base}/notes/${id}`, "PATCH", { body }),
+});
+
+export const dealNotes = (deal: string) => notesFor(`/deals/${encodeURIComponent(deal)}`);
+export const targetNotes = (tid: number) => notesFor(`/targets/${tid}`);
+
 export const api2 = {
   targets: (f: TargetFilter) => {
     const p = new URLSearchParams({ limit: "1000" });

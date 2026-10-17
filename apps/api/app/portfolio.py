@@ -7,6 +7,7 @@ supersedes the older one, which stays in history.
 """
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -157,3 +158,32 @@ def roll_forward(opening: Decimal | None, closing: Decimal | None, contributions
     if None in (opening, closing, contributions, distributions):
         return None
     return closing - opening - contributions + distributions
+
+
+def _month_index(period: str) -> int | None:
+    """Month number of a YYYY-MM period, None for any other period label (quarters, years, custom)."""
+    m = re.fullmatch(r"(\d{4})-(\d{2})", period)
+    return int(m[1]) * 12 + int(m[2]) - 1 if m and 1 <= int(m[2]) <= 12 else None
+
+
+def compliance_summary(tests: list[dict]) -> dict:
+    """Summary of one covenant's tests over its monthly ledger periods (rows from evaluate_covenant). `missing` lists
+    the months between the first and last tested period that have no test, so a gap in the ledger feed shows up
+    instead of reading as compliance. Status is breach if any tested month breached, no_data if none was tested."""
+    rows = sorted(tests, key=lambda t: t["period"])
+    breaches = [t["period"] for t in rows if t["status"] == "breach"]
+    seen = {t["period"] for t in rows}
+    missing = []
+    idx = [_month_index(t["period"]) for t in rows]
+    if rows and None not in (idx[0], idx[-1]):
+        for i in range(idx[0], idx[-1] + 1):
+            key = f"{i // 12:04d}-{i % 12 + 1:02d}"
+            if key not in seen:
+                missing.append(key)
+    headrooms = [(Decimal(t["headroom_pct"]), t["period"]) for t in rows if "headroom_pct" in t]
+    low = min(headrooms) if headrooms else None
+    status = "no_data" if not rows else ("breach" if breaches else "ok")
+    return {"status": status, "tested_months": len(rows), "first_breach": breaches[0] if breaches else None,
+            "latest": rows[-1] if rows else None,
+            "min_headroom": {"period": low[1], "headroom_pct": str(low[0])} if low else None,
+            "missing": missing}

@@ -80,3 +80,16 @@ def test_check_flags_breach_with_both_quotes_and_never_guesses_missing_kpi():
     )
     assert rows["interest_coverage"]["status"] == "ok"
     assert rows["total_net_leverage"]["status"] == "not_tested"
+
+
+def test_check_reports_headroom_in_percent_of_threshold_signed_by_side():
+    from app.covenant_parse import check
+
+    tests = extract(TEXT)
+    observed = {
+        "secured_net_leverage": {"value": "2.70", "period": "FY2026Q2", "source": "xpo-q2.htm p.4"},  # max 3.00
+        "interest_coverage": {"value": "2.60", "period": "FY2026Q2", "source": "xpo-q2.htm p.5"},  # min 2.00
+    }
+    rows = {r["kpi_metric"]: r for r in check(tests, observed)}
+    assert rows["secured_net_leverage"]["headroom_pct"] == "10.0"  # (3.00 - 2.70) / 3.00
+    assert rows["interest_coverage"]["headroom_pct"] == "30.0"  # (2.60 - 2.00) / 2.00

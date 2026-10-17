@@ -53,6 +53,17 @@ def principal_for_key(db: Session, key: str) -> Principal | None:
                      parse_deal_roles(row.deal_roles), identity=row.identity, groups=parse_groups(row.groups))
 
 
+def principal_for_identity(db: Session, identity: str) -> Principal | None:
+    """The one live key whose identity is this external id, e.g. a chat user's `slack:U123`. Ambiguous or unknown
+    identities resolve to nobody, so a chat user never inherits someone else's scope."""
+    rows = db.query(ApiKey).filter(ApiKey.identity == identity.lower(), ApiKey.revoked.is_(False)).limit(2).all()
+    if len(rows) != 1:
+        return None
+    row = rows[0]
+    return Principal(row.tenant_id, row.role, parse_deals(row.deals), key_id(row.key_hash),
+                     parse_deal_roles(row.deal_roles), identity=row.identity, groups=parse_groups(row.groups))
+
+
 def add_key(db: Session, tenant_id: str, role: str = "analyst",
             deals: list[str] | None = None, deal_roles: dict[str, str] | None = None,
             identity: str | None = None, groups: list[str] | None = None) -> tuple[str, str]:

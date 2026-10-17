@@ -52,6 +52,8 @@ Reader (local gemma 9B) run on the held-out terms the rules did not find, on the
 **Result:** 2 exhibits finished (1364885 Spirit, 1599489 Veritiv): 0 false findings out of 3 reader calls (Spirit: non-solicit only, since the rules had found its fee; Veritiv: fee and non-solicit). The third exhibit did not finish before the run was stopped, so the false-finding rate is unmeasured beyond these 2. Reader recall on the held-out misses is also not measured; the rules already catch 19 of 20 governing-law and 17 of 19 escrow positives.
 
 ### Fixes after the held-out run (not in the numbers above)
+- Non-solicit "until the second (2nd) anniversary ... Seller shall not ... solicit" (Sabre 1597033): the anniversary came before the verb, so the rule missed it. Regex now also reads an anniversary followed by "solicit" in the same sentence. Held-out rerun: non-solicit recall 0.67 to 1.00, with one new false positive (below).
+- New false positive after that fix, Flowco 2035149: the text says "the third anniversary of the Closing Date ... shall not solicit", so 36 months is what the text says. The gold null for it was a labelling miss, the same kind as the escrow conflict. Gold is not relabelled after scoring: the rule is counted as a false positive here.
 Two held-out misses fixed in code, each with a regression test: governing law "governed and interpreted under the Laws of ..." (no "by"), and non-solicit "second (2nd) anniversary" = 24 months. The held-out table and results above are kept as scored, before these fixes. The termination fee amendment ordering and the escrow "fund without amount" question are not changed; they need a decision. The next fresh set measures these fixes.
 
 ## Current status (both sets)
@@ -124,3 +126,19 @@ Also fixed in this pass: "not assignable" is now a restriction; "shall not be re
 ### Update: termination notice and governing-law precision
 - `termination_notice_days` is now always `needs_review`, so it never shows as a clean finding. Added "thirty (30) days after the giving of such notice" (Mercantile now found: fresh set 1 of 1). Side effect: two extra "days after notice" hits in the first lease/employment set (score 4/3/0, was 4/1/0). Still review-only.
 - Blind governing-law precision 0.55 was a labelling error, not a rule error. The five blind "false positives" were exhibits where I had labelled null but the text states the law (Colorado, Michigan, Pennsylvania, Delaware, New Jersey). Corrected gold fixed it; the rule matched the text.
+
+## Reader (local gemma 9B) on lease and employment, CPU
+Run on the fresh 20-exhibit set (`evals/legal_gold_fresh_lease_employment.json`). Gold was written before the rules ran, then corrected (see above), so these are not held-out numbers.
+
+- **False-finding sample (rules on, reader on the rules' gaps):** 10 exhibits, 0 reader findings. 0 false findings. The reader only runs on terms the rules did not find, so this shows it added nothing here, not that it was checked on every term.
+- **Recall with rules disabled (every supported term asked):** 20 exhibits.
+
+| term | gold positives | reader found right value | recall | false findings |
+|---|---|---|---|---|
+| severance | 10 | 10 | 1.00 | 0 |
+| change_of_control | 7 | 5 | 0.71 | 0 |
+| governing_law | 12 | 8 | 0.67 | 0 |
+| assignment | 10 | 3 | 0.30 | 1 |
+| termination_notice_days | 1 | 0 | 0.00 | 0 |
+
+Read these with care: the match for governing law is a loose text match done in a scratch script, not in `evals/legal_benchmark.py`. Each exhibit takes 1 to 10 minutes on CPU, so the run was done one exhibit per call. The reader is a useful second reader for severance and change of control; it is not reliable for assignment or notice periods.

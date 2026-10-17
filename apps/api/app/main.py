@@ -94,6 +94,7 @@ from app.auth import (
     hash_key,
     key_id,
     list_keys,
+    principal_for_identity,
     principal_for_key,
     revoke_key,
 )
@@ -102,6 +103,8 @@ from app.calendar_events import retag_deals
 from app.chat_alerts import chat_poster
 from app.chat_inbound import (
     HELP,
+    NOT_LINKED,
+    chat_identity,
     format_answer,
     slack_question,
     slack_reply,
@@ -207,6 +210,7 @@ from app.portfolio import (
     PortfolioCompany,
     add_covenant,
     budget_variance,
+    compliance_summary,
     current_kpis,
     evaluate_covenant,
     qoq_change,
@@ -697,8 +701,10 @@ def get_page(doc_id: str, number: int, db: Db, who: Who):
 @app.get("/documents")
 def list_documents(db: Db, who: Who):
     hidden = hidden_deal_names(db, who)
+    acl_hidden = acl_hidden_doc_ids(db, who)  # the same test _own_doc applies, so a listed name always opens
     return [{"id": d.id, "filename": d.filename, "n_pages": d.n_pages, "deal": d.deal}
-            for d in db.query(Document).filter_by(tenant_id=who.tenant).all() if doc_visible(d, who, hidden)]
+            for d in db.query(Document).filter_by(tenant_id=who.tenant).all()
+            if doc_visible(d, who, hidden) and d.id not in acl_hidden]
 
 
 class FactIn(BaseModel):
@@ -2718,6 +2724,43 @@ def valuation_roll_forward(company_id: int, period: str, prior: str, db: Db, who
             "change_in_value": None if change is None else str(change)}
 
 
+def _fact_cite(db: Session, fact_id: int, value: str) -> lp_mod.Cite:
+    """The cited source of one figure, as the LP model takes it: the document it was read from, and its link."""
+    f = db.get(Fact, fact_id)
+    src = f.sources[0] if f is not None and f.sources else None
+    doc = db.get(Document, src.document_id) if src is not None else None
+    link = db.query(DocumentSource).filter_by(document_id=src.document_id).first() if src is not None else None
+    return lp_mod.Cite(value, doc.filename if doc else f"fact {fact_id}", link.url if link else None)
+
+
+@app.get("/portfolio/lp-report")
+def portfolio_lp_report(period: str, prior: str, db: Db, who: Writer, format: str = "json"):
+    """Per-company section for LP reporting: cited actuals for the period, budget against actual where both are on
+    file, and the change in value from the roll-forward. Every line carries its source. A figure the caller may not
+    see is left out, as the company routes leave it out."""
+    model = lp_mod.Model(f"Portfolio LP report: {period} (prior mark {prior})")
+    for c in db.query(PortfolioCompany).filter_by(tenant_id=who.tenant).order_by(PortfolioCompany.name).all():
+        model.para((f"{c.name}:", None))
+        kpi_rows = kpis(c.id, db, who)
+        for k in kpi_rows:
+            model.para((f"{k['metric']} {k['value']} {k['unit']} for {period}.",
+                        _fact_cite(db, k["fact_id"], k["value"])))
+        for m in budget_vs_actual(c.id, period, db, who)["metrics"]:
+            if m["actual"] is None or m["budget"] is None:
+                continue
+            text = (f"{m['metric']}: actual {m['actual']['value']} against budget {m['budget']['value']}, "
+                    f"variance {m['variance']}.")
+            model.para((text, _fact_cite(db, m["actual"]["fact_id"], m["actual"]["value"])))
+        rf = valuation_roll_forward(c.id, period, prior, db, who)
+        if rf["change_in_value"] is not None and rf["closing"] is not None:
+            text = (f"Change in value from {prior} to {period}: {rf['change_in_value']} "
+                    "(closing mark less opening mark, adjusted for cash in and out).")
+            model.para((text, _fact_cite(db, rf["closing"]["fact_id"], rf["closing"]["value"])))
+        if not kpi_rows:
+            model.para((f"No figures on file for {period}.", None))
+    return _lp_output(model, format, "portfolio-lp-report")
+
+
 @app.get("/portfolio/submissions")
 def kpi_submissions(period: str, db: Db, who: Who):
     """Which portfolio companies have filed any KPI for the period and which have not, so the missing ones can be
@@ -2759,7 +2802,7 @@ def covenant_status(company_id: int, db: Db, who: Who):
     scope = visible_doc_ids(db, who)
     covs = db.query(Covenant).filter_by(tenant_id=who.tenant, company_id=company_id).all()
     out = [{"id": c.id, "kpi_metric": c.kpi_metric, "operator": c.operator,
-            "tests": evaluate_covenant(db, c, scope)} for c in covs]
+            "tests": (tests := evaluate_covenant(db, c, scope)), "compliance": compliance_summary(tests)} for c in covs]
     breaches = [{"covenant_id": c["id"], "kpi_metric": c["kpi_metric"], **t}
                 for c in out for t in c["tests"] if t["status"] in ("breach", "unit_mismatch")]
     return {"covenants": out, "breaches": breaches}
@@ -3890,11 +3933,8 @@ async def chat_inbound(kind: str, request: Request, db: Db):
     if kind not in ("slack", "teams"):
         raise HTTPException(404, "unknown chat app")
     body = await request.body()
-    if kind == "slack":
-        secret, token = os.environ.get("SLACK_SIGNING_SECRET"), os.environ.get("SLACK_INBOUND_API_KEY")
-    else:
-        secret, token = os.environ.get("TEAMS_SECURITY_TOKEN"), os.environ.get("TEAMS_INBOUND_API_KEY")
-    if not secret or not token:
+    secret = os.environ.get("SLACK_SIGNING_SECRET" if kind == "slack" else "TEAMS_SECURITY_TOKEN")
+    if not secret:
         raise HTTPException(503, f"{kind} inbound is not configured")
     if kind == "slack":
         ok = verify_slack(secret, request.headers.get("X-Slack-Request-Timestamp", ""),
@@ -3908,15 +3948,15 @@ async def chat_inbound(kind: str, request: Request, db: Db):
     reply = slack_reply if kind == "slack" else teams_reply
     if not question:
         return reply(HELP)
-    who = principal_for_key(db, token)
+    who = principal_for_identity(db, chat_identity(kind, body))
     if who is None:
-        raise HTTPException(503, f"{kind} inbound key is not valid")
+        return reply(NOT_LINKED)
     bind_tenant(db, who.tenant)
     a = answer_question(db, who.tenant, llm_dependency(), question, scope=visible_doc_ids(db, who))
     filenames = {d.id: d.filename for d in db.query(Document).filter(
         Document.tenant_id == who.tenant, Document.id.in_([c.doc_id for c in a.claims] or [""]))}
-    log_event(db, who.tenant, f"chat:{kind}", "chat.ask", {"question": question, "status": a.status,
-                                                          "claims": len(a.claims), "rejected": len(a.rejected)})
+    log_event(db, who.tenant, who.identity or f"chat:{kind}", "chat.ask", {"question": question, "status": a.status,
+                                                                         "claims": len(a.claims), "rejected": len(a.rejected)})
     db.commit()
     return reply(format_answer(a, filenames))
 
