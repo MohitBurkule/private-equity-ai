@@ -36,6 +36,15 @@ def test_api_sync_then_cited_facts_and_kpis(monkeypatch):
     assert kpis == {"capital_call_usd": 12_500_000.0, "nav_usd": 214_000_000.0}
 
 
+def test_sync_stores_cited_facts_without_a_second_call(monkeypatch):
+    monkeypatch.setattr(m, "CONNECTOR_HTTP", fake({k: json.dumps(v).encode() for k, v in ROUTES.items()}))
+    h = new_tenant(c, "fundadmin-auto")
+    body = {"token": "tok", "deal": "fund-vii", "options": {"base_url": BASE, "fund": "FUND-7"}}
+    assert c.post("/connectors/fundadmin/sync", json=body, headers=h).status_code == 200
+    facts = c.get("/facts", params={"entity": "fund-vii"}, headers=h).json()
+    assert sorted(f["metric"] for f in facts) == ["capital_call_usd", "nav_usd"]
+
+
 def test_unexpected_shape_is_a_connector_error(monkeypatch):
     bad = {f"{BASE}/v1/funds/FUND-7/capital-calls": {"rows": []}, f"{BASE}/v1/funds/FUND-7/nav": {}}
     monkeypatch.setattr(m, "CONNECTOR_HTTP", fake({k: json.dumps(v).encode() for k, v in bad.items()}))
