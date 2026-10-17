@@ -8,7 +8,7 @@ and an e2e test that skips when the service is not running.
 |---|---|---|---|
 | Dev mail (SMTP, API) | Mailpit v1.21.8 | wired | compose `mailpit`, CI, `tests/test_mailpit_e2e.py`, `tests/test_mailpit_ingest.py` |
 | Generic IMAP mailbox | GreenMail 2.1.2 | wired | compose `greenmail`, CI, `tests/test_greenmail_e2e.py` |
-| Microsoft Graph (Outlook, SharePoint) | WireMock 3.9.1 (jar or compose) | wired | compose `wiremock` (port 8089), `tests/test_wiremock_adapters.py`, `tests/test_outlook_sync_flow.py` (mail to DD document), skips without `WIREMOCK_JAR` or `WIREMOCK_URL` |
+| Microsoft Graph (Outlook, SharePoint) | WireMock 3.9.1 (jar or compose) | wired | compose `wiremock` (port 8089), `tests/test_wiremock_adapters.py`, `tests/test_sharepoint_wiremock.py` (library to documents), `tests/test_outlook_sync_flow.py` (mail to DD document), skips without `WIREMOCK_JAR` or `WIREMOCK_URL` |
 | Google Drive | WireMock 3.9.1 (jar or compose) | wired | `tests/test_wiremock_adapters.py` |
 | CRM (Salesforce SOQL, HubSpot companies/deals/contacts) | WireMock 3.9.1 (jar or compose) | wired | `tests/test_wiremock_adapters.py` |
 | Slack (conversations.list, conversations.history, incoming webhooks) | WireMock 3.9.1 (jar) | wired locally | `tests/test_wiremock_adapters.py`, poster in `app/chat_alerts.py`, endpoint flow in `tests/test_chat_delivery_e2e.py` |
@@ -16,7 +16,7 @@ and an e2e test that skips when the service is not running.
 | SSO / OIDC | mock-oauth2-server 6.1.1 (jar) | wired | `tests/test_oauth_mock_idp_e2e.py`, `tests/test_sso_mock_idp_e2e.py` (roles from scope, config in `apps/api/tests/mock_oauth/config.json`); both skip without `MOCK_OAUTH_URL` |
 | Object store (S3) | moto (in-process server) | wired | `apps/api/app/connectors/s3.py`, `tests/test_s3_moto.py` |
 | SFTP data room | Apache MINA SSHD (jar, `tests/mocks/sftp/SftpMock.java`) | wired | `apps/api/app/connectors/sftp.py`, `tests/test_sftp_mina.py`, needs `SSHD_CLASSPATH` |
-| Google Sheets | fake in tests | planned mock | `tests/test_gsheets.py` (in-test fake) |
+| Google Sheets | WireMock 3.9.1 (jar) | wired | `tests/test_gsheets_wiremock.py` (pull through sync, push); `tests/test_gsheets.py` keeps an in-test fake so the flow runs without a jar |
 | Keycloak | not used | skipped | mock-oauth2-server covers OIDC |
 | MinIO | not used | blocked | binary download returned 410 in the build sandbox; S3 tests use moto |
 
