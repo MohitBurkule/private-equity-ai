@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
-from licence_audit import classify  # noqa: E402
+from licence_audit import classify
 
 
 def test_permissive_licence_passes():
