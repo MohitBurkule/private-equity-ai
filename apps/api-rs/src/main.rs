@@ -1,6 +1,7 @@
 //! Optional Rust port of apps/api (FastAPI). Routes ported so far: /health, /me (auth probe), GET/POST /facts.
 //! Schema is owned by the alembic migrations in apps/api; this service never runs migrations.
 
+mod alerts;
 mod audit;
 mod auth;
 mod checklist;
@@ -53,6 +54,8 @@ pub fn app(state: AppState) -> Router {
         .route("/facts", get(facts::list_facts).post(facts::create_fact))
         .route("/documents", get(documents::list_documents))
         .route("/deals", get(deals::list_deals))
+        .route("/alerts", get(alerts::list_alerts))
+        .route("/alerts/brief", get(alerts::alerts_brief))
         .route("/deals/:name/checklist", get(checklist::list_checklist))
         .route("/deals/:name/snapshot", get(snapshot::deal_snapshot))
         .route("/deals/:name/notes", get(notes::list_deal_notes))
