@@ -8,7 +8,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = '20261017_1725_kpi_kind'
-down_revision = '0059'
+down_revision = '20261017_1704_target_note'
 branch_labels = None
 depends_on = None
 
