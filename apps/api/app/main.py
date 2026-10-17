@@ -1632,10 +1632,28 @@ def _memo_comps(db: Session, who, entity: str, peers: str, period: str) -> dict 
     return comps_mod.run(db, who.tenant, entity, names, period, ["revenue"], visible_doc_ids(db, who))
 
 
+def _memo_legal(db: Session, who, legal_doc: str) -> list[dict] | None:
+    """Legal red flags for the memo's legal section, from one contract the caller can see (rules only, cited)."""
+    if not legal_doc:
+        return None
+    doc = _own_doc(db, who, legal_doc)
+    pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc.id).order_by(PageRow.number)]
+    if not pages:
+        pages = [(u.idx + 1, u.text) for u in db.query(HtmlUnit).filter_by(document_id=doc.id).order_by(HtmlUnit.idx)]
+    doc_type = flagship_mod.detect_doc_type(pages)
+    if not doc_type:
+        raise HTTPException(400, "legal_doc is not a recognised nda, spa, credit, lease or employment document")
+    flags = legal_mod.red_flags(legal_mod.extract(pages, doc_type))
+    for f in flags:
+        f.setdefault("document_id", doc.id)
+    return flags
+
+
 @app.get("/memo")
-def memo(entity: str, db: Db, who: Who, peers: str = "", period: str = ""):
+def memo(entity: str, db: Db, who: Who, peers: str = "", period: str = "", legal_doc: str = ""):
     comps = _memo_comps(db, who, entity, peers, period)
-    return {"entity": entity, "markdown": build_memo(db, who.tenant, entity, visible_doc_ids(db, who), comps)}
+    legal = _memo_legal(db, who, legal_doc)
+    return {"entity": entity, "markdown": build_memo(db, who.tenant, entity, visible_doc_ids(db, who), comps, legal)}
 
 
 class MemoTemplateIn(BaseModel):
@@ -2171,10 +2189,11 @@ def lp_capital_call(body: CapitalCallIn, who: Writer, db: Db, format: str = "jso
 
 
 @app.get("/memo.docx")
-def memo_docx(entity: str, db: Db, who: Who, peers: str = "", period: str = ""):
+def memo_docx(entity: str, db: Db, who: Who, peers: str = "", period: str = "", legal_doc: str = ""):
     log_event(db, who.tenant, actor(who), "memo.export", {"entity": entity, "format": "docx"})
     comps = _memo_comps(db, who, entity, peers, period)
-    return Response(build_memo_docx(db, who.tenant, entity, visible_doc_ids(db, who), comps), headers={
+    legal = _memo_legal(db, who, legal_doc)
+    return Response(build_memo_docx(db, who.tenant, entity, visible_doc_ids(db, who), comps, legal), headers={
         "Content-Disposition": 'attachment; filename="memo.docx"'},
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
@@ -2271,9 +2290,9 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
 
 
 @app.get("/memo.pptx")
-def memo_pptx(entity: str, db: Db, who: Who):
+def memo_pptx(entity: str, db: Db, who: Who, legal_doc: str = ""):
     log_event(db, who.tenant, actor(who), "memo.export", {"entity": entity, "format": "pptx"})
-    return Response(build_memo_pptx(db, who.tenant, entity, visible_doc_ids(db, who)), headers={
+    return Response(build_memo_pptx(db, who.tenant, entity, visible_doc_ids(db, who), _memo_legal(db, who, legal_doc)), headers={
         "Content-Disposition": 'attachment; filename="memo.pptx"'},
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
