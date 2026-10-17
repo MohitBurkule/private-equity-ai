@@ -30,31 +30,41 @@ def test_deals_tenant_isolated():
     assert c.patch("/deals/Secret", headers=b, json={"stage": "ic"}).status_code == 404
 
 
+def admin_pair(name: str) -> tuple[dict[str, str], dict[str, str]]:
+    """Two admin keys on one tenant: one requests a deletion, the other confirms it."""
+    t = c.post("/admin/tenants", json={"name": name}, headers={"X-Admin-Token": "test-admin"}).json()
+    first = {"Authorization": f"Bearer {t['api_key']}"}
+    k2 = c.post(f"/admin/tenants/{t['tenant_id']}/keys", json={"role": "admin"},
+                headers={"X-Admin-Token": "test-admin"}).json()
+    return first, {"Authorization": f"Bearer {k2['api_key']}"}
+
+
 def test_legal_hold_blocks_delete_until_lifted():
-    h = new_tenant(c, "dl4")
+    h, confirmer = admin_pair("dl4")
     c.post("/deals", headers=h, json={"name": "Held"})
     assert c.patch("/deals/Held", headers=h, json={"legal_hold": True}).json()["legal_hold"] is True
     assert c.post("/deals/Held/deletion-request", headers=h).status_code == 409
-    assert c.delete("/deals/Held", headers=h).status_code == 409
+    assert c.delete("/deals/Held", headers=confirmer).status_code == 409
     c.patch("/deals/Held", headers=h, json={"legal_hold": False})
     assert c.post("/deals/Held/deletion-request", headers=h).status_code == 201
-    assert c.delete("/deals/Held", headers=h).json()["deleted"] == "Held"
+    assert c.delete("/deals/Held", headers=confirmer).json()["deleted"] == "Held"
     assert c.get("/deals", headers=h).json() == []
 
 
 def test_delete_removes_dd_items():
-    h = new_tenant(c, "dl5")
+    h, confirmer = admin_pair("dl5")
     c.post("/deals", headers=h, json={"name": "Gone"})
     c.post("/dd/requests/seed", headers=h, json={"deal": "Gone", "categories": ["legal"]})
-    assert c.delete("/deals/Gone", headers=h).status_code == 409  # no request on file
+    assert c.delete("/deals/Gone", headers=confirmer).status_code == 409  # no request on file
     assert c.post("/deals/Gone/deletion-request", headers=h).status_code == 201
-    r = c.delete("/deals/Gone", headers=h)
+    r = c.delete("/deals/Gone", headers=confirmer)
     assert r.status_code == 200 and r.json()["dd_requests_removed"] > 0
-    assert c.delete("/deals/Gone", headers=h).status_code == 404
+    assert c.delete("/deals/Gone", headers=confirmer).status_code == 404
 
 
 def test_delete_refuses_while_documents_linked_and_is_tenant_isolated():
-    a, b = new_tenant(c, "dl6"), new_tenant(c, "dl7")
+    a, confirmer = admin_pair("dl6")
+    b = new_tenant(c, "dl7")
     c.post("/deals", headers=a, json={"name": "Linked"})
     assert c.delete("/deals/Linked", headers=b).status_code == 404
     buf = io.BytesIO()
@@ -63,8 +73,8 @@ def test_delete_refuses_while_documents_linked_and_is_tenant_isolated():
     wb.save(buf)
     assert c.post("/documents", files={"file": ("l.xlsx", buf.getvalue(), "x")}, data={"deal": "Linked"},
                   headers=a).status_code in (200, 201)
-    assert c.post("/deals/Linked/deletion-request", headers=a).status_code == 409
-    assert c.delete("/deals/Linked", headers=a).status_code == 409
+    assert c.post("/deals/Linked/deletion-request", headers=a).status_code == 409  # refused at the request too
+    assert c.delete("/deals/Linked", headers=confirmer).status_code == 409
 
 
 def test_mnpi_deal_hidden_from_other_unscoped_keys_and_visible_to_scoped_and_creator():
@@ -179,6 +189,9 @@ def test_deletion_needs_admin_then_a_request_then_the_confirm():
     assert c.post("/deals/Purge/deletion-request", headers=admin).status_code == 201
     assert c.post("/deals/Purge/deletion-request", headers=admin).status_code == 409
     assert c.delete("/deals/Purge", headers=ph).status_code == 403
-    assert c.delete("/deals/Purge", headers=admin).json()["deleted"] == "Purge"
+    assert c.delete("/deals/Purge", headers=admin).status_code == 403  # the requester cannot confirm
+    other = c.post(f"/admin/tenants/{t['tenant_id']}/keys", json={"role": "admin"}, headers={"X-Admin-Token": "test-admin"}).json()
+    oh = {"Authorization": f"Bearer {other['api_key']}"}
+    assert c.delete("/deals/Purge", headers=oh).json()["deleted"] == "Purge"
     log = c.get("/audit", params={"action": "deal.delete"}, headers=admin).json()
     assert log["items"][0]["payload"]["requested_by"]
