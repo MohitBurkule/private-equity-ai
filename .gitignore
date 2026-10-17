@@ -5,3 +5,6 @@ node_modules/
 .venv/
 *.db
 *.whl
+
+# Downloaded SEC filings for make demo (fetched with SEC_USER_AGENT; filings/manifest.json records URL and SHA-256)
+data/demo/edgar/
