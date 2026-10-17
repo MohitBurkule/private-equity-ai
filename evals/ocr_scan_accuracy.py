@@ -5,7 +5,6 @@ page's text layer. Modes:
 
   clean          200 dpi render, no degradation.
   degraded       150 dpi render, then skew (+/-0.8 deg), Gaussian noise and a JPEG round trip (quality 40).
-  degraded_pre   degraded, then preprocessing: deskew, denoise, Otsu binarise, upscale 2x (300 dpi equivalent).
 
 Engines: rapid (RapidOCR), tesseract (CLI), vote (a number counts only when both engines read it; numbers
 only one engine reads are "disputed" and go to the review queue).
@@ -13,7 +12,7 @@ only one engine reads are "disputed" and go to the review queue).
 A token like 3.071 is ambiguous (decimal or thousands). Unless the page has comma-thousands numbers,
 period-thousands tokens are counted as ambiguous and reported separately, never guessed.
 
-Usage: python evals/ocr_scan_accuracy.py --mode clean|degraded|degraded_pre|all --engine rapid|tesseract|vote
+Usage: python evals/ocr_scan_accuracy.py --mode clean|degraded|all --engine rapid|tesseract|vote
        [--pages 3] [--match NAME] [--dump-misses NAME]
 Run from apps/api (pdf and ocr extras; tesseract on PATH for tesseract and vote). Output is JSON on stdout.
 """
@@ -45,9 +44,8 @@ NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
 PERIOD_THOUSANDS = re.compile(r"^\d{1,3}\.\d{3}$")
 COMMA_THOUSANDS = re.compile(r"^\d{1,3}(?:,\d{3})+(?:\.\d+)?$")
 MODES = {
-    "clean": {"dpi": 200, "degrade": False, "preprocess": False},
-    "degraded": {"dpi": 150, "degrade": True, "preprocess": False},
-    "degraded_pre": {"dpi": 150, "degrade": True, "preprocess": True},
+    "clean": {"dpi": 200, "degrade": False},
+    "degraded": {"dpi": 150, "degrade": True},
 }
 
 
@@ -92,28 +90,6 @@ def degrade(img, seed: int):
     return Image.open(buf).convert("RGB")
 
 
-def preprocess(img):
-    """Denoise, deskew from the ink box, Otsu binarise, upscale 2x (150 dpi render to 300 dpi equivalent)."""
-    import cv2
-    import numpy as np
-    from PIL import Image
-
-    gray = np.asarray(img.convert("L"))
-    gray = cv2.fastNlMeansDenoising(
-        gray, None, h=12, templateWindowSize=7, searchWindowSize=21
-    )
-    ink = np.column_stack(np.where(gray < 128))
-    if len(ink) > 100:
-        angle = cv2.minAreaRect(ink[:, ::-1].astype(np.float32))[-1]
-        angle = angle - 90 if angle > 45 else angle
-        h, w = gray.shape
-        mat = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
-        gray = cv2.warpAffine(gray, mat, (w, h), flags=cv2.INTER_CUBIC, borderValue=255)
-    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    up = cv2.resize(binary, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-    return Image.fromarray(up).convert("RGB")
-
-
 def ocr_rapid(img) -> str:
     import numpy as np
 
@@ -149,8 +125,6 @@ def page_image(path: Path, index0: int, mode: str):
     img = pdfium.PdfDocument(str(path))[index0].render(scale=cfg["dpi"] / 72).to_pil()
     if cfg["degrade"]:
         img = degrade(img, seed=index0)
-    if cfg["preprocess"]:
-        img = preprocess(img)
     return img
 
 
