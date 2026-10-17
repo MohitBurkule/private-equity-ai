@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from app.connectors import oauth
+from app.connectors.accounting import PortcoAccounting
 from app.connectors.base import Connector
 from app.connectors.calendar import GoogleCalendar, OutlookCalendar
 from app.connectors.crm import Affinity, DealCloud, HubSpot, Salesforce
@@ -22,7 +23,7 @@ from app.connectors.slack import Slack
 
 IMPLEMENTED: dict[str, type[Connector]] = {c.name: c for c in (Gmail, Outlook, OneDriveSharePoint, GoogleDrive, Box, Dropbox, GoogleSheets, Imap, Mailpit,
                                                                      Salesforce, HubSpot, Affinity, DealCloud, Slack, Intralinks, Datasite, S3Source, SftpSource,
-                                                                     OutlookCalendar, GoogleCalendar, FundAdminApi)}
+                                                                     OutlookCalendar, GoogleCalendar, FundAdminApi, PortcoAccounting)}
 
 CATALOG = [  # (name, label, category, auth)
     ("outlook-calendar", "Outlook calendar", "calendar", "OAuth2 (Graph)"), ("google-calendar", "Google Calendar", "calendar", "OAuth2"),
@@ -34,6 +35,7 @@ CATALOG = [  # (name, label, category, auth)
     ("slack", "Slack", "chat", "OAuth2"), ("intralinks", "Intralinks", "dataroom", "bulk export URL"), ("s3", "S3 / object store", "dataroom", "access key"), ("sftp", "SFTP data room", "dataroom", "password + pinned host key"),
     ("datasite", "Datasite", "dataroom", "bulk export URL"),
     ("fundadmin", "Fund administrator API", "fund admin", "bearer token"),
+    ("accounting", "Portfolio-company accounting (ledger API)", "accounting", "bearer token"),
     ("capiq", "S&P Capital IQ", "market data", "licensed API"), ("factset", "FactSet", "market data", "licensed API"),
     ("pitchbook", "PitchBook", "market data", "licensed API / export"),
     ("linkedin", "LinkedIn", "people", "member data export (upload)"),
