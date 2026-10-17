@@ -121,7 +121,13 @@ from app.extract.rows import _blocks, extract_rows
 from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
-from app.facts import CitationError, add_html_fact, add_verified_fact, review_fact
+from app.facts import (
+    CitationError,
+    add_chart_fact,
+    add_html_fact,
+    add_verified_fact,
+    review_fact,
+)
 from app.factsxlsx import build_facts_xlsx, fact_rows
 from app.filing_view import filing_page_html
 from app.funding_import import funding_for_target
@@ -178,6 +184,7 @@ from app.models import (
 from app.models import Tenant as TenantRow
 from app.oidc import oidc_principal
 from app.page_image import render_page
+from app.parse import chart_vlm
 from app.parse.sh01 import parse_capital_form
 from app.portfolio import (
     Covenant,
@@ -507,6 +514,39 @@ def capital_form_facts(doc_id: str, db: Db, who: Writer):
         created.append(fact.id)
     log_event(db, who.tenant, actor(who), "capital_form.facts", {"document_id": doc.id, "created": created})
     return {"created": created, "skipped": skipped, "problems": f.problems}
+
+
+@app.post("/documents/{doc_id}/chart-facts", status_code=201)
+def chart_facts(doc_id: str, entity: str, period: str, db: Db, who: Writer,
+                metric: str = "chart value", unit: str = "as printed"):
+    """Values the chart model reads off the document's charts. Stored as ocr_unverified only, each citing its
+    page and label bbox. A value matched on the page text alone has no bbox on the chart, so it is skipped."""
+    doc = _own_doc(db, who, doc_id)
+    original = db.get(DocumentFile, doc.id)
+    if original is None:
+        raise HTTPException(409, "original file not stored")
+    created, skipped = [], []
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "doc.pdf"
+        path.write_bytes(original.data)
+        for page in range(1, doc.n_pages + 1):
+            for v in chart_vlm.extract_vlm_values(path, page):
+                if not v.verified:
+                    skipped.append({"page": page, "label": v.text, "reason": "not matched on the chart or page text"})
+                    continue
+                if v.bbox is None:
+                    skipped.append({"page": page, "label": v.text, "reason": "matched page text only, no bbox to cite"})
+                    continue
+                try:
+                    fact = add_chart_fact(db, tenant_id=who.tenant, entity=entity, metric=metric, period=period,
+                                          value=Decimal(str(v.value)), unit=unit, document_id=doc.id, page=page,
+                                          label=v.text, bbox=v.bbox)
+                except CitationError as e:
+                    skipped.append({"page": page, "label": v.text, "reason": str(e)})
+                    continue
+                created.append(fact.id)
+    log_event(db, who.tenant, actor(who), "chart_facts", {"document_id": doc.id, "created": created})
+    return {"created": created, "skipped": skipped}
 
 
 @app.post("/documents/{doc_id}/fund-admin/facts", status_code=201)
