@@ -23,10 +23,16 @@ function KpiBoard({ report }: { report: Report }) {
   const unit = rows[0]?.unit ?? "";
   const data = rows.map((r) => ({ label: `${r.company.slice(0, 18)} ${r.period}`, v: Number(r.value) }));
   const sel = pick !== null ? rows[pick] : null;
+  const [grid, setGrid] = useState(false);
+  const [cell, setCell] = useState<{ company: string; period: string; value: string; unit: string; src?: { document_id: string; page: number } } | null>(null);
+  // Quarterly board: one row per company, one column per period, every cell a cited fact for the chosen metric.
+  const board = report.companies.filter((c) => company === "all" || String(c.id) === company)
+    .map((c) => ({ name: c.name, cells: new Map(c.kpis.filter((k) => k.metric === m).map((k) => [k.period, k])) }));
   return (
     <Card>
-      <CardHead title="Portfolio KPIs by period" hint="Every bar is a cited fact. Click one to open its source."
-        right={<div className="flex gap-2">
+      <CardHead title="Portfolio KPIs by period" hint="Every bar or cell is a cited fact. Click one to open its source."
+        right={<div className="flex flex-wrap gap-2">
+          <button onClick={() => setGrid((g) => !g)} className="rounded-lg border border-line px-2 py-1 text-sm">{grid ? "Bars" : "Board"}</button>
           <select aria-label="Metric" value={m} onChange={(e) => { setMetric(e.target.value); setPick(null); }} className="rounded-lg border border-line bg-bg px-2 py-1 text-sm">
             {metrics.map((x) => <option key={x}>{x}</option>)}</select>
           <select aria-label="Company" value={company} onChange={(e) => { setCompany(e.target.value); setPick(null); }} className="rounded-lg border border-line bg-bg px-2 py-1 text-sm">
@@ -34,7 +40,31 @@ function KpiBoard({ report }: { report: Report }) {
           <select aria-label="Period" value={period} onChange={(e) => { setPeriod(e.target.value); setPick(null); }} className="rounded-lg border border-line bg-bg px-2 py-1 text-sm">
             <option value="all">All periods</option>{periods.map((p) => <option key={p}>{p}</option>)}</select>
         </div>} />
-      {rows.length === 0 ? <Empty>No KPI observations for this filter. Try another metric, company or period, or record one from a verified fact.</Empty> : (
+      {rows.length === 0 ? <Empty>No KPI observations for this filter. Try another metric, company or period, or record one from a verified fact.</Empty> : grid ? (
+        <div className="overflow-x-auto p-5">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-mut"><th className="pr-4 font-medium">Company</th>
+              {periods.filter((p) => period === "all" || p === period).map((p) => <th key={p} className="px-2 font-medium">{p}</th>)}</tr></thead>
+            <tbody>{board.map((b) => (
+              <tr key={b.name} className="border-t border-line">
+                <td className="py-2 pr-4">{b.name}</td>
+                {periods.filter((p) => period === "all" || p === period).map((p) => {
+                  const k = b.cells.get(p);
+                  return <td key={p} className="tnum px-2 py-2">{k ? (
+                    <button onClick={() => setCell({ company: b.name, period: p, value: k.value, unit: k.unit, src: k.sources[0] })}
+                      className="underline decoration-dotted underline-offset-4">{fmtAmount(k.value, k.unit)}</button>) : <span className="text-mut">—</span>}</td>;
+                })}
+              </tr>))}</tbody>
+          </table>
+          {cell && (
+            <p className="mt-3 flex items-center gap-2 text-sm">
+              <b>{cell.company}</b> {m} {cell.period}: <span className="tnum">{fmtAmount(cell.value, cell.unit)}</span>
+              {cell.src && <SourceChip docId={cell.src.document_id} page={cell.src.page} quote="" />}
+            </p>
+          )}
+          <p className="mt-2 text-xs text-mut">A dash means no observation for that period. Nothing is estimated.</p>
+        </div>
+      ) : (
         <div className="p-5">
           <div className="h-64">
             <ResponsiveContainer>
