@@ -18,7 +18,10 @@ from app.portfolio import KpiObservation, PortfolioCompany, record_observation
 MONTHLY_METRICS = frozenset({"revenue_usd", "net_income_usd"})
 
 
-def extract_facts(db: Session, tenant_id: str, doc, entity: str) -> tuple[list[int], list[dict]]:
+def extract_facts(db: Session, tenant_id: str, doc, entity: str,
+                  company_id: int | None = None) -> tuple[list[int], list[dict]]:
+    """company_id is the portfolio company the monthly ledger figures belong to, given explicitly by the connector's
+    options. Without it nothing is observed, so a name collision can never attach figures to the wrong company."""
     pages = db.query(PageRow).filter_by(document_id=doc.id).order_by(PageRow.number).all()
     text_pages = [(p.number, p.text) for p in pages]
     created, skipped, monthly = [], [], []
@@ -42,18 +45,18 @@ def extract_facts(db: Session, tenant_id: str, doc, entity: str) -> tuple[list[i
         created.append(fact.id)
         if f.metric in MONTHLY_METRICS and f.entity is None:
             monthly.append(fact.id)
-    _observe_monthly(db, tenant_id, entity, monthly)
+    if company_id is not None:
+        _observe_monthly(db, tenant_id, company_id, monthly)
     return created, skipped
 
 
-def _observe_monthly(db: Session, tenant_id: str, entity: str, fact_ids: list[int]) -> None:
-    """Monthly ledger figures become the company's KPI observations, so covenants on them are tested by the
-    covenant watcher. Only when a portfolio company of that name exists; a fact is observed once."""
-    company = db.query(PortfolioCompany).filter_by(tenant_id=tenant_id, name=entity).first()
-    if company is None:
+def _observe_monthly(db: Session, tenant_id: str, company_id: int, fact_ids: list[int]) -> None:
+    """Monthly ledger figures become the mapped company's KPI observations, so covenants on them are tested by the
+    covenant watcher. A fact is observed once. A company id that is not in this tenant observes nothing."""
+    if db.query(PortfolioCompany).filter_by(tenant_id=tenant_id, id=company_id).first() is None:
         return
     for fid in fact_ids:
-        seen = db.query(KpiObservation).filter_by(tenant_id=tenant_id, company_id=company.id, fact_id=fid,
+        seen = db.query(KpiObservation).filter_by(tenant_id=tenant_id, company_id=company_id, fact_id=fid,
                                                   superseded_by=None).first()
         if seen is None:
-            record_observation(db, tenant_id, company.id, fid)
+            record_observation(db, tenant_id, company_id, fid)
