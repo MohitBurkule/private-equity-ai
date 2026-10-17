@@ -272,3 +272,19 @@ def new_target_screen(db: Session, tenant_id: str) -> list[AlertDraft]:
                               f"Firm rule (document {rule.document_id}, page {rule.page}): \"{rule.quote}\". "
                               f"Source: {t.source_url or t.source_ref}", f"screen:{t.id}"))
     return out
+
+
+def brief(db: Session, tenant_id: str, since: str) -> dict:
+    """What the system raised since `since` (ISO timestamp), grouped for a reader: counts by kind and severity,
+    then the critical and warning items first. Every item keeps its alert id and fact ids so it opens to sources."""
+    rows = (db.query(Alert).filter_by(tenant_id=tenant_id)
+            .filter(Alert.created_at >= since).order_by(Alert.id.desc()).all())
+    rank = {s: i for i, s in enumerate(reversed(SEVERITIES))}
+    by_kind: dict[str, int] = {}
+    by_severity: dict[str, int] = {}
+    for a in rows:
+        by_kind[a.kind] = by_kind.get(a.kind, 0) + 1
+        by_severity[a.severity] = by_severity.get(a.severity, 0) + 1
+    top = sorted(rows, key=lambda a: (rank.get(a.severity, 9), -a.id))[:10]
+    return {"since": since, "total": len(rows), "by_kind": by_kind, "by_severity": by_severity,
+            "top": [alert_dict(a) for a in top]}
