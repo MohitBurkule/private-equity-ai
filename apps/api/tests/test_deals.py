@@ -137,3 +137,12 @@ def test_document_retention_skips_held_deal_and_cited_docs():
         "dry_run": True, "candidates": [ids[0]]}
     real = c.post("/retention/documents", headers=h, json={"older_than_days": 365, "dry_run": False}).json()
     assert real["deleted"] == [ids[0]] and real["skipped"] == []
+
+
+def test_deal_pipeline_accepts_every_stage_in_order():
+    t = c.post("/admin/tenants", json={"name": "pipeline"}, headers={"X-Admin-Token": "test-admin"}).json()
+    h = {"Authorization": f"Bearer {t['api_key']}"}
+    c.post("/deals", headers=h, json={"name": "Pipe"})
+    for stage in ["nda", "cim", "ioi", "loi", "dd", "ic", "signed"]:
+        assert c.patch("/deals/Pipe", headers=h, json={"stage": stage}).json()["stage"] == stage
+    assert c.patch("/deals/Pipe", headers=h, json={"stage": "cim_review"}).status_code == 422

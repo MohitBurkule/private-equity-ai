@@ -123,7 +123,8 @@ class DDRequest(Base):
     updated_at: Mapped[str] = mapped_column(String(40), default="")
 
 
-STAGES = ["sourcing", "screening", "dd", "ic", "signed", "closed", "passed"]
+# Ordered deal pipeline. Order matters for reporting; "closed" and "passed" end a deal and gate retention.
+STAGES = ["sourcing", "screening", "nda", "cim", "ioi", "loi", "dd", "ic", "signed", "closed", "passed"]
 
 
 class Deal(Base):
