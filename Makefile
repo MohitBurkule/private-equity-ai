@@ -15,12 +15,17 @@ demo:  ## API on SQLite plus the built web UI, no Postgres or Docker (see script
 
 # Firm-system mocks (all SYNTHETIC): WireMock stubs for DealCloud, iManage, Datasite and fund admin, a Keycloak
 # realm for SSO roles, and an SFTP drop for fund-admin files. Starts them, then runs the tests that use each one.
-demo-mocks:  ## Start the synthetic firm-system mocks and run their smoke tests (needs Docker)
-	docker compose up -d wiremock keycloak sftp
-	WIREMOCK_URL=http://localhost:8089 python3 -m pytest -q \
+demo-mocks:  ## Run the firm-system mock flows: compose mocks when Docker runs, else local jars (see docs/MOCKS.md)
+	@if docker info >/dev/null 2>&1; then \
+		docker compose up -d wiremock keycloak sftp && \
+		export WIREMOCK_URL=http://localhost:8089 KEYCLOAK_URL=http://localhost:8081; \
+	else \
+		echo 'no Docker: WireMock and MINA need WIREMOCK_JAR and SSHD_CLASSPATH; Keycloak runs only with KEYCLOAK_URL'; \
+	fi; \
+	python3 -m pytest -q \
 		apps/api/tests/test_firm_mocks_smoke.py apps/api/tests/test_wiremock_adapters.py \
 		apps/api/tests/test_sftp_mina.py apps/api/tests/test_datasite_flow.py \
 		apps/api/tests/test_dealcloud_stage_sync.py apps/api/tests/test_fund_admin_flow.py \
-		apps/api/tests/test_fundadmin_api_flow.py
+		apps/api/tests/test_fundadmin_api_flow.py apps/api/tests/test_keycloak_sso.py
 
 .PHONY: demo-mocks

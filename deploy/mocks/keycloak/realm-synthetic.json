@@ -12,7 +12,47 @@
         "http://localhost:5173/*"
       ],
       "standardFlowEnabled": true,
-      "directAccessGrantsEnabled": false
+      "directAccessGrantsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "tenant",
+            "claim.value": "firm-synthetic",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "pe-platform",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
     }
   ],
   "groups": [
@@ -38,7 +78,9 @@
       ],
       "groups": [
         "pe-ic-members"
-      ]
+      ],
+      "firstName": "Synthetic",
+      "lastName": "Partner"
     },
     {
       "username": "deal@firm.test",
@@ -54,7 +96,9 @@
       ],
       "groups": [
         "pe-deal-team"
-      ]
+      ],
+      "firstName": "Synthetic",
+      "lastName": "Associate"
     }
   ]
 }

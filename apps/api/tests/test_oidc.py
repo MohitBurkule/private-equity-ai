@@ -81,3 +81,26 @@ def test_jwt_is_ignored_when_oidc_not_configured(monkeypatch):
     t = _tenant("sso-off")
     h = {"Authorization": f"Bearer {_token(tenant=t['tenant_id'])}"}
     assert c.get("/deals", headers=h).status_code == 401
+
+
+def test_sso_groups_map_to_roles(monkeypatch):
+    _sso(monkeypatch)
+    t = _tenant("sso-groups")
+    ic = {"Authorization": f"Bearer {_token(tenant=t['tenant_id'], groups=['pe-ic-members'])}"}
+    deal = {"Authorization": f"Bearer {_token(tenant=t['tenant_id'], groups=['pe-deal-team'])}"}
+    both = {"Authorization": f"Bearer {_token(tenant=t['tenant_id'], groups=['pe-deal-team', 'pe-ic-members'])}"}
+    other = {"Authorization": f"Bearer {_token(tenant=t['tenant_id'], groups=['some-other-group'])}"}
+    assert c.post("/deals", headers=deal, json={"name": "Group Deal"}).status_code == 201
+    assert c.post("/deals", headers=ic, json={"name": "Ic Deal"}).status_code == 201
+    assert c.post("/deals", headers=both, json={"name": "Both Deal"}).status_code == 201
+    assert c.post("/deals", headers=other, json={"name": "Other Deal"}).status_code == 403
+
+
+def test_explicit_role_claim_beats_groups_and_unknown_role_is_viewer(monkeypatch):
+    _sso(monkeypatch)
+    t = _tenant("sso-explicit")
+    tenant = t["tenant_id"]
+    unknown = {"Authorization": f"Bearer {_token(tenant=tenant, role='ceo', groups=['pe-ic-members'])}"}
+    assert c.post("/deals", headers=unknown, json={"name": "Nope Role"}).status_code == 403
+    explicit = {"Authorization": f"Bearer {_token(tenant=tenant, role='viewer', groups=['pe-ic-members'])}"}
+    assert c.post("/deals", headers=explicit, json={"name": "Nope Viewer"}).status_code == 403

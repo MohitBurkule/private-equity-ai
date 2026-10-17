@@ -16,6 +16,18 @@ from sqlalchemy.orm import Session
 from app.acl import ROLES, Principal
 from app.models import Tenant
 
+# Identity-provider groups that map to a role when the token has no `role` claim. The highest-ranked group
+# wins; an account in none of them is a viewer. Keycloak's synthetic realm uses these two names.
+GROUP_ROLES = {"pe-ic-members": "partner", "pe-deal-team": "associate"}
+_RANK = {"partner": 2, "associate": 1}
+
+
+def role_from_groups(groups: object) -> str:
+    if not isinstance(groups, list):
+        return "viewer"
+    mapped = [GROUP_ROLES[g] for g in groups if isinstance(g, str) and g in GROUP_ROLES]
+    return max(mapped, key=_RANK.__getitem__, default="viewer")
+
 
 def oidc_enabled() -> bool:
     return bool(os.environ.get("OIDC_ISSUER"))
@@ -49,9 +61,10 @@ def oidc_principal(db: Session, token: str) -> Principal | None:
     tenant = claims.get("tenant")
     if not isinstance(tenant, str) or db.get(Tenant, tenant) is None:
         return None
-    role = claims.get("role", "viewer")
-    if role not in ROLES:
-        role = "viewer"
+    if "role" in claims:  # an explicit role claim is taken as given; anything unknown reads as viewer
+        role = claims["role"] if claims["role"] in ROLES else "viewer"
+    else:
+        role = role_from_groups(claims.get("groups"))
     deals = claims.get("deals")
     scope = frozenset(str(d) for d in deals) if isinstance(deals, list) else None
     return Principal(tenant, role, scope, key_id=f"oidc:{claims['sub']}"[:32])
