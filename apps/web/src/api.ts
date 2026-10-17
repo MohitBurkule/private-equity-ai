@@ -67,6 +67,8 @@ export interface LboTieRow {
   fact_ids: number[]; is_lbo_input: boolean;
 }
 export interface LboTiesOut { inputs: Record<string, LboTieRow>; untied: string[]; lbo_missing: string[] }
+export interface ICDecisionRow { id: number; deal: string; outcome: string; rationale: string; dissent: string | null; dissenter: string | null; recorded_at: string }
+export interface ICReview { deal: string; latest: ICDecisionRow | null; dissents: ICDecisionRow[]; changed_since_ic: { document_id: string; filename: string; created_at: string | null }[]; ic_recorded: boolean }
 /** One key of a tenant with its deal wall. A null deals list means unrestricted. */
 export interface KeyWall { key_id: string; role: string; revoked: boolean; deals: string[] | null; deal_roles: Record<string, string> }
 export interface EvalRunRow { id: number; suite: string; ran_at: string; note: string | null; metrics: Record<string, unknown> }
@@ -201,6 +203,7 @@ export const api2 = {
   dd: (deal: string) => call<DDRow[]>(`/dd/requests?deal=${encodeURIComponent(deal)}`),
   ddSeed: (deal: string) => call<{ created: number }>("/dd/requests/seed", "POST", { deal }),
   ddStatus: (id: number, status: string) => call<DDRow>(`/dd/requests/${id}`, "PATCH", { status }),
+  icReview: (deal: string) => call<ICReview>(`/ic/review?deal=${encodeURIComponent(deal)}`),
   ddQuestions: (deal: string) => call<DDQuestionRow[]>(`/dd/questions?deal=${encodeURIComponent(deal)}`),
   ddQuestionAdd: (deal: string, question: string) => call<DDQuestionRow>("/dd/questions", "POST", { deal, question }),
   ddQuestionAnswer: (id: number, cite: { answer: string; document_id: string; page: number; quote: string }) =>
