@@ -8,7 +8,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from app.citations import quote_in_page, verify_number
-from app.models import Document, Fact, FactSource, PageRow
+from app.models import Document, Fact, FactSource, HtmlUnit, PageRow
 
 # Labels for money paid out. Their tables print the amount in parentheses, so a positive claim
 # is the same figure, not a sign error.
@@ -42,6 +42,37 @@ def add_verified_fact(
                 basis=basis,
                 status="ocr_unverified" if row.method == "ocr" else "verified")
     fact.sources = [FactSource(document_id=document_id, page=page, quote=quote)]
+    db.add(fact)
+    db.commit()
+    return fact
+
+
+def add_html_fact(
+    db: Session, *, tenant_id: str, entity: str, metric: str, period: str, value: Decimal, unit: str,
+    document_id: str, sources: list[tuple[int, str]], scale: Decimal = Decimal(1), basis: str = "GAAP",
+) -> Fact:
+    """HTML counterpart of add_verified_fact. sources: (unit idx, quote) pairs. The first one carries the
+    figure; every source quote must appear in its own text block, so a defined-term chain is cited sentence
+    by sentence. The value must match a number in the first quote."""
+    doc = db.get(Document, document_id)
+    if doc is None or doc.tenant_id != tenant_id or not sources:
+        raise CitationError("document not found")
+    rows = {}
+    for idx, quote in sources:
+        row = db.query(HtmlUnit).filter_by(document_id=document_id, idx=idx).one_or_none()
+        if row is None:
+            raise CitationError(f"block {idx} not found in document {document_id[:8]}")
+        if not quote_in_page(quote, row.text):
+            raise CitationError("quote not found in cited block")
+        rows[idx] = row
+    _, first_quote = sources[0]
+    if not verify_number(value, first_quote, scale, outflow=is_outflow(metric)):
+        raise CitationError("value does not match any number in the quote")
+    fact = Fact(tenant_id=tenant_id, entity=entity, metric=metric, period=period, value=value, unit=unit,
+                basis=basis, status="verified")
+    fact.sources = [FactSource(document_id=document_id, page=0, quote=quote, section=rows[idx].section,
+                               anchor=rows[idx].anchor, offset=rows[idx].offset)
+                    for idx, quote in sources]
     db.add(fact)
     db.commit()
     return fact

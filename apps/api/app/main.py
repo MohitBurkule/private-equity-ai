@@ -35,6 +35,7 @@ from app import comps as comps_mod
 from app import covenant_parse as covparse_mod
 from app import debt_parse as debt_parse_mod
 from app import firm_knowledge as fk
+from app import html_doc as html_doc_mod
 from app import jobs as jobs_mod
 from app import lbo as lbo_mod
 from app import legal as legal_mod
@@ -83,7 +84,7 @@ from app.email_links import links_for
 from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
-from app.facts import CitationError, add_verified_fact, review_fact
+from app.facts import CitationError, add_html_fact, add_verified_fact, review_fact
 from app.factsxlsx import build_facts_xlsx, fact_rows
 from app.filing_view import filing_page_html
 from app.fundmetrics import fund_metrics
@@ -109,6 +110,7 @@ from app.models import (
     Fact,
     FactSource,
     Holding,
+    HtmlUnit,
     IngestJob,
     PageRow,
     Target,
@@ -403,37 +405,64 @@ def capital_form_facts(doc_id: str, db: Db, who: Writer):
 @app.post("/documents/{doc_id}/credit-agreement/facts", status_code=201)
 def credit_agreement_facts(doc_id: str, db: Db, who: Writer):
     """Store covenant thresholds and facility amounts read from a credit agreement as facts. Each one goes
-    through the citation gate (its number must appear in the cited quote on that page). Duplicates within
-    one page are stored once."""
+    through the citation gate. PDFs cite a page and the quote on it. HTML filings cite the text block: its
+    section, anchor and character offset. A facility named only through a defined term (e.g. "Loans") is cited
+    with the amount sentence and the definition chain that names the facility. Duplicates are stored once."""
     doc = _own_doc(db, who, doc_id)
-    rows = db.query(PageRow).filter_by(document_id=doc.id).order_by(PageRow.number).all()
-    pages = [(r.number, r.text) for r in rows]
+    html = doc.kind == "html"
+    if html:
+        units = db.query(HtmlUnit).filter_by(document_id=doc.id).order_by(HtmlUnit.idx).all()
+        pages = [(u.idx, u.text) for u in units]
+        by_key = {u.idx: u for u in units}
+    else:
+        rows = db.query(PageRow).filter_by(document_id=doc.id).order_by(PageRow.number).all()
+        pages = [(r.number, r.text) for r in rows]
     entity = doc.deal or doc.filename
+    # (metric, unit, value, locator key, quote, extra (key, quote) sources)
     candidates = []
     for c in covparse_mod.extract(pages):
         word = "maximum" if c["operator"] == "<=" else "minimum"
-        candidates.append((f"covenant {c['kpi_metric']} {word}", "x", Decimal(c["threshold"]), c["page"], c["quote"]))
+        candidates.append((f"covenant {c['kpi_metric']} {word}", "x", Decimal(c["threshold"]), c["page"], c["quote"], []))
     for t in debt_parse_mod.extract(pages):
-        candidates.append((f"facility amount {t['facility']}", "USD", t["amount"], t["page"], t["quote"]))
+        candidates.append((f"facility amount {t['facility']}", "USD", t["amount"], t["page"], t["quote"], []))
+    if html:
+        for t in html_doc_mod.defined_facility_amounts(units):
+            candidates.append((f"facility amount {t['facility']}", "USD", Decimal(t["amount"]), t["idx"], t["quote"],
+                               t["extra_sources"]))
     for g in debt_parse_mod.margin_grid(pages):
         tier = f"level {g['level']} ({g['leverage_test']})"
-        candidates.append((f"Term SOFR margin {tier}", "%", Decimal(g["sofr_pct"]), g["page"], g["quote"]))
-        candidates.append((f"Base Rate margin {tier}", "%", Decimal(g["base_pct"]), g["page"], g["quote"]))
+        candidates.append((f"Term SOFR margin {tier}", "%", Decimal(g["sofr_pct"]), g["page"], g["quote"], []))
+        candidates.append((f"Base Rate margin {tier}", "%", Decimal(g["base_pct"]), g["page"], g["quote"], []))
     created, skipped, seen = [], [], set()
-    for metric, unit, value, page, quote in candidates:
-        if (metric, value, page, quote) in seen:
+    for metric, unit, value, key, quote, extra in candidates:
+        if (metric, value, key, quote) in seen:
             continue
-        seen.add((metric, value, page, quote))
+        seen.add((metric, value, key, quote))
         try:
-            fact = add_verified_fact(db, tenant_id=who.tenant, entity=entity, metric=metric, period="per agreement",
-                                     value=value, unit=unit, document_id=doc.id, page=page, quote=quote)
+            if html:
+                fact = add_html_fact(db, tenant_id=who.tenant, entity=entity, metric=metric, period="per agreement",
+                                     value=value, unit=unit, document_id=doc.id,
+                                     sources=[(key, quote), *extra])
+            else:
+                fact = add_verified_fact(db, tenant_id=who.tenant, entity=entity, metric=metric,
+                                         period="per agreement", value=value, unit=unit, document_id=doc.id,
+                                         page=key, quote=quote)
         except CitationError as e:
-            skipped.append({"metric": metric, "page": page, "reason": str(e)})
+            skipped.append({"metric": metric, "reason": str(e), "location": _locate(by_key, key) if html else {"page": key}})
             continue
         created.append(fact.id)
     log_event(db, who.tenant, actor(who), "credit_agreement.facts", {"document_id": doc.id, "created": created})
     # Maturity is a defined tenor, not a number, so it is returned cited and not stored as a fact.
-    return {"created": created, "skipped": skipped, "maturity_clauses": debt_parse_mod.maturity_clauses(pages)}
+    maturity = debt_parse_mod.maturity_clauses(pages)
+    if html:
+        for m in maturity:
+            m["location"] = _locate(by_key, m.pop("page"))
+    return {"created": created, "skipped": skipped, "maturity_clauses": maturity}
+
+
+def _locate(by_key: dict[int, HtmlUnit], idx: int) -> dict:
+    u = by_key[idx]
+    return {"section": u.section, "heading": u.heading, "anchor": u.anchor, "offset": u.offset}
 
 
 @lru_cache(maxsize=4)
