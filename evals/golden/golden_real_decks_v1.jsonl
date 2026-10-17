@@ -48,3 +48,9 @@
 {"id": "rd54", "doc": "real_decks/pgt_2023Q1_earnings_release", "pdf_page_1based": 6, "row_label": "Net income", "raw": "34,427; 23,826", "hand_read": true, "kind": "table"}
 {"id": "rd55", "doc": "real_decks/pgt_2023Q1_earnings_release", "pdf_page_1based": 6, "row_label": "Net income attributable to the Company", "raw": "33,590; 23,169", "hand_read": true, "kind": "table"}
 {"id": "rd56", "doc": "real_decks/pgt_2023Q1_earnings_release", "pdf_page_1based": 6, "row_label": "Diluted", "raw": "60,153; 60,219", "hand_read": true, "kind": "table"}
+{"id": "rd57", "doc": "real_decks/pgt_2023Q1_earnings_presentation", "pdf_page_1based": 13, "row_label": "Net income", "raw": "(23,826); 98,405; 34,427; 109,006", "hand_read": true, "kind": "table"}
+{"id": "rd58", "doc": "real_decks/pgt_2023Q1_earnings_presentation", "pdf_page_1based": 13, "row_label": "EBITDA", "raw": "(55,224); 220,148; 69,001; 233,925", "hand_read": true, "kind": "table"}
+{"id": "rd59", "doc": "real_decks/pgt_2023Q1_earnings_presentation", "pdf_page_1based": 13, "row_label": "Adjusted EBITDA", "raw": "(59,113); 253,597; 69,965; 264,449", "hand_read": true, "kind": "table"}
+{"id": "rd60", "doc": "real_decks/pgt_2023Q1_earnings_presentation", "pdf_page_1based": 13, "row_label": "Interest expense, net", "raw": "(7,080); 28,879; 7,656; 29,455", "hand_read": true, "kind": "table"}
+{"id": "rd61", "doc": "real_decks/pgt_2023Q1_earnings_presentation", "pdf_page_1based": 13, "row_label": "Stock-based compensation expense", "raw": "(2,205); 9,670; 2,207; 9,672", "hand_read": true, "kind": "table"}
+{"id": "rd62", "doc": "real_decks/pgt_2023Q1_earnings_presentation", "pdf_page_1based": 13, "row_label": "Income tax expense", "raw": "(7,805); 32,666; 11,235; 36,096", "hand_read": true, "kind": "table"}
