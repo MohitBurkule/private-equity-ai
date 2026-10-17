@@ -16,7 +16,8 @@ def test_outreach_send_attaches_research_docx_and_checks_tenant(monkeypatch):
     sent = {}
     monkeypatch.setattr(notify, "send_email", lambda to, subject, body, attachments=(): sent.update(
         to=to, subject=subject, attachments=list(attachments)))
-    body = {"target_id": tid, "to": ["ceo@example.com"], "sender": "Sam", "firm": "Fund I"}
+    body = {"target_id": tid, "to": ["ceo@example.com"], "sender": "Sam", "firm": "Fund I",
+            "confirm_subject": "Introduction from Fund I"}
     r = c.post("/targets/outreach/send", headers=h, json=body)
     assert r.status_code == 200 and r.json() == {"sent": 1, "attached": [f"research-{tid}.docx"]}
     [(filename, data, mime)] = sent["attachments"]
@@ -35,7 +36,7 @@ def test_outreach_send_can_attach_ic_memo_deck(monkeypatch):
     monkeypatch.setattr(notify, "send_email", lambda to, subject, body, attachments=(): sent.update(
         attachments=list(attachments)))
     body = {"target_id": tid, "to": ["ceo@example.com"], "sender": "Sam", "firm": "Fund I",
-            "memo_entity": "Acme"}
+            "memo_entity": "Acme", "confirm_subject": "Introduction from Fund I"}
     r = c.post("/targets/outreach/send", headers=h, json=body)
     assert r.status_code == 200 and r.json()["attached"] == [f"research-{tid}.docx", "memo.pptx"]
     assert sent["attachments"][1][0] == "memo.pptx" and sent["attachments"][1][1][:2] == b"PK"

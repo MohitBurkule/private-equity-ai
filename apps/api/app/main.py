@@ -1754,15 +1754,25 @@ class OutreachSend(BaseModel):
     sender: str = Field(min_length=1, max_length=120)
     firm: str = Field(min_length=1, max_length=120)
     memo_entity: str | None = Field(default=None, max_length=200)  # also attach the IC memo deck for this entity
+    confirm_subject: str = Field(min_length=1, max_length=300)  # the exact subject of the draft the sender reviewed
 
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
 
+OUTREACH_SENDERS = ("admin", "partner", "vp")
+
+
 @app.post("/targets/outreach/send", status_code=200)
 def targets_outreach_send(body: OutreachSend, db: Db, who: Writer):
-    """Email one target's outreach draft with its cited research note (.docx) attached."""
+    """Email one target's outreach draft with its cited research note (.docx) attached.
+
+    Only a senior person's key may send, and only for the draft they reviewed: `confirm_subject` must equal
+    the subject of the draft as built now. Agents, workflows and schedules never reach this route; the agent
+    tools and the workflow kinds do not include it (see tests/test_outreach_guard.py)."""
+    if who.role not in OUTREACH_SENDERS or who.restricted:
+        raise HTTPException(403, "sending outreach needs a senior, unrestricted person's key")
     t = db.get(Target, body.target_id)
     if t is None or t.tenant_id != who.tenant:
         raise HTTPException(404, "target not found")
@@ -1771,6 +1781,8 @@ def targets_outreach_send(body: OutreachSend, db: Db, who: Writer):
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     msg = outreach_mod.draft(t, body.sender, body.firm)
+    if body.confirm_subject != msg["subject"]:
+        raise HTTPException(409, "the draft changed since it was reviewed; review it again and confirm its subject")
     scope = None if who.deals is None else set(who.deals)
     name = f"research-{t.id}.docx"
     files = [(name, research_mod.build_docx(db, who.tenant, t, scope), DOCX_MIME)]
