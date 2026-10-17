@@ -1787,6 +1787,11 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
     return _deal_out(db, who, d)
 
 
+def _requester(p: Principal) -> str:
+    """Who asked for an action, for the four-eyes check: the key, or the person behind an SSO login."""
+    return f"key:{p.key_id}" if p.key_id else f"user:{p.identity or ''}"
+
+
 def _deletable_deal(db: Session, who: Principal, name: str, capability: str = "purge") -> Deal:
     d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
     if d is None or not _dd_scope_ok(who, name) or deal_hidden(d, who):
@@ -1805,7 +1810,7 @@ def deal_deletion_request(name: str, db: Db, who: Writer):
     _deletable_deal(db, who, name)
     if db.query(DealDeletion).filter_by(tenant_id=who.tenant, deal=name).first():
         raise HTTPException(409, "deletion already requested for this deal")
-    req = DealDeletion(tenant_id=who.tenant, deal=name, requested_by=who.key_id, requested_at=_now_iso())
+    req = DealDeletion(tenant_id=who.tenant, deal=name, requested_by=_requester(who), requested_at=_now_iso())
     db.add(req)
     db.commit()
     log_event(db, who.tenant, actor(who), "deal.delete_requested", {"name": name})
@@ -1820,6 +1825,8 @@ def deal_delete(name: str, db: Db, who: Writer):
     req = db.query(DealDeletion).filter_by(tenant_id=who.tenant, deal=name).first()
     if req is None:
         raise HTTPException(409, "request the deletion first: POST /deals/{name}/deletion-request")
+    if _requester(who) in (req.requested_by, "key:", "user:"):
+        raise HTTPException(403, "a different admin key must confirm a deletion someone else requested")
     removed = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=name).delete()
     requested_by = req.requested_by
     db.query(DealDeletion).filter_by(tenant_id=who.tenant, deal=name).delete()
