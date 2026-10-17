@@ -64,19 +64,36 @@ def call(method, path, body=None, raw=None, ctype=None):
         return e.code, e.read().decode()[:300]
 
 
-def upload_pack() -> str:
-    path = os.path.join(tempfile.mkdtemp(), "SYNTHETIC_portfolio_pack.pdf")
-    pack_pdf(path)
+def upload_pdf(path: str, filename: str) -> str:
     b = uuid.uuid4().hex
     head = (f'--{b}\r\nContent-Disposition: form-data; name="deal"\r\n\r\nProject Orchard\r\n'
-            f'--{b}\r\nContent-Disposition: form-data; name="file"; filename="SYNTHETIC_portfolio_pack.pdf"\r\n'
+            f'--{b}\r\nContent-Disposition: form-data; name="file"; filename="{filename}"\r\n'
             "Content-Type: application/pdf\r\n\r\n").encode()
     with open(path, "rb") as f:
         raw = head + f.read() + f"\r\n--{b}--\r\n".encode()
     s, d = call("POST", "/documents", raw=raw, ctype=f"multipart/form-data; boundary={b}")
     if s != 200:
-        sys.exit(f"upload pack failed: {s} {d}")
+        sys.exit(f"upload {filename} failed: {s} {d}")
     return d["id"]
+
+
+def upload_pack() -> str:
+    path = os.path.join(tempfile.mkdtemp(), "SYNTHETIC_portfolio_pack.pdf")
+    pack_pdf(path)
+    return upload_pdf(path, "SYNTHETIC_portfolio_pack.pdf")
+
+
+def scanned_pack_pdf(path: str) -> None:
+    """An image-only copy of two synthetic lines, so the page has no text layer and goes through OCR."""
+    import pymupdf
+
+    src = pymupdf.open()
+    page = src.new_page()
+    page.insert_text((72, 120), SCAN_LINES[0], fontsize=16)
+    page.insert_text((72, 160), SCAN_LINES[1], fontsize=16)
+    out = pymupdf.open()
+    out.new_page().insert_image(out[0].rect, pixmap=page.get_pixmap(dpi=200))
+    out.save(path)
 
 
 # (metric, period, USD millions, basis, quote, kind for the observation or None)
@@ -88,6 +105,8 @@ FIGURES = [
     ("equity_value", "2024", 310, "GAAP", "Equity value 2024 310.0", "mark"),
     ("equity_value", "2025", 330, "GAAP", "Equity value 2025 330.0", "mark"),
 ]
+# Scanned copy: the quote is only in OCR text, so /facts stores it ocr_unverified and it waits in the review queue.
+SCAN_LINES = ("SYNTHETIC scanned pack. Not a real company.", "Revenue forecast 2027 440.0")
 # Wide row: the quote matches the text layer, so /facts stores it verified (no layout fallback needed).
 LAYOUT_ONLY = ("revenue", "2026", 430, "forecast", "Revenue forecast 2026 430.0")
 
@@ -113,6 +132,14 @@ s, fact = call("POST", "/facts", {"entity": HOLDING, "metric": metric, "period":
                                    "unit": "USD", "document_id": doc, "page": 1, "quote": quote,
                                    "scale": str(M), "basis": basis})
 print("wide-row fact:", fact.get("status") if s == 201 else fact)
+
+scan_path = os.path.join(tempfile.mkdtemp(), "SYNTHETIC_scanned_pack.pdf")
+scanned_pack_pdf(scan_path)
+scan_doc = upload_pdf(scan_path, "SYNTHETIC_scanned_pack.pdf")
+s, fact = call("POST", "/facts", {"entity": HOLDING, "metric": "revenue", "period": "2027",
+                                   "value": str(440 * M), "unit": "USD", "document_id": scan_doc, "page": 1,
+                                   "quote": SCAN_LINES[1], "scale": str(M), "basis": "forecast"})
+print("scanned-page fact:", fact.get("status") if s == 201 else fact)
 
 s, _ = call("POST", "/targets", [{"name": TARGET, "source": "manual", "source_ref": "SYNTH-001",
                                   "sector": "Industrials", "country": "GB"}])

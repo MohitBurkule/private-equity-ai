@@ -205,3 +205,13 @@ Scores on all labelled table rows (146 values, 49 rows incl. 6 KPI tiles):
 - Router alone: 58/146 values on the row line, 27/49 rows.
 - Router plus layout fallback: every table value (140/140) and every table row (43/43). Layout-only hits carry no bbox.
 
+
+## PGT Q1 2023 earnings presentation (EX-99.2), labelled
+
+Six rows from the GAAP to non-GAAP reconciliation on p13 (net income, EBITDA, Adjusted EBITDA, interest, stock comp, tax), four columns each, values as printed in thousands with parentheses for negatives.
+
+Scores on all labelled rows (170 values, 55 rows incl. 6 KPI tiles):
+- Router alone: 82/170 values, 33/55 rows.
+- Router plus layout fallback: 164/164 table values, 49/49 table rows. Layout-only hits have no bbox and go to the review queue.
+
+Demo seed (`scripts/seed_portfolio_synthetic.py`): adds a scanned-page SYNTHETIC fact. The page is image-only, so the fact is OCR-sourced and stored ocr_unverified.
