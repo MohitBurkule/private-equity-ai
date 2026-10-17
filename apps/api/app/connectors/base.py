@@ -7,6 +7,8 @@ Credentials are passed per call and never stored by this layer.
 from __future__ import annotations
 
 import json
+import time
+import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -15,16 +17,38 @@ from typing import ClassVar
 Http = Callable[[str, dict[str, str]], bytes]
 
 
+RETRY_STATUS = {429, 502, 503, 504}  # 429 is always retried; 5xx only for reads, since a write may have landed
+MAX_ATTEMPTS = 4
+MAX_WAIT_S = 30.0
+
+
+def _wait(err: urllib.error.HTTPError, attempt: int) -> float:
+    """Retry-After in seconds when the server sends one, else 1, 2, 4 seconds. Capped at MAX_WAIT_S."""
+    try:
+        return min(float(err.headers.get("Retry-After", "")), MAX_WAIT_S)
+    except (TypeError, ValueError):
+        return min(2.0 ** (attempt - 1), MAX_WAIT_S)
+
+
 def default_http(url: str, headers: dict[str, str]) -> bytes:
     if not url.startswith("https://"):
         raise ValueError("connectors only call https URLs")
     headers = dict(headers)
     body = headers.pop("X-Post-Body", None)  # POST-only APIs (Dropbox): see connectors/files.py
     method = headers.pop("X-Method", None)  # PATCH/PUT writes (CRM stage sync): see connectors/crm.py
-    req = urllib.request.Request(url, headers=headers, method=method,
-                                 data=body.encode() if body is not None else None)
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return r.read()
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        req = urllib.request.Request(url, headers=headers, method=method,
+                                     data=body.encode() if body is not None else None)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            is_read = body is None and method in (None, "GET")
+            retry = e.code == 429 or (e.code in RETRY_STATUS and is_read)
+            if not retry or attempt == MAX_ATTEMPTS:
+                raise
+            time.sleep(_wait(e, attempt))
+    raise AssertionError("unreachable")
 
 
 class ConnectorError(Exception):
