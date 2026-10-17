@@ -178,7 +178,11 @@ def benchmark(db: Session, tenant: str, sector: str | None, target: Target | Non
     rows = [r for r in q.all() if target is None or r.id != target.id]  # the target is not its own peer
     known = [r.revenue for r in rows if r.revenue is not None]
     st = stats(known)
-    out = {"sector": sector, "peers": st.n, "excluded_no_revenue": len(rows) - st.n,
+    # every peer behind the median, with the link to the figure it came from
+    inputs = [{"id": r.id, "name": r.name, "revenue": str(r.revenue), "revenue_period": r.revenue_period,
+               "revenue_url": r.revenue_url, "source_url": r.source_url}
+              for r in rows if r.revenue is not None]
+    out = {"sector": sector, "peers": st.n, "excluded_no_revenue": len(rows) - st.n, "inputs": inputs,
            "median": None if st.median is None else str(st.median),
            "q1": None if st.q1 is None else str(st.q1), "q3": None if st.q3 is None else str(st.q3),
            "min": None if st.low is None else str(st.low), "max": None if st.high is None else str(st.high)}

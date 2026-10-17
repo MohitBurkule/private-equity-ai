@@ -90,6 +90,8 @@ def test_sector_benchmark_excludes_unknown_and_places_target():
     assert b["peers"] == 3 and b["excluded_no_revenue"] == 1  # S30 is not its own peer
     assert Decimal(b["median"]) == 20 and Decimal(b["min"]) == 10 and Decimal(b["max"]) == 40
     assert b["target"]["percentile"] == 67  # 30 is above 10 and 20 of 3 peers
+    assert sorted(i["name"] for i in b["inputs"]) == ["S10", "S20", "S40"]  # every peer, target excluded
+    assert all(i["revenue_url"] == "http://x" for i in b["inputs"])
     assert c.get("/targets/benchmark?target_id=999999", headers=h).status_code == 404
 
 
