@@ -96,6 +96,11 @@ impl Visibility {
         in_scope && deal.is_none_or(|d| !self.hidden_deals.contains(d))
     }
 
+    /// Names of MNPI deals this key may not see (hidden_deal_names).
+    pub fn hidden_deal_names(&self) -> impl Iterator<Item = &String> {
+        self.hidden_deals.iter()
+    }
+
     /// The source ACL half, for single-document access (_own_doc).
     pub fn acl_allows(&self, doc_id: &str) -> bool {
         !self.hidden_docs.contains(doc_id)

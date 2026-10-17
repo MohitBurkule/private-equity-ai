@@ -8,6 +8,8 @@ mod documents;
 mod error;
 mod facts;
 mod memo;
+mod names;
+mod notes;
 mod proxy;
 mod ratelimit;
 mod scope;
@@ -47,6 +49,8 @@ pub fn app(state: AppState) -> Router {
         .route("/me", get(whoami))
         .route("/facts", get(facts::list_facts).post(facts::create_fact))
         .route("/documents", get(documents::list_documents))
+        .route("/deals/:name/notes", get(notes::list_deal_notes))
+        .route("/targets/:tid/notes", get(notes::list_target_notes))
         .route("/memo/templates", get(memo::list_templates))
         .route("/memo/versions", get(memo::list_versions))
         .route("/documents/:doc_id/pages/:number", get(documents::get_page))
