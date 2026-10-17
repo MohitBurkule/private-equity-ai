@@ -3927,7 +3927,8 @@ def ask(body: AskIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_dependenc
     a = answer_question(db, tenant, llm, body.question, body.doc_id, scope=visible_doc_ids(db, who))
     log_event(db, tenant, actor(who), "ask", {"question": body.question, "status": a.status,
                                          "claims": len(a.claims), "rejected": len(a.rejected)})
-    cite = lambda c: {"text": c.text, "document_id": c.doc_id, "page": c.page, "quote": c.quote}
+    cite = lambda c: {"text": c.text, "document_id": c.doc_id, "page": c.page, "quote": c.quote,
+                      "paragraphs": c.paragraphs}
     return {"status": a.status, "detail": a.detail, "claims": [cite(c) for c in a.claims],
             "rejected": [{**cite(c), "reason": c.reason} for c in a.rejected]}
 

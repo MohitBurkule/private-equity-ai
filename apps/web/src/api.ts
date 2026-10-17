@@ -291,6 +291,11 @@ export const api2 = {
   }).then((r) => j<DocumentAccess>(r)),
   budgetVsActual: (companyId: number, period: string) => call<BudgetVsActual>(`/portfolio/companies/${companyId}/budget-vs-actual?period=${encodeURIComponent(period)}`),
   portfolioSubmissions: (period: string) => call<SubmissionsOut>(`/portfolio/submissions?period=${encodeURIComponent(period)}`),
+  rollForward: (companyId: number, period: string, prior: string, markMetric?: string) => {
+    const p = new URLSearchParams({ period, prior });
+    if (markMetric) p.set("mark_metric", markMetric);
+    return call<RollForward>(`/portfolio/companies/${companyId}/roll-forward?${p}`);
+  },
   emailAttach: (docId: string, deal: string) => call<{ document_id: string; deal: string }>(`/email/review/${encodeURIComponent(docId)}/attach`, "POST", { deal }),
 };
 
@@ -314,5 +319,7 @@ export interface BudgetMetric { metric: string; unit: string; actual: CitedFigur
 export interface BudgetVsActual { period: string; metrics: BudgetMetric[] }
 export interface SubmissionRow { company_id: number; name: string; metrics: string[] }
 export interface SubmissionsOut { period: string; submitted: SubmissionRow[]; missing: SubmissionRow[]; pct_submitted: number | null }
+
+export interface RollForward { period: string; prior: string; opening: CitedFigure | null; closing: CitedFigure | null; contributions: CitedFigure | null; distributions: CitedFigure | null; change_in_value: string | null }
 
 export const STAGES = ["sourcing", "screening", "dd", "ic", "signed", "closed", "passed"];

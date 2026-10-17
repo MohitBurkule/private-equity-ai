@@ -19,6 +19,9 @@ export function DealWorkspace({ deal }: { deal: string }) {
     api2.legalTerms(id, type[id] ?? "nda").then((r) => setLegal({ ...legal, [id]: r })).catch((e) => setErr(String(e)));
   };
   const cats = sum.data ? Object.entries(sum.data.by_category) : [];
+  // Findings the playbook marks for review, across every document whose legal terms were run on this page.
+  const redFlags = Object.values(legal).flatMap((r) => r.findings.filter((f) => f.needs_review));
+  const docName = new Map((docs.data ?? []).map((d) => [d.id, d.filename] as const));
   return (
     <>
     <Card>
@@ -62,6 +65,20 @@ export function DealWorkspace({ deal }: { deal: string }) {
           </li>
         ))}
       </ul>
+      {redFlags.length > 0 && (
+        <div className="border-t border-line p-5">
+          <p className="mb-2 text-sm font-medium">Red flags to review</p>
+          <table className="w-full text-sm"><thead className="text-left text-xs text-mut"><tr><th className="pb-1">Document</th><th>Term</th><th>Value</th><th className="text-right">Page</th></tr></thead>
+            <tbody>{redFlags.map((f, i) => (
+              <tr key={`${f.document_id}-${f.term}-${i}`} className="border-t border-line">
+                <td className="py-1.5">{docName.get(f.document_id) ?? f.document_id.slice(0, 8)}</td>
+                <td>{f.term.replace(/_/g, " ")}</td>
+                <td className="tnum">{f.value}</td>
+                <td className="tnum text-right">{f.page}</td>
+              </tr>
+            ))}</tbody></table>
+        </div>
+      )}
     </Card>
     <div className="mt-4"><NotesPanel title="Deal notes" hint="Shared with everyone who can see this deal" api={dealNotes(deal)} deps={[deal]} /></div>
     </>
