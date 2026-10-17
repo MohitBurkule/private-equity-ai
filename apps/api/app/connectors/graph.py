@@ -1,6 +1,8 @@
 """Microsoft Graph: Outlook mail, plus OneDrive/SharePoint document libraries (one API, one token)."""
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from app.connectors.base import Connector, Item
 
 G = "https://graph.microsoft.com/v1.0"
@@ -66,3 +68,18 @@ def _grantees(perms: list) -> tuple[str, ...]:
             elif group_id:  # an Azure AD group: matched against a key's groups, not a person
                 emails.append(f"group:{group_id}")
     return tuple(emails)
+
+
+class DirectoryGroups(Connector):
+    """Groups a person is in, read from the directory (Graph /users/{email}/memberOf). Read-only; the result is stored
+    on the person's API key so group grants on synced documents apply without a hand-kept list."""
+    name, label = "directory-groups", "Directory groups"
+
+    def member_of(self, email: str) -> tuple[str, ...]:
+        url = f"{G}/users/{quote(email, safe='')}/memberOf?$select=id"
+        ids: set[str] = set()
+        while url:
+            page = self._get_json(url)
+            ids |= {str(g["id"]).lower() for g in page.get("value", []) if g.get("id")}
+            url = page.get("@odata.nextLink", "")
+        return tuple(sorted(ids))

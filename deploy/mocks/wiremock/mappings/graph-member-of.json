@@ -1,0 +1,35 @@
+{
+  "mappings": [
+    {
+      "name": "graph-member-of-page-1",
+      "request": {
+        "method": "GET",
+        "urlPathPattern": "/v1.0/users/ana%40firm.test/memberOf",
+        "queryParameters": { "$select": { "equalTo": "id" } }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": {
+          "value": [{ "@odata.type": "#microsoft.graph.group", "id": "GRP-IC" }],
+          "@odata.nextLink": "https://graph.microsoft.com/v1.0/users/ana%40firm.test/memberOf?$skiptoken=2"
+        }
+      },
+      "metadata": { "note": "SYNTHETIC mock: Graph memberOf shape from Microsoft Graph docs; ids are invented." }
+    },
+    {
+      "name": "graph-member-of-page-2",
+      "request": {
+        "method": "GET",
+        "urlPathPattern": "/v1.0/users/ana%40firm.test/memberOf",
+        "queryParameters": { "$skiptoken": { "equalTo": "2" } }
+      },
+      "response": {
+        "status": 200,
+        "headers": { "Content-Type": "application/json" },
+        "jsonBody": { "value": [{ "@odata.type": "#microsoft.graph.group", "id": "GRP-DEAL" }] }
+      },
+      "metadata": { "note": "SYNTHETIC mock: second page of memberOf." }
+    }
+  ]
+}
