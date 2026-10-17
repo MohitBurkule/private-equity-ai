@@ -61,3 +61,34 @@ def test_scan_all_covers_every_tenant():
     assert sum(res.values()) >= 1
     assert len(c.get("/alerts", headers=h).json()) == 1
     assert sum(notify.scan_all(SessionLocal).values()) == 0
+
+
+def test_alert_digest_schedule_mails_new_alerts_once_and_is_unrestricted_only(monkeypatch):
+    from datetime import UTC, datetime
+
+    from app import workflows as wf_mod
+    from app.auth import principal_for_key
+    from app.models import Alert
+    from app.rls import bind_tenant
+    sent = []
+    monkeypatch.setattr(wf_mod, "smtp_mailer", lambda: lambda to, subj, body: sent.append((to, subj, body)))
+    h = new_tenant(c, "digest")
+    key = h["Authorization"].split()[1]
+    with SessionLocal() as s:
+        tid = principal_for_key(s, key).tenant
+        bind_tenant(s, tid)
+        s.add(Alert(tenant_id=tid, kind="new_documents", severity="info", title="2 new document(s) from gmail",
+                    detail="- a.pdf (https://x/1)", dedupe_key="t-1", fact_ids="[]", status="new",
+                    created_at=datetime.now(UTC).isoformat(timespec="seconds")))
+        s.commit()
+    body = {"name": "Daily", "kind": "alert_digest", "every_days": 1, "recipients": ["ic@firm.test"]}
+    assert c.post("/workflows", json=body, headers=h).status_code == 201
+    assert c.post("/workflows/run-due", headers=h).status_code == 200
+    assert len(sent) == 1 and sent[0][0] == ["ic@firm.test"] and "2 new document(s) from gmail" in sent[0][2]
+    c.post("/workflows/run-due", headers=h)  # nothing new since the last run, so no second mail
+    assert len(sent) == 1
+
+    walled = c.post("/admin/tenants/" + tid + "/keys", json={"deals": ["atlas"]},
+                    headers={"X-Admin-Token": "test-admin"}).json()["api_key"]
+    r = c.post("/workflows", json=body, headers={"Authorization": f"Bearer {walled}"})
+    assert r.status_code == 403

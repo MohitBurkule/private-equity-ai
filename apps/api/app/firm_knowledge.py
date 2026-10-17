@@ -188,6 +188,23 @@ def limit(db: Session, tenant_id: str, key: str) -> tuple[Decimal, FirmKnowledge
     return None
 
 
+# Firm rules that shape outward drafts (IC memo, LP report). Only accepted values reach a draft.
+APPLIED_KEYS = ("lp_reporting_tone", "partner_signoff_threshold", "board_meeting_frequency")
+
+
+def applied_rules(db: Session, tenant_id: str, scope: set[str] | None = None,
+                  keys: tuple[str, ...] = APPLIED_KEYS) -> list[dict]:
+    """Newest accepted value per key, with its quote. A rule whose source document the caller may not
+    see is left out, so a draft never quotes hidden text. Pending and rejected values never apply."""
+    out = []
+    for key in keys:
+        r = newest_accepted(db, tenant_id, key)
+        if r is None or (scope is not None and r.document_id not in scope):
+            continue
+        out.append({"label": BY_KEY[key].label, **row_dict(r)})
+    return out
+
+
 def coverage(db: Session, tenant_id: str) -> dict:
     have = {k for k in profile(db, tenant_id)}
     missing = [t.key for t in TERMS if t.key not in have]

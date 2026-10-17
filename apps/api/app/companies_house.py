@@ -87,3 +87,21 @@ def fetch_company(number: str, api_key: str | None = None) -> CompanyRecord | No
             return None
         raise
     return parse_company_page(html, number)
+
+
+def company_numbers_to_targets(numbers: list[str], fetch=fetch_company) -> tuple[list, list[str]]:
+    """Targets for company numbers the caller supplies. Dissolved or unknown numbers are returned
+    as `skipped`, not imported, so a stale list cannot quietly become a live target set."""
+    from app.targets import TargetIn, uk_sector
+
+    items, skipped = [], []
+    for raw in numbers:
+        rec = fetch(raw)
+        if rec is None or not rec.name or (rec.status or "").lower() != "active":
+            skipped.append(raw.strip().upper())
+            continue
+        sic = rec.sic[0].split(" - ")[0] if rec.sic else None
+        items.append(TargetIn(rec.name, "companies_house", rec.number,
+                              f"{WEB_BASE}/company/{rec.number}",
+                              uk_sector(sic), sic, "United Kingdom", None))
+    return items, skipped

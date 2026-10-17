@@ -17,10 +17,10 @@ from email.message import EmailMessage
 from sqlalchemy.orm import Session
 
 from app import comps as comps_mod
-from app.models import WorkflowSchedule
+from app.models import Alert, WorkflowSchedule
 from app.report import build_report
 
-KINDS = ("portfolio_report", "comps")
+KINDS = ("portfolio_report", "comps", "alert_digest")
 Mailer = Callable[[list[str], str, str], None]
 
 
@@ -48,7 +48,12 @@ def create(db: Session, tenant: str, name: str, kind: str, every_days: int, para
     return w
 
 
+ORDER = {"critical": 0, "warning": 1, "info": 2}
+
+
 def _summary(kind: str, result: dict) -> str:
+    if kind == "alert_digest":
+        return "\n\n".join(f"[{a['severity'].upper()}] {a['title']}\n    {a['detail']}" for a in result["alerts"])
     if kind == "portfolio_report":
         lines = [f"Breaches: {len(result.get('breaches', []))}"]
         for b in result.get("breaches", []):
@@ -63,8 +68,19 @@ def _summary(kind: str, result: dict) -> str:
     return "\n".join(lines)
 
 
+def _alert_digest(db: Session, w: WorkflowSchedule) -> dict:
+    """Alerts still open that were raised since the previous run (or the last cadence window on the first run)."""
+    since = w.last_run or _iso(_now() - timedelta(days=w.every_days))
+    rows = (db.query(Alert).filter_by(tenant_id=w.tenant_id, status="new")
+            .filter(Alert.created_at >= since).all())
+    rows.sort(key=lambda a: (ORDER.get(a.severity, 3), a.id))
+    return {"alerts": [{"id": a.id, "severity": a.severity, "title": a.title, "detail": a.detail} for a in rows]}
+
+
 def _execute(db: Session, w: WorkflowSchedule, scope: set[str] | None) -> dict:
     p = json.loads(w.params)
+    if w.kind == "alert_digest":
+        return _alert_digest(db, w)
     if w.kind == "portfolio_report":
         return build_report(db, w.tenant_id, scope)
     return comps_mod.run(db, w.tenant_id, p["target"], p["peers"], p["period"], p.get("metrics", ["revenue", "ebitda"]),
@@ -82,8 +98,8 @@ def run_due(db: Session, tenant: str, scope: set[str] | None, mailer: Mailer | N
             result = _execute(db, w, scope)
             body = _summary(w.kind, result)
             w.last_status, w.last_result = "ok", json.dumps({"summary": body, "result": result}, default=str)
-            if mailer and w.recipients:
-                mailer(w.recipients.split(","), f"[{w.name}] scheduled update", body)
+            if mailer and w.recipients and (w.kind != "alert_digest" or result["alerts"]):
+                mailer(w.recipients.split(","), f"[{w.name}] scheduled update", body)  # no mail for an empty digest
         except Exception as e:  # noqa: BLE001  recorded, never raised: one bad schedule must not stop the others
             w.last_status, w.last_result = "failed", f"{type(e).__name__}: {e}"
         w.last_run = _iso(now)

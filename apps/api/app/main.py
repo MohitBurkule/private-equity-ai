@@ -16,11 +16,12 @@ from fastapi import (
     Response,
     UploadFile,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import agent as ag
 from app import alerts as al
+from app import companies_house as ch_mod
 from app import comps as comps_mod
 from app import firm_knowledge as fk
 from app import jobs as jobs_mod
@@ -30,6 +31,8 @@ from app import (
     opendata_tools,  # noqa: F401  (registers open-data agent tools)
 )
 from app import outreach as outreach_mod
+from app import precedent_fetch as pfetch_mod
+from app import precedents as prec_mod
 from app import research as research_mod
 from app import seen_before as seen_mod
 from app import targets as tg_mod
@@ -1212,6 +1215,31 @@ def legal_terms(doc_id: str, doc_type: str, db: Db, who: Who):
     return out
 
 
+@app.get("/precedents/summary")
+def precedents_summary(db: Db, who: Who, document_ids: str):
+    """Stated EV and multiples across deal documents (comma-separated ids), with page and quote per input."""
+    ids = [x for x in document_ids.split(",") if x][:200]
+    if not ids:
+        raise HTTPException(422, "document_ids required")
+    deals = []
+    for doc_id in ids:
+        _own_doc(db, who, doc_id)
+        pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc_id).order_by(PageRow.number)]
+        deals.append({"name": doc_id, "document_id": doc_id, "terms": prec_mod.extract(pages)})
+    return {"deals": deals, "stats": prec_mod.summarise(deals)}
+
+
+@app.get("/precedents/scan")
+def precedents_scan(who: Who, since: str, until: str, limit: int = 25):
+    """Merger 8-Ks filed in a date range, each read from its filing with stated EV and multiples cited to the URL."""
+    if not 1 <= limit <= 100:
+        raise HTTPException(422, "limit must be 1 to 100")
+    try:
+        return pfetch_mod.build(since, until, limit=limit)
+    except RuntimeError as e:  # SEC_USER_AGENT not set
+        raise HTTPException(503, str(e)) from e
+
+
 class WorkflowIn(BaseModel):
     name: str
     kind: str
@@ -1227,6 +1255,8 @@ def _wf_out(w) -> dict:
 
 @app.post("/workflows", status_code=201)
 def workflow_create(body: WorkflowIn, db: Db, who: Writer):
+    if body.kind == "alert_digest" and who.restricted:
+        raise HTTPException(403, "alert digests cover the whole tenant; use an unrestricted key")
     try:
         w = wf_mod.create(db, who.tenant, body.name, body.kind, body.every_days, body.params, body.recipients)
     except ValueError as e:
@@ -1293,6 +1323,10 @@ class ChImport(BaseModel):
     csv_text: str
 
 
+class ChNumbersImport(BaseModel):
+    numbers: list[str] = Field(min_length=1, max_length=200)
+
+
 class Screen(BaseModel):
     sectors: list[str] = []
     countries: list[str] = []
@@ -1327,6 +1361,15 @@ def targets_import_ch(body: ChImport, db: Db, who: Writer):
     items = tg_mod.ch_targets(body.csv_text)[:5000]
     new, upd = tg_mod.upsert(db, who.tenant, items)
     return {"new": new, "updated": upd}
+
+
+@app.post("/targets/import/companies-house/numbers", status_code=201)
+def targets_import_ch_numbers(body: ChNumbersImport, db: Db, who: Writer):
+    """Live lookup per number: CH_API_KEY when set, else the keyless public page. Each row keeps its
+    source link, so a target can always be traced back to the Companies House page it came from."""
+    items, skipped = ch_mod.company_numbers_to_targets(body.numbers)
+    new, upd = tg_mod.upsert(db, who.tenant, items)
+    return {"new": new, "updated": upd, "skipped": skipped}
 
 
 def _target_query(db, tenant, sector, country, min_revenue, max_revenue, q, status):
