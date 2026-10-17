@@ -55,7 +55,7 @@ Target modules: `firm_knowledge.py` (profile), `agent.py` (tool registry, workfl
 | 19 | Source transparency | BUILT | Citations verified, source viewer, audit chain | - |
 | 20 | Financial calculation toolkit | BUILT | LTM, net debt, NWC, IRR/TVPI/DPI, waterfall, share ledger | - |
 | 21 | Due-diligence request tracking | BUILT | DD requests, summary, DDQ | - |
-| 22 | Outreach emails at scale | PARTIAL | Drafts from known fields only (`POST /targets/outreach`). Send is human-only: `POST /targets/outreach/send` needs a senior unrestricted key and `confirm_subject` matching the reviewed draft; agents, workflows and schedules cannot reach it. Batch review queue: `POST /targets/outreach/queue` drafts many targets; a senior key approves or rejects each (`/review`); only an approved, unchanged draft sends (`/queue/{id}/send`), once. Missing: contact lists per target, send throttling | integrations |
+| 22 | Outreach emails at scale | DONE | Drafts from known fields (`POST /targets/outreach`). Review queue: `POST /targets/outreach/queue` drafts many targets; a senior key approves or rejects each; only an approved, unchanged draft sends, once, to the target's saved contacts (`POST /targets/{id}/contacts`) or addresses given. Daily send cap `OUTREACH_DAILY_LIMIT` (default 50, 429 past it). Agents, workflows and schedules cannot reach sending | integrations |
 
 ## 3. Firm knowledge: what the terms mean
 

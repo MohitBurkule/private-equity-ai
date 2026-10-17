@@ -351,6 +351,17 @@ class MemoComment(Base):
     created_at: Mapped[str] = mapped_column(String(40), default="")
 
 
+class TargetContact(Base):
+    """A person at a target who may receive outreach. Only addresses a senior person added are ever mailed."""
+    __tablename__ = "target_contact"
+    __table_args__ = (UniqueConstraint("tenant_id", "target_id", "email"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("target.id"), index=True)
+    email: Mapped[str] = mapped_column(String(256))
+    name: Mapped[str | None] = mapped_column(String(200), default=None)
+
+
 class OutreachItem(Base):
     """One outreach draft in the review queue. The text is frozen at queueing; sending re-drafts and refuses if it moved."""
     __tablename__ = "outreach_item"
