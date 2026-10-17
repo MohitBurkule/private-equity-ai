@@ -69,3 +69,38 @@ def test_endpoint_european_and_per_lp():
     assert j["totals"]["to_gp_catchup"] == "90.19" and sum(float(v["lp_proceeds"]) for v in j["per_lp"].values()) == 1640
     bad = c.post("/waterfall/lp", headers=h, json={**body, "terms": {**body["terms"], "catchup": "0.1"}})
     assert bad.status_code == 422
+
+
+def test_escrow_holds_back_share_and_releases_later():
+    from datetime import date as d
+
+    from app.lp_waterfall import Escrow, hold_back
+
+    now, later = hold_back([Flow(d(2024, 1, 1), Decimal(1000), "sale")], Escrow(Decimal("0.10"), 366, "LPA s.4"))
+    assert now[0].amount == Decimal(900) and later[0].amount == Decimal(100)
+    assert later[0].on == d(2025, 1, 1) and "escrow" in later[0].source
+
+
+def test_clawback_returns_carry_above_carry_owed_on_fund_profit():
+    from app.lp_waterfall import american, clawback
+
+    c = {"A": ([Flow(date(2020, 1, 1), Decimal(1000), "c")], [Flow(date(2024, 1, 1), Decimal(1800), "d")]),
+         "B": ([Flow(date(2021, 1, 1), Decimal(1000), "c")], [Flow(date(2022, 1, 1), Decimal(500), "d")])}
+    res = american(c, T)
+    assert res["A"].totals.gp() == Decimal("160.00") and res["B"].totals.gp() == 0
+    cb = clawback([f for v in c.values() for f in v[0]], [f for v in c.values() for f in v[1]], res, T)
+    assert cb.gp_received == Decimal("160.00") and cb.target == Decimal("60.00") and cb.amount == Decimal("100.00")
+
+
+def test_endpoint_american_with_escrow_and_clawback():
+    h = new_tenant(c, "wf2")
+    body = {"mode": "american", "clawback": True,
+            "terms": {"hurdle": "0.08", "carry": "0.2", "catchup": "1", "source": "LPA s.5.1"},
+            "escrow": {"pct": "0.1", "days": 365, "source": "LPA s.4.2"},
+            "deals": [
+                {"name": "A", "contributions": [{"on": "2020-01-01", "amount": "1000", "source": "c1"}],
+                 "distributions": [{"on": "2024-01-01", "amount": "1800", "source": "d1"}]},
+                {"name": "B", "contributions": [{"on": "2021-01-01", "amount": "1000", "source": "c2"}],
+                 "distributions": [{"on": "2022-01-01", "amount": "500", "source": "d2"}]}]}
+    j = c.post("/waterfall/lp", headers=h, json=body).json()
+    assert j["clawback"]["returned_to_lps"] == "100.00"
