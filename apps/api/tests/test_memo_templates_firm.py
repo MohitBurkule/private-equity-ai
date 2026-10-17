@@ -1,3 +1,5 @@
+import io
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -56,3 +58,24 @@ def test_firm_heading_text_and_intro_print_in_memo(monkeypatch):
                                                      "headings": {"risks": "# Risks"}}).status_code == 422
     assert c.post("/memo/templates", headers=h, json={**body, "name": "bad-c",
                                                      "intro": "x" * 501}).status_code == 422
+
+
+def test_firm_research_headings_and_intro_apply_to_the_note(monkeypatch):
+    from docx import Document as Docx
+
+    _sso(monkeypatch)
+    _tid, h = _tenant("firm-research")
+    assert c.post("/memo/templates", headers=h, json={
+        "name": "firm-research", "sections": ["risks"],
+        "headings": {"revenue": "Top line", "sources": "Where it came from"},
+        "intro": "House view: sector notes only."}).status_code == 201
+    c.post("/targets", headers=h, json=[{"name": "Firm Research Co", "source_ref": "fr", "sector": "Software",
+                                         "revenue": "70", "currency": "USD", "revenue_period": "FY2024",
+                                         "revenue_url": "http://sec/fr"}])
+    tid = next(t["id"] for t in c.get("/targets?q=Firm Research", headers=h).json()["items"])
+    docx = c.get(f"/targets/{tid}/research.docx?template=firm-research", headers=h).content
+    text = "\n".join(p.text for p in Docx(io.BytesIO(docx)).paragraphs)
+    assert "House view: sector notes only." in text
+    assert "Top line" in text and "Where it came from" in text
+    plain = c.get(f"/targets/{tid}/research.docx", headers=h).content
+    assert b"Top line" not in plain

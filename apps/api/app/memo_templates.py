@@ -41,13 +41,18 @@ def validate_sections(sections: list[str]) -> list[str]:
     return sections
 
 
+from app.research import (
+    RESEARCH_KEYS,
+)
+
 INTRO_MAX = 500
 HEADING_MAX = 80
 
 
 def validate_text(headings: dict[str, str], intro: str, sections: list[str]) -> tuple[dict[str, str], str]:
-    """Firm heading text is for sections the template carries; one line each, no markup. Empty means the built-in."""
-    bad = [k for k in headings if k not in SECTIONS or k not in sections]
+    """Firm heading text, one line each, no markup. Memo keys must be sections the template carries; research
+    note keys (RESEARCH_KEYS) are always allowed, since the research note has its own fixed sections."""
+    bad = [k for k in headings if k not in RESEARCH_KEYS and (k not in SECTIONS or k not in sections)]
     if bad:
         raise ValueError(f"headings for sections the template does not carry: {sorted(bad)}")
     clean = {}
