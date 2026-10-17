@@ -97,7 +97,7 @@ if tenk.exists():
     comps = next((st for st in flag.get("steps", []) if st["step"] == "comps"), {})
     if comps.get("status") == "ok":
         for peer in comps["result"]["peers"]:
-            call("POST", "/market/tev-sync", {"entity": peer["name"], "period": "LTM", "source": "market-feed",
+            call("POST", "/market/tev-sync", {"entity": peer["name"], "period": "LTM", "source": os.environ.get("MARKET_FEED_SOURCE", "SYNTHETIC-market-feed"),
                                               "url": tmpl.format(name=urllib.parse.quote(peer["name"])), "token": token})
         flag = call("POST", "/flagship/run", {**base, "document_id": doc["id"]})
         (DEMO / "flagship_run.json").write_text(json.dumps(flag, indent=1))

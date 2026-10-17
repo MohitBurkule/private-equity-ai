@@ -71,6 +71,7 @@ def test_peer_ev_respects_document_scope():
         with m.SessionLocal() as db:
             tenant = db.get(Fact, out["fact_id"]).tenant_id
             assert _peer_ev(db, tenant, "SCOPED", None).id == out["fact_id"]
+            assert _peer_ev(db, tenant, "SCOPED", None).label == "feed-capiq-SCOPED.csv"
             assert _peer_ev(db, tenant, "SCOPED", {doc_id}).id == out["fact_id"]
             assert _peer_ev(db, tenant, "SCOPED", set()) is None
     finally:
