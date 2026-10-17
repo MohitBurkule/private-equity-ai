@@ -20,6 +20,7 @@ class Found:
     value: str  # printed number, commas removed
     page: int
     quote: str
+    entity: str | None = None  # set when a row names its own company or holder; else the deal's entity is used
 
 
 def _raw(rest: str) -> str:
