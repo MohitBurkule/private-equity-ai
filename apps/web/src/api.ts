@@ -1,3 +1,5 @@
+export interface ValuationRound { id: number; company: string; round_date: string; round_type: string; post_money: string; currency: string; document_id: string; line: number }
+export interface AccessReport { deal: string; events: { ts: string; actor: string; action: string; payload: Record<string, unknown> }[]; by_actor: Record<string, number>; note: string }
 export interface BulkDealOut { moved: string[]; refused: { doc_id: string; reason: string }[] }
 export interface DocumentInfo { id: string; filename: string; n_pages: number; deal?: string | null }
 export interface Hit { document_id: string; page: number; score: number; snippet: string }
@@ -50,6 +52,9 @@ export const api = {
     }).then((r) => j<AskResult>(r)),
   memo: (entity: string) =>
     fetch(`/api/memo?entity=${encodeURIComponent(entity)}`, { headers: auth() }).then((r) => j<{ markdown: string }>(r)),
+  valuationRounds: () => fetch("/api/valuation-rounds", { headers: auth() }).then((r) => j<ValuationRound[]>(r)),
+  accessReport: (deal: string) =>
+    fetch(`/api/compliance/access-report?deal=${encodeURIComponent(deal)}`, { headers: auth() }).then((r) => j<AccessReport>(r)),
   bulkDeal: (docIds: string[], deal: string | null) =>
     fetch("/api/documents/bulk-deal", {
       method: "POST",
