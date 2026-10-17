@@ -14,6 +14,7 @@ from app.parse.office import RawPage
 
 _DURATION = re.compile(r"Duration_(\d{1,2})_(\d{1,2})_(\d{4})_To_(\d{1,2})_(\d{1,2})_(\d{4})")
 _BREAK = re.compile(r"page-break-(after|before)\s*:\s*always", re.IGNORECASE)
+_NF_START = re.compile(r"<ix:nonfraction\b", re.IGNORECASE)
 _HIDDEN = re.compile(r"display\s*:\s*none", re.IGNORECASE)
 # Contexts live in ix:resources (hidden). Newer filings use opaque ids like c-12, so the period is
 # read from the definition, not from the id. Dimensional contexts (a segment or member) are dropped.
@@ -34,6 +35,8 @@ class Tagged:
     row: str            # visible text of the table row the figure sits in
     period: str | None  # period_key(): "start/end" for a duration, "@date" for an instant
     negative: bool = False  # sign="-": the printed number is the magnitude of a negative value
+    ordinal: int = -1       # index of this ix:nonFraction tag among all such tags in the file
+    pos: int = -1           # character offset of that tag in the file, set by read_filing
 
 
 def period_of(context: str) -> tuple[str, str] | None:
@@ -90,6 +93,7 @@ class _Parser(HTMLParser):
         self._fig: dict | None = None    # open ix:nonFraction
         self._row: list[str] | None = None
         self._row_refs: list[tuple[Tagged, list[str]]] = []
+        self._nf_seen = 0                # every ix:nonFraction start tag, hidden or not
 
     def handle_starttag(self, tag: str, attrs) -> None:
         a = dict(attrs)
@@ -102,10 +106,12 @@ class _Parser(HTMLParser):
         if tag == "tr":
             self._row = []
             el["row"] = self._row
+        if tag == "ix:nonfraction":
+            ordinal, self._nf_seen = self._nf_seen, self._nf_seen + 1
         if tag == "ix:nonfraction" and not self._hidden and not hidden:
             self._fig = {"name": a.get("name", ""), "context": a.get("contextref", ""),
                          "scale": int(a.get("scale") or 0), "negative": a.get("sign") == "-",
-                         "chunks": [], "row": self._row}
+                         "ordinal": ordinal, "chunks": [], "row": self._row}
             el["fig"] = self._fig
         self._stack.append(el)
         if hidden:
@@ -122,7 +128,7 @@ class _Parser(HTMLParser):
                 if text and f["name"]:
                     period = self._ctx.get(f["context"]) or _legacy_key(f["context"])
                     t = Tagged(f["name"], f["context"], f["scale"], text, len(self.pages), "", period,
-                               f["negative"])
+                               f["negative"], f["ordinal"])
                     self.tags.append(t)
                     if f["row"] is not None:
                         self._row_refs.append((t, f["row"]))
@@ -158,6 +164,9 @@ def read_filing(html: str) -> tuple[list[RawPage], list[Tagged]]:
     p = _Parser(contexts(html))
     p.feed(html)
     p.close()
+    starts = [m.start() for m in _NF_START.finditer(html)]
+    for t in p.tags:
+        t.pos = starts[t.ordinal]
     pages = [RawPage(text=" ".join(" ".join(chunks).split()), label=f"p. {i}")
              for i, chunks in enumerate(p.pages, 1) if chunks]
     return pages, p.tags
