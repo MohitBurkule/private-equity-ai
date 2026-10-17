@@ -92,6 +92,7 @@ from app.models import (
     Connection,
     DDRequest,
     Deal,
+    DealChecklistItem,
     Document,
     DocumentSource,
     EvalRun,
@@ -673,6 +674,71 @@ def deal_list(db: Db, who: Who):
         log_event(db, who.tenant, actor(who), "deal.mnpi_access", {"deals": mnpi_shown, "via": "list"})
         db.commit()
     return [_deal_out(db, who, d) for d in shown]
+
+
+class ChecklistIn(BaseModel):
+    title: str = Field(min_length=1, max_length=512)
+
+
+class ChecklistUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=512)
+    done: bool | None = None
+
+
+def _checklist_out(r: DealChecklistItem) -> dict:
+    return {"id": r.id, "deal": r.deal, "title": r.title, "done": r.done, "updated_at": r.updated_at}
+
+
+def _visible_deal_or_404(db: Session, who: Principal, name: str) -> Deal:
+    # Same visibility rules as the deal itself, so a checklist never leaks a walled or hidden deal.
+    d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
+    if d is None or not _dd_scope_ok(who, name) or deal_hidden(d, who):
+        raise HTTPException(404, "deal not found")
+    return d
+
+
+@app.get("/deals/{name}/checklist")
+def checklist_list(name: str, db: Db, who: Who):
+    _visible_deal_or_404(db, who, name)
+    rows = db.query(DealChecklistItem).filter_by(tenant_id=who.tenant, deal=name).order_by(DealChecklistItem.id).all()
+    return [_checklist_out(r) for r in rows]
+
+
+@app.post("/deals/{name}/checklist", status_code=201)
+def checklist_add(name: str, body: ChecklistIn, db: Db, who: Writer):
+    _visible_deal_or_404(db, who, name)
+    r = DealChecklistItem(tenant_id=who.tenant, deal=name, title=body.title.strip(), done=False, updated_at=_now_iso())
+    db.add(r)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "checklist.add", {"deal": name, "id": r.id})
+    return _checklist_out(r)
+
+
+@app.patch("/deals/{name}/checklist/{item_id}")
+def checklist_update(name: str, item_id: int, body: ChecklistUpdate, db: Db, who: Writer):
+    _visible_deal_or_404(db, who, name)
+    r = db.query(DealChecklistItem).filter_by(tenant_id=who.tenant, deal=name, id=item_id).first()
+    if r is None:
+        raise HTTPException(404, "checklist item not found")
+    if body.title is not None:
+        r.title = body.title.strip()
+    if body.done is not None:
+        r.done = body.done
+    r.updated_at = _now_iso()
+    db.commit()
+    log_event(db, who.tenant, actor(who), "checklist.update", {"deal": name, "id": item_id, "done": r.done})
+    return _checklist_out(r)
+
+
+@app.delete("/deals/{name}/checklist/{item_id}", status_code=204)
+def checklist_delete(name: str, item_id: int, db: Db, who: Writer):
+    _visible_deal_or_404(db, who, name)
+    r = db.query(DealChecklistItem).filter_by(tenant_id=who.tenant, deal=name, id=item_id).first()
+    if r is None:
+        raise HTTPException(404, "checklist item not found")
+    db.delete(r)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "checklist.delete", {"deal": name, "id": item_id})
 
 
 @app.patch("/deals/{name}")
