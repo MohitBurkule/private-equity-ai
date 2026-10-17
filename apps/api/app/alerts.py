@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app import firm_knowledge as fk
 from app import secfeed
 from app.candidate_verify import ebitda_margin_clause
-from app.models import Alert, CalendarEvent, DDRequest, Deal, Target
+from app.models import Alert, CalendarEvent, DDRequest, Deal, Fact, Target
 from app.portfolio import (
     Covenant,
     PortfolioCompany,
@@ -72,6 +72,46 @@ def covenant_watch(db: Session, tenant_id: str) -> list[AlertDraft]:
                 sev = "warning"
             out.append(AlertDraft("covenant", sev, title, detail,
                                   f"covenant:{cov.id}:{t['period']}:{t['status']}:{t['value']}", ids))
+    return out
+
+
+RATE_SHOCK_BP = 100  # default parallel move on floating-rate debt when the firm has no rate_shock_bp rule
+
+
+def _latest_fact(db: Session, tenant_id: str, entity: str, metric: str) -> Fact | None:
+    return (db.query(Fact).filter_by(tenant_id=tenant_id, entity=entity, metric=metric, status="verified")
+            .order_by(Fact.id.desc()).first())
+
+
+@register_watcher("rate_move")
+def rate_move_watch(db: Session, tenant_id: str) -> list[AlertDraft]:
+    """A scenario, not a forecast: a parallel move on floating-rate debt. Where interest cover is tested with
+    a minimum and passes today, but the shock takes it below the minimum, the alert says so. Every input is a
+    cited fact of the same unit and period, and the shock is the firm's own accepted rule (or the default)."""
+    from app.calc import _find
+
+    out = []
+    shock = _firm_days(db, tenant_id, "rate_shock_bp", RATE_SHOCK_BP)
+    for cov in db.query(Covenant).filter_by(tenant_id=tenant_id, operator=">=", kpi_metric="interest_coverage"):
+        company = db.get(PortfolioCompany, cov.company_id)
+        thr = db.get(Fact, cov.threshold_fact_id)
+        intr = _latest_fact(db, tenant_id, company.name, "interest_expense") if company else None
+        if company is None or thr is None or intr is None or intr.value <= 0:
+            continue
+        ebitda = _find(db, tenant_id, company.name, "ebitda", intr.period, None)
+        floating = _find(db, tenant_id, company.name, "floating_rate_debt", intr.period, None)
+        if ebitda is None or floating is None or len({intr.unit, ebitda.unit, floating.unit}) != 1:
+            continue
+        now = ebitda.value / intr.value
+        stressed = ebitda.value / (intr.value + floating.value * Decimal(shock) / 10000)
+        if now >= thr.value > stressed:
+            title = (f"{company.name}: +{shock}bp on floating debt takes interest cover to {stressed:.2f}x, "
+                     f"below the {thr.value}x covenant")
+            detail = (f"{intr.period} scenario, not a forecast: interest cover {now:.2f}x today. EBITDA {ebitda.value}, "
+                      f"interest {intr.value}, floating-rate debt {floating.value} ({intr.unit}).")
+            out.append(AlertDraft("covenant_scenario", "warning", title, detail,
+                                  f"rate_move:{cov.id}:{intr.period}:{shock}",
+                                  [ebitda.id, intr.id, floating.id, thr.id]))
     return out
 
 
