@@ -1,9 +1,9 @@
 from decimal import Decimal
 
-from app.flagship import lbo_inputs, lbo_step
-from app.main import app
 from fastapi.testclient import TestClient
 
+from app.flagship import lbo_inputs, lbo_step
+from app.main import app
 from tests.helpers import new_tenant
 
 c = TestClient(app)

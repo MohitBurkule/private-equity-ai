@@ -83,13 +83,13 @@ def verify_number(claimed: Decimal, span_text: str, scale: Decimal = Decimal(1),
     return False
 
 
-_XLSX_CELL = re.compile(r"^(?P<sheet>.+?)!(?P<cell>[A-Z]{1,3}\d+): ")
-_XLSX_ROW = re.compile(r"\| row: (?P<row>.+)$")
+_XLSX_CELL = re.compile(r"^(?P<sheet>.+?)!(?P<cell>[A-Z]{1,3}\d+)(?=: |, row: )")
+_XLSX_ROW = re.compile(r"(?:\| |, )row: (?P<row>.+)$")
 
 
 def xlsx_location(quote: str) -> tuple[str, str, str | None] | None:
-    """(sheet, cell, row label) from a workbook quote such as "P&L!C14: 1,000 | row: Revenue". None when the
-    quote does not start with a cell address, so it cannot be located in a sheet."""
+    """(sheet, cell, row label) from a workbook quote that starts with its cell, either "P&L!C14: 1,000 | row:
+    Revenue" or "P&L!C14, row: Revenue". None when the quote does not start with a cell address."""
     m = _XLSX_CELL.match(quote.strip())
     if m is None:
         return None

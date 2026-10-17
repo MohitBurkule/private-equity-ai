@@ -4,9 +4,9 @@ import os
 from pathlib import Path
 
 import pytest
-from app.main import app
 from fastapi.testclient import TestClient
 
+from app.main import app
 from tests.helpers import new_tenant
 
 FILING = Path("/mnt/attach/project-files/data/edgar/3M_2019_10K.htm")
