@@ -11,7 +11,12 @@ def test_permissive_licence_passes():
 
 def test_copyleft_is_flagged_not_refused():
     assert classify("LGPL-3.0-only", []) == "COPYLEFT"
-    assert classify("", ["License :: OSI Approved :: GNU Affero General Public License v3"]) == "COPYLEFT"
+    assert (
+        classify(
+            "", ["License :: OSI Approved :: GNU Affero General Public License v3"]
+        )
+        == "COPYLEFT"
+    )
 
 
 def test_missing_licence_is_unknown_never_guessed():
