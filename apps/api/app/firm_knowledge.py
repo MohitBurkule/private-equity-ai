@@ -169,6 +169,11 @@ def profile(db: Session, tenant_id: str, include_pending: bool = False) -> dict[
 _NUM = re.compile(r"-?\d+(?:\.\d+)?")
 
 
+def newest_accepted(db: Session, tenant_id: str, key: str) -> FirmKnowledge | None:
+    return (db.query(FirmKnowledge).filter_by(tenant_id=tenant_id, key=key, status="accepted")
+            .order_by(FirmKnowledge.id.desc()).first())
+
+
 def limit(db: Session, tenant_id: str, key: str) -> tuple[Decimal, FirmKnowledge] | None:
     """The first number in the newest accepted value for `key`, with the row it came from.
 
