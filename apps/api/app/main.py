@@ -75,6 +75,7 @@ from app.connectors.sync import sync as connector_sync
 from app.db import make_engine, make_session_factory
 from app.dd import STATUSES, TEMPLATE
 from app.edgar import fetch_companyfacts
+from app.email_links import links_for
 from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
@@ -1047,6 +1048,12 @@ async def uk_psc_extract(file: Annotated[UploadFile, File()], who: Who, companie
             found.append(asdict(rec))
     missing = sorted(want - {r["company_number"] for r in found})
     return {"records": found, "not_in_file": missing, "unreadable_lines": len(errors), "unreadable_sample": errors[:5]}
+
+
+@app.get("/email-links")
+def email_links(db: Db, who: Who):
+    """Emails this key can see, matched to deals by company name or website domain, each with its source link."""
+    return {"links": links_for(db, who)}
 
 
 @app.get("/facts.xlsx")
