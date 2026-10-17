@@ -1,0 +1,40 @@
+{
+  "document": "synthetic_firm_strategy.txt",
+  "model": "gemma-2-9b-it-Q4_K_M.gguf",
+  "rejected": [],
+  "accepted": [
+    {
+      "id": 1,
+      "key": "deal_screening_criteria",
+      "value": "we review a deal only if revenue is at least $20 million, EBITDA margin is at least 15%, and the company operates in software or business services in the United States or Canada.",
+      "status": "accepted",
+      "source": {
+        "document_id": "cea99c8c868eca383b8b098ab3bc0c53bd340476313e01a277c74ba8ac61896a",
+        "page": 1,
+        "quote": "we review a deal only if revenue is at least $20 million, EBITDA margin is at least 15%, and the company operates in software or business services in the United States or Canada."
+      }
+    },
+    {
+      "id": 2,
+      "key": "partner_signoff_threshold",
+      "value": "any investment above $50 million of equity, or any deal with leverage above 5.0x EBITDA, requires written sign-off from two named partners.",
+      "status": "accepted",
+      "source": {
+        "document_id": "cea99c8c868eca383b8b098ab3bc0c53bd340476313e01a277c74ba8ac61896a",
+        "page": 2,
+        "quote": "any investment above $50 million of equity, or any deal with leverage above 5.0x EBITDA, requires written sign-off from two named partners."
+      }
+    },
+    {
+      "id": 3,
+      "key": "board_meeting_frequency",
+      "value": "portfolio company boards meet at least every 3 months.",
+      "status": "accepted",
+      "source": {
+        "document_id": "cea99c8c868eca383b8b098ab3bc0c53bd340476313e01a277c74ba8ac61896a",
+        "page": 3,
+        "quote": "portfolio company boards meet at least every 3 months."
+      }
+    }
+  ]
+}

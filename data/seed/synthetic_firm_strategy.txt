@@ -1,0 +1,5 @@
+SYNTHETIC firm strategy. This is a synthetic demo document, not any real firm's policy.
+
+Deal screening criteria: we review a deal only if revenue is at least $20 million, EBITDA margin is at least 15%, and the company operates in software or business services in the United States or Canada.
+Partner sign-off threshold: any investment above $50 million of equity, or any deal with leverage above 5.0x EBITDA, requires written sign-off from two named partners.
+Board meeting frequency: portfolio company boards meet at least every 3 months.
