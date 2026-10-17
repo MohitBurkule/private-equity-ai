@@ -149,3 +149,19 @@ Built by `evals/synthetic_deck_eval.py`. Every page is labelled `SYNTHETIC:`. Tr
 Chart notes: the model also reads axis ticks on p2 (0, 50, 100, 200, 250, 300). These are printed numbers, not segment values, so they land as `ocr_unverified` too. The eval field is renamed `other_numbers_read` to say that. The model reads no wrong segment values. Chart numbers still never auto-verify.
 
 Gaps: one bar chart and one line chart, clean vector render, no real layout. CIM charts are not scored, and there are no multi-series charts with a legend, log axes, or scanned charts. These numbers do not show real-deck accuracy.
+
+## Real investor decks, hand-labelled (5 decks, 26 labelled items)
+
+Source: EDGAR 8-K exhibit PDFs (search via efts, filtered to PDF exhibits). Files copied to `data/real_decks/`. Labels in `evals/golden/golden_real_decks_v1.jsonl` were read off rendered page images (110 dpi), not the text layer. Scored by `evals/real_deck_eval.py`.
+
+Decks used: MIMEDX Oct 2025 investor deck p12; Ampco-Pittsburgh Aug 2023 investor deck p29; Daseke Feb 2023 p18, May 2023 p23, Nov 2023 p7 (earnings presentations).
+
+| Path | Labelled | Result |
+|---|---|---|
+| Router, table rows (25 rows, 105 values) | 105 values | 17/105 values on the labelled row line; 3/25 whole rows |
+| Router, chart waterfall (Daseke p7, 9 values) | 9 values | 0 landed with bbox; the VLM returned no labels for the crop |
+| OCR only on the same crop | 9 values | all 9 labels read with bbox (chart path uses OCR as its check) |
+
+Why the table path misses: on these decks the text layer comes out one cell per line. The router's line grouping then splits rows across lines, so "row label + all values on one line" fails. This is the main gap for real decks, not the number parsing.
+
+Gaps: 5 decks, not 10; 26 labelled items, not 50. Charts: one vector waterfall only. Lands' End and PGT PDFs were downloaded but not labelled. Hand labels are read from images, not double-checked.
