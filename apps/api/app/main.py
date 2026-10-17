@@ -75,6 +75,7 @@ from app.connectors.sync import sync as connector_sync
 from app.db import make_engine, make_session_factory
 from app.dd import STATUSES, TEMPLATE
 from app.edgar import fetch_companyfacts
+from app.email_links import links_for
 from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
@@ -107,6 +108,7 @@ from app.models import (
     WorkflowSchedule,
 )
 from app.models import Tenant as TenantRow
+from app.oidc import oidc_principal
 from app.parse.sh01 import parse_capital_form
 from app.portfolio import (
     Covenant,
@@ -155,7 +157,9 @@ Db = Annotated[Session, Depends(get_db)]
 def get_principal(db: Db, authorization: Annotated[str | None, Header()] = None) -> Principal:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(401, "missing bearer token")
-    p = principal_for_key(db, authorization[7:].strip())
+    token = authorization[7:].strip()
+    # A JWT has two dots; anything else is an API key. Keys keep working alongside SSO.
+    p = oidc_principal(db, token) if token.count(".") == 2 else principal_for_key(db, token)
     if p is None:
         raise HTTPException(401, "invalid token")
     if not limiter.allow(p.tenant):
@@ -459,8 +463,8 @@ def lbo_returns(body: dict, db: Db, who: Who, xlsx: bool = False):
     for name, spec in raw.items():
         if "fact_id" in spec:
             f = db.query(Fact).filter(Fact.id == spec["fact_id"], Fact.tenant_id == who.tenant).first()
-            if f is None or not fact_visible(f, scope) or not f.sources:
-                raise HTTPException(422, f"{name}: fact not found or has no source")
+            if f is None or not fact_visible(f, scope) or not f.sources or f.status != "verified":
+                raise HTTPException(422, f"{name}: fact not found, not verified, or has no source")
             names = {d.id: d.filename for d in db.query(Document).filter(
                 Document.id.in_({s.document_id for s in f.sources}))}
             src = {"document_id": f.sources[0].document_id, "filename": names.get(f.sources[0].document_id),
@@ -1044,6 +1048,12 @@ async def uk_psc_extract(file: Annotated[UploadFile, File()], who: Who, companie
             found.append(asdict(rec))
     missing = sorted(want - {r["company_number"] for r in found})
     return {"records": found, "not_in_file": missing, "unreadable_lines": len(errors), "unreadable_sample": errors[:5]}
+
+
+@app.get("/email-links")
+def email_links(db: Db, who: Who):
+    """Emails this key can see, matched to deals by company name or website domain, each with its source link."""
+    return {"links": links_for(db, who)}
 
 
 @app.get("/facts.xlsx")

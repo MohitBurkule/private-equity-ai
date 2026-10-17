@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.citations import quote_in_page, verify_number
 from app.extract.schemas import SCHEMAS
 from app.extract.tables import detect_scale
+from app.facts import is_outflow
 from app.llm import LLM
 from app.models import Document, Fact, FactSource, PageRow
 from app.search import PageIndex
@@ -112,7 +113,7 @@ def _check(db: Session, tenant: str, doc: Document, f, p: dict, text: dict[int, 
             r.reason = "value is not a number"
             return r
         scales = [Decimal(1)] + ([detect_scale(text[page])] if f.unit == "USD" else [])
-        if not any(verify_number(value, quote, s, allow_sign_flip=False) for s in scales):
+        if not any(verify_number(value, quote, s, outflow=is_outflow(f.metric)) for s in scales):
             r.reason = "value is not a number printed in the quote"
         else:
             fact = Fact(tenant_id=tenant, entity=entity, metric=f.metric, period=period, value=value,

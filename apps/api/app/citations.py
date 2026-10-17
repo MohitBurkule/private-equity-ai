@@ -9,7 +9,9 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
-_NUM = re.compile(r"\(?-?\$?\s*\d[\d,]*(?:\.\d+)?\)?")
+# A parenthesised figure may have spaces inside, as iXBRL tables print "( 747 )".
+_NUM = re.compile(r"\(\s*\$?\s*\d[\d,]*(?:\.\d+)?\s*\)|-?\$?\s*\d[\d,]*(?:\.\d+)?")
+_LOSS_CUE = re.compile(r"\(loss\)|\bloss\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -59,14 +61,23 @@ def quote_in_page(quote: str, page_text: str) -> bool:
 
 
 def verify_number(claimed: Decimal, span_text: str, scale: Decimal = Decimal(1),
-                  allow_sign_flip: bool = True) -> bool:
-    """True if claimed (already in output units) equals some number in the span
-    after applying the table scale (e.g. 1000 for $ thousands -> multiply).
+                  outflow: bool = False) -> bool:
+    """True if claimed (already in output units) equals some number in the span after applying
+    the table scale (e.g. 1000 for $ thousands -> multiply).
 
-    allow_sign_flip: outflows are shown in parentheses but asked about as positives.
+    The sign must match the printed sign, because a sign error turns a loss into a profit. Two
+    cases may differ: an outflow label (capex, repayments, dividends paid) is asked as a positive
+    magnitude while the table shows it in parentheses; and a loss is asked as negative while the
+    quote names it a loss without parentheses.
     """
     for n in numbers_in(span_text):
         v = n.value * scale
-        if v == claimed or (allow_sign_flip and abs(v) == abs(claimed)):
+        if v == claimed:
+            return True
+        if abs(v) != abs(claimed):
+            continue
+        if outflow:
+            return True
+        if v > 0 and claimed < 0 and _LOSS_CUE.search(span_text):
             return True
     return False
