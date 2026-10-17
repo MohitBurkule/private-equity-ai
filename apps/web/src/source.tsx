@@ -6,6 +6,7 @@ import { splitAtQuote } from "./highlight";
 import { Badge, Button } from "./ui";
 
 interface Ref { docId: string; page: number; quote: string }
+type PageImage = { url: string; highlighted: boolean };
 const Ctx = createContext<(r: Ref) => void>(() => undefined);
 export const useOpenSource = () => useContext(Ctx);
 
@@ -15,12 +16,20 @@ export function SourceProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<PageData | null>(null);
   const [name, setName] = useState("");
   const [err, setErr] = useState("");
+  const [img, setImg] = useState<PageImage | null>(null);
   useEffect(() => {
     if (!ref) return;
-    setData(null); setErr("");
+    setData(null); setErr(""); setImg(null);
     api.page(ref.docId, ref.page).then(setData).catch((e) => setErr(String(e)));
     api.documents().then((d) => setName(d.find((x) => x.id === ref.docId)?.filename ?? "")).catch(() => undefined);
+    // Some documents (iXBRL filings, Word files) have no PDF to draw; they keep the text view.
+    let live = true;
+    api.pageImage(ref.docId, ref.page, ref.quote)
+      .then((v) => { if (live) setImg(v); else URL.revokeObjectURL(v.url); })
+      .catch(() => undefined);
+    return () => { live = false; };
   }, [ref]);
+  useEffect(() => () => { if (img) URL.revokeObjectURL(img.url); }, [img]);
   const parts = data && ref?.quote ? splitAtQuote(data.text, ref.quote) : null;
   return (
     <Ctx.Provider value={setRef}>
@@ -38,6 +47,15 @@ export function SourceProvider({ children }: { children: ReactNode }) {
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
               {err && <p role="alert" className="text-sm text-bad">{err}</p>}
+              {img && (
+                <div className="mb-3">
+                  {/* Drawn wider than the drawer so table figures stay legible; scroll sideways to read them. */}
+                  <div className="overflow-x-auto rounded-lg border border-line bg-white">
+                    <img src={img.url} alt={`${name || "Document"}, page ${ref.page}`} className="w-[760px] max-w-none" />
+                  </div>
+                  {ref.quote && !img.highlighted && <p className="mt-2 text-xs text-warn">Quote not found on this page image; check the text below.</p>}
+                </div>
+              )}
               {data?.method === "ocr" && <div className="mb-3"><Badge tone="warn">Scanned page: check figures against the image</Badge></div>}
               {data?.text.startsWith("[UNRELIABLE") && <div className="mb-3"><Badge tone="bad">Failed its own arithmetic checks</Badge></div>}
               {ref.quote && data && !parts && <p className="mb-2 text-xs text-warn">Quote not found on this page.</p>}

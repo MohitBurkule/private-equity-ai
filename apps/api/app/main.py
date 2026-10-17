@@ -13,6 +13,7 @@ from fastapi import (
     Form,
     Header,
     HTTPException,
+    Query,
     Response,
     UploadFile,
 )
@@ -98,6 +99,7 @@ from app.models import (
     Deal,
     DealChecklistItem,
     Document,
+    DocumentFile,
     DocumentSource,
     EvalRun,
     Fact,
@@ -110,6 +112,7 @@ from app.models import (
 )
 from app.models import Tenant as TenantRow
 from app.oidc import oidc_principal
+from app.page_image import render_page
 from app.parse.sh01 import parse_capital_form
 from app.portfolio import (
     Covenant,
@@ -350,6 +353,19 @@ def capital_form(doc_id: str, db: Db, who: Who):
             "allotments": [row(a) for a in f.allotments], "statement_rows": [row(a) for a in f.statement_rows],
             "total_shares": _value_out(f.total_shares), "total_nominal": _value_out(f.total_nominal),
             "problems": f.problems}
+
+
+@app.get("/documents/{doc_id}/pages/{number}/image")
+def get_page_image(doc_id: str, number: int, db: Db, who: Who, quote: str = Query("", max_length=1000)):
+    """The page as filed, PNG, with the quote highlighted when it is found on the page."""
+    _own_doc(db, who, doc_id)
+    original = db.get(DocumentFile, doc_id)
+    if original is None:
+        raise HTTPException(404, "no original file kept for this document")
+    if number < 1 or number > db.query(PageRow).filter_by(document_id=doc_id).count():
+        raise HTTPException(404, "page not found")
+    png, highlighted = render_page(original.data, number, quote)
+    return Response(png, media_type="image/png", headers={"X-Quote-Highlighted": "1" if highlighted else "0"})
 
 
 @app.post("/documents/{doc_id}/capital-form/facts", status_code=201)
