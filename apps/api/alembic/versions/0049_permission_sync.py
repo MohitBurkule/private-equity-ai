@@ -1,14 +1,14 @@
 """Permission sync: API keys carry the person's external identity; synced documents carry the source's access list
 
-Revision ID: 0048
-Revises: 0047
+Revision ID: 0049
+Revises: 0048
 """
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = '0048'
-down_revision = '0047'
+revision = '0049'
+down_revision = '0048'
 branch_labels = None
 depends_on = None
 
