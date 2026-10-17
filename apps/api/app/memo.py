@@ -289,6 +289,13 @@ def build_memo_pptx(db: Session, tenant_id: str, entity: str, scope: set[str] | 
         cd.categories = [p for p, _, _ in rev]
         cd.add_series("Revenue (USD)", [float(v) for _, v, _ in rev])
         sl.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.5), Inches(1.5), Inches(9), Inches(5), cd)
+        # Footnote: the source line of every figure plotted, so the chart reads as cited like the rest of the memo.
+        cited = sorted({n for _, _, n in rev})
+        foot = [next((x for x in m.notes if x.startswith(f"[{n}]")), f"[{n}]") for n in cited]
+        box = sl.shapes.add_textbox(Inches(0.5), Inches(6.6), Inches(9), Inches(0.8))
+        box.text_frame.word_wrap = True
+        box.text_frame.text = "Source: " + " ".join(foot)
+        box.text_frame.paragraphs[0].font.size = Pt(9)
     if legal is not None:
         m_legal = m.legal or ["No legal red flags in this document under the playbook (rules only)."]
         bullets("Legal red flags (cited)", m_legal[:8], 11)
