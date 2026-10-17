@@ -31,6 +31,7 @@ from app import (
     opendata_tools,  # noqa: F401  (registers open-data agent tools)
 )
 from app import outreach as outreach_mod
+from app import precedent_fetch as pfetch_mod
 from app import precedents as prec_mod
 from app import research as research_mod
 from app import seen_before as seen_mod
@@ -1226,6 +1227,17 @@ def precedents_summary(db: Db, who: Who, document_ids: str):
         pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc_id).order_by(PageRow.number)]
         deals.append({"name": doc_id, "document_id": doc_id, "terms": prec_mod.extract(pages)})
     return {"deals": deals, "stats": prec_mod.summarise(deals)}
+
+
+@app.get("/precedents/scan")
+def precedents_scan(who: Who, since: str, until: str, limit: int = 25):
+    """Merger 8-Ks filed in a date range, each read from its filing with stated EV and multiples cited to the URL."""
+    if not 1 <= limit <= 100:
+        raise HTTPException(422, "limit must be 1 to 100")
+    try:
+        return pfetch_mod.build(since, until, limit=limit)
+    except RuntimeError as e:  # SEC_USER_AGENT not set
+        raise HTTPException(503, str(e)) from e
 
 
 class WorkflowIn(BaseModel):
