@@ -131,6 +131,8 @@ DOC_TYPE_MARKERS = {
     "credit": ("credit agreement", "term loan", "revolving credit"),
     "spa": ("stock purchase agreement", "asset purchase agreement", "merger agreement"),
     "nda": ("non-disclosure agreement", "confidentiality agreement", "mutual nondisclosure"),
+    "lease": ("lease agreement", "commercial lease"),
+    "employment": ("employment agreement", "executive employment"),
 }
 
 
@@ -143,7 +145,8 @@ def detect_doc_type(pages: list[tuple[int, str]], head_pages: int = 3) -> str | 
 def legal_step(pages: list[tuple[int, str]], doc_id: str, doc_type: str | None, legal_mod, llm=None) -> Step:
     """Rules-based red flags. With a local model, it also reads the terms the rules did not find (cited, else dropped)."""
     if not doc_type:
-        return Step("legal", "skipped", "no document type given (nda, spa or credit)")
+        # Auto-detect looks at the first pages only; a type it cannot see there must be given explicitly.
+        return Step("legal", "skipped", "document type not detected and not given (nda, spa, credit, lease or employment): pass legal_doc_type")
     try:
         out = legal_mod.extract(pages, doc_type)
     except ValueError as e:

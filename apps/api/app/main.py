@@ -58,8 +58,10 @@ from app import lp_tone as lp_tone_mod
 from app import lp_waterfall as wf_lp_mod
 from app import marketfeed_facts as marketfeed_facts_mod
 from app import memo_diff as memo_diff_mod
+from app import memo_templates as mt_mod
 from app import notify as notify_mod
 from app import outreach as outreach_mod
+from app import peer_sets as peer_sets_mod
 from app import peers as peers_mod
 from app import people_enrich as pe_mod
 from app import precedent_fetch as pfetch_mod
@@ -110,7 +112,8 @@ from app.crunchbase import read_funding_rounds_numbered
 from app.db import make_engine, make_session_factory
 from app.dd import STATUSES, TEMPLATE
 from app.edgar import fetch_companyfacts
-from app.email_links import links_for
+from app.email_links import EMAIL_CONNECTORS, links_for
+from app.email_routing import unattached_emails
 from app.envelope_stage import advance, deal_for_subject, parse_connect
 from app.expert_calls import flags, parse
 from app.extract.rows import _ROWS as ROW_SCHEMAS
@@ -118,7 +121,13 @@ from app.extract.rows import _blocks, extract_rows
 from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
-from app.facts import CitationError, add_html_fact, add_verified_fact, review_fact
+from app.facts import (
+    CitationError,
+    add_chart_fact,
+    add_html_fact,
+    add_verified_fact,
+    review_fact,
+)
 from app.factsxlsx import build_facts_xlsx, fact_rows
 from app.filing_view import filing_page_html
 from app.funding_import import funding_for_target
@@ -140,6 +149,7 @@ from app.models import (
     AgentRun,
     Alert,
     ApiKey,
+    CalendarEvent,
     Connection,
     DDQuestion,
     DDRequest,
@@ -159,9 +169,12 @@ from app.models import (
     IngestJob,
     LboRun,
     MemoComment,
+    MemoTemplate,
     MemoVersion,
     OutreachItem,
     PageRow,
+    PeerSet,
+    Person,
     SavedScreen,
     SavedSearch,
     SyncRun,
@@ -172,6 +185,7 @@ from app.models import (
 from app.models import Tenant as TenantRow
 from app.oidc import oidc_principal
 from app.page_image import render_page
+from app.parse import chart_vlm
 from app.parse.sh01 import parse_capital_form
 from app.portfolio import (
     Covenant,
@@ -501,6 +515,39 @@ def capital_form_facts(doc_id: str, db: Db, who: Writer):
         created.append(fact.id)
     log_event(db, who.tenant, actor(who), "capital_form.facts", {"document_id": doc.id, "created": created})
     return {"created": created, "skipped": skipped, "problems": f.problems}
+
+
+@app.post("/documents/{doc_id}/chart-facts", status_code=201)
+def chart_facts(doc_id: str, entity: str, period: str, db: Db, who: Writer,
+                metric: str = "chart value", unit: str = "as printed"):
+    """Values the chart model reads off the document's charts. Stored as ocr_unverified only, each citing its
+    page and label bbox. A value matched on the page text alone has no bbox on the chart, so it is skipped."""
+    doc = _own_doc(db, who, doc_id)
+    original = db.get(DocumentFile, doc.id)
+    if original is None:
+        raise HTTPException(409, "original file not stored")
+    created, skipped = [], []
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "doc.pdf"
+        path.write_bytes(original.data)
+        for page in range(1, doc.n_pages + 1):
+            for v in chart_vlm.extract_vlm_values(path, page):
+                if not v.verified:
+                    skipped.append({"page": page, "label": v.text, "reason": "not matched on the chart or page text"})
+                    continue
+                if v.bbox is None:
+                    skipped.append({"page": page, "label": v.text, "reason": "matched page text only, no bbox to cite"})
+                    continue
+                try:
+                    fact = add_chart_fact(db, tenant_id=who.tenant, entity=entity, metric=metric, period=period,
+                                          value=Decimal(str(v.value)), unit=unit, document_id=doc.id, page=page,
+                                          label=v.text, bbox=v.bbox)
+                except CitationError as e:
+                    skipped.append({"page": page, "label": v.text, "reason": str(e)})
+                    continue
+                created.append(fact.id)
+    log_event(db, who.tenant, actor(who), "chart_facts", {"document_id": doc.id, "created": created})
+    return {"created": created, "skipped": skipped}
 
 
 @app.post("/documents/{doc_id}/fund-admin/facts", status_code=201)
@@ -895,6 +942,15 @@ def calc_net_debt(entity: str, period: str, db: Db, who: Who, include_leases: bo
     return _calc_out(net_debt(db, who.tenant, entity, period, visible_doc_ids(db, who), include_leases))
 
 
+@app.get("/calc/periods")
+def calc_periods(entity: str, db: Db, who: Who):
+    """Periods that have verified facts for the entity, oldest first, so a screen can default to ones that exist."""
+    visible = visible_doc_ids(db, who)
+    rows = db.query(Fact).filter_by(tenant_id=who.tenant, entity=entity, status="verified").all()
+    periods = {f.period for f in rows if fact_visible(f, visible)}
+    return {"entity": entity, "periods": sorted(periods)}
+
+
 @app.get("/calc/revenue-trend")
 def calc_revenue_trend(entity: str, periods: str, db: Db, who: Who):
     """Revenue growth and normalized EBITDA margin across comma-separated periods, oldest first."""
@@ -1214,6 +1270,58 @@ def ic_precedents(deal: str, db: Db, who: Who):
             "outcome_counts": counts, "compared_deals": len(peers)}
 
 
+class PersonIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    organisation: str | None = Field(default=None, max_length=200)
+    title: str | None = Field(default=None, max_length=200)
+    expertise: list[str] | None = None
+    deal: str | None = None  # sourced for this deal: visible only to keys that can see the deal
+
+
+def _person_out(p: Person) -> dict:
+    return {"id": p.id, "name": p.name, "organisation": p.organisation, "title": p.title,
+            "expertise": [t.strip() for t in (p.expertise or "").split(",") if t.strip()], "deal": p.deal,
+            "recorded_at": p.recorded_at}
+
+
+@app.post("/people", status_code=201)
+def person_add(body: PersonIn, db: Db, who: Writer):
+    if body.deal:
+        _visible_deal_or_404(db, who, body.deal)
+        _require(who, "write", "record an expert for this deal", deal=body.deal)
+    p = Person(tenant_id=who.tenant, name=body.name.strip(), organisation=body.organisation, title=body.title,
+               expertise=", ".join(dict.fromkeys(t.strip() for t in body.expertise or [] if t.strip())) or None,
+               deal=body.deal, recorded_at=_now_iso())
+    db.add(p)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "person.add", {"id": p.id, "deal": body.deal})
+    return _person_out(p)
+
+
+@app.get("/people")
+def person_search(db: Db, who: Who, q: str = Query("", max_length=200), deal: str | None = None):
+    """Experts and contacts matching q in name, organisation, title or expertise. Experts sourced for a deal the
+    caller cannot see are left out, and so is a deal filter the caller has no right to."""
+    needle = q.strip().lower()
+    visible = deal_scope(db, who)
+    if deal and visible is not None and deal not in visible:
+        raise HTTPException(404, "deal not found")
+    rows = db.query(Person).filter_by(tenant_id=who.tenant)
+    if deal:
+        rows = rows.filter(Person.deal == deal)
+    out = []
+    for p in rows.order_by(Person.id).all():
+        if p.deal and (visible is not None and p.deal not in visible):
+            continue
+        hay = " ".join(x or "" for x in (p.name, p.organisation, p.title, p.expertise)).lower()
+        if needle and needle not in hay:
+            continue
+        out.append(_person_out(p))
+        if len(out) == 100:
+            break
+    return {"query": q, "people": out}
+
+
 @app.get("/dd/summary")
 def dd_summary(deal: str, db: Db, who: Who):
     """Counts per category and the list of items still open: the missing-document tracker."""
@@ -1349,7 +1457,8 @@ class DealNoteIn(BaseModel):
 
 
 def _note_out(n: DealNote) -> dict:
-    return {"id": n.id, "deal": n.deal, "author": n.author, "body": n.body, "created_at": n.created_at}
+    return {"id": n.id, "deal": n.deal, "author": n.author, "body": n.body, "created_at": n.created_at,
+            "edited_at": n.edited_at or None}
 
 
 @app.get("/deals/{name}/notes")
@@ -1367,6 +1476,66 @@ def deal_notes_add(name: str, body: DealNoteIn, db: Db, who: Writer):
     db.add(n)
     db.commit()
     log_event(db, who.tenant, actor(who), "deal.note", {"deal": name, "id": n.id})
+    return _note_out(n)
+
+
+class PeerSetIn(BaseModel):
+    target_id: int
+    name: str = Field(min_length=1, max_length=120)
+
+
+@app.get("/deals/{name}/peer-sets")
+def peer_sets_list(name: str, db: Db, who: Who):
+    _visible_deal_or_404(db, who, name)
+    rows = db.query(PeerSet).filter_by(tenant_id=who.tenant, deal=name).order_by(PeerSet.id).all()
+    return [peer_sets_mod.out(r) for r in rows]
+
+
+@app.post("/deals/{name}/peer-sets", status_code=201)
+def peer_sets_save(name: str, body: PeerSetIn, db: Db, who: Writer):
+    """Save the comps peers for one target under this deal. Needs the target's SIC code and stated revenue."""
+    _visible_deal_or_404(db, who, name)
+    _require(who, "write", "save a peer set", deal=name)
+    t = db.get(Target, body.target_id)
+    if t is None or t.tenant_id != who.tenant:
+        raise HTTPException(404, "target not found")
+    if not t.sic or t.revenue is None:
+        raise HTTPException(422, "a peer set needs the target's SIC code and stated revenue")
+    row = peer_sets_mod.save(db, who.tenant, name, body.name.strip(), t, actor(who))
+    log_event(db, who.tenant, actor(who), "peer_set.save", {"deal": name, "id": row.id, "target": t.id})
+    return peer_sets_mod.out(row)
+
+
+@app.post("/deals/{name}/peer-sets/{sid}/refresh")
+def peer_sets_refresh(name: str, sid: int, db: Db, who: Writer):
+    """Re-read each stored peer's revenue from EDGAR now. The `peer_refresh` workflow does the same on schedule."""
+    _visible_deal_or_404(db, who, name)
+    _require(who, "write", "refresh a peer set", deal=name)
+    row = db.get(PeerSet, sid)
+    if row is None or row.tenant_id != who.tenant or row.deal != name:
+        raise HTTPException(404, "peer set not found")
+    peer_sets_mod.refresh_stored(db, who.tenant, sid)
+    log_event(db, who.tenant, actor(who), "peer_set.refresh", {"deal": name, "id": sid})
+    db.refresh(row)
+    return peer_sets_mod.out(row)
+
+
+@app.patch("/deals/{name}/notes/{nid}")
+def deal_note_edit(name: str, nid: int, body: DealNoteIn, db: Db, who: Writer):
+    """Edit a deal note. Its author edits their own; a whole-tenant key may edit any note on the deal. The old
+    text is kept in the audit chain (`deal.note_edit`), so an edit never silently replaces the record."""
+    _visible_deal_or_404(db, who, name)
+    _require(who, "write", "edit a note", deal=name)
+    n = db.get(DealNote, nid)
+    if n is None or n.tenant_id != who.tenant or n.deal != name:
+        raise HTTPException(404, "note not found")
+    if n.author != actor(who) and who.restricted:
+        raise HTTPException(403, "only the note's author or a whole-tenant key can edit it")
+    old = n.body
+    n.body = body.body.strip()
+    n.edited_at = _now_iso()
+    db.commit()
+    log_event(db, who.tenant, actor(who), "deal.note_edit", {"deal": name, "id": nid, "before": old, "after": n.body})
     return _note_out(n)
 
 
@@ -1568,17 +1737,77 @@ def _memo_comps(db: Session, who, entity: str, peers: str, period: str) -> dict 
     return comps_mod.run(db, who.tenant, entity, names, period, ["revenue"], visible_doc_ids(db, who))
 
 
+def _memo_legal(db: Session, who, legal_doc: str) -> list[dict] | None:
+    """Legal red flags for the memo's legal section, from one contract the caller can see (rules only, cited)."""
+    if not legal_doc:
+        return None
+    doc = _own_doc(db, who, legal_doc)
+    pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc.id).order_by(PageRow.number)]
+    if not pages:
+        pages = [(u.idx + 1, u.text) for u in db.query(HtmlUnit).filter_by(document_id=doc.id).order_by(HtmlUnit.idx)]
+    doc_type = flagship_mod.detect_doc_type(pages)
+    if not doc_type:
+        raise HTTPException(400, "legal_doc is not a recognised nda, spa, credit, lease or employment document")
+    flags = legal_mod.red_flags(legal_mod.extract(pages, doc_type))
+    for f in flags:
+        f.setdefault("document_id", doc.id)
+    return flags
+
+
 @app.get("/memo")
-def memo(entity: str, db: Db, who: Who, peers: str = "", period: str = ""):
+def memo(entity: str, db: Db, who: Who, peers: str = "", period: str = "", legal_doc: str = ""):
     comps = _memo_comps(db, who, entity, peers, period)
-    return {"entity": entity, "markdown": build_memo(db, who.tenant, entity, visible_doc_ids(db, who), comps)}
+    legal = _memo_legal(db, who, legal_doc)
+    return {"entity": entity, "markdown": build_memo(db, who.tenant, entity, visible_doc_ids(db, who), comps, legal)}
+
+
+class MemoTemplateIn(BaseModel):
+    name: str = Field(min_length=2, max_length=64)
+    sections: list[str] = Field(min_length=1, max_length=8)
+    headings: dict[str, str] = Field(default_factory=dict)  # firm heading text per section key
+    intro: str = Field(default="", max_length=mt_mod.INTRO_MAX)
+
+
+@app.get("/memo/templates")
+def memo_templates_list(db: Db, who: Who):
+    text = mt_mod.list_text(db, who.tenant)
+    return {"items": [{"name": k, "sections": v, "built_in": k in TEMPLATES,
+                       "headings": text.get(k, {}).get("headings", {}), "intro": text.get(k, {}).get("intro", "")}
+                      for k, v in mt_mod.list_templates(db, who.tenant).items()]}
+
+
+@app.post("/memo/templates", status_code=201)
+def memo_templates_save(body: MemoTemplateIn, db: Db, who: Writer):
+    """The firm's own memo layout. Tenant-wide, so only a whole-tenant key may save one; a built-in name is refused."""
+    if who.restricted:
+        raise HTTPException(403, "memo templates are firm-wide; use an unrestricted key")
+    if body.name in TEMPLATES or not mt_mod.NAME.match(body.name):
+        raise HTTPException(422, "name must be 2-64 lowercase letters, digits, - or _, and not a built-in name")
+    try:
+        keys = mt_mod.validate_sections(body.sections)
+        headings, intro = mt_mod.validate_text(body.headings, body.intro, keys)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    row = db.query(MemoTemplate).filter_by(tenant_id=who.tenant, name=body.name).one_or_none()
+    if row is None:
+        row = MemoTemplate(tenant_id=who.tenant, name=body.name, created_by=actor(who), created_at=_now_iso())
+        db.add(row)
+    row.sections = json.dumps(keys)
+    row.headings = json.dumps(headings)
+    row.intro = intro
+    db.commit()
+    log_event(db, who.tenant, actor(who), "memo.template_saved", {"name": body.name, "sections": keys})
+    return {"name": row.name, "sections": keys, "headings": headings, "intro": intro}
 
 
 @app.get("/memo/sections")
 def memo_sections(entity: str, db: Db, who: Who, template: str = "ic"):
     """Memo with the sections a named template selects, in its order. Unknown templates are refused."""
-    if template not in TEMPLATES:
-        raise HTTPException(422, f"unknown template; choose one of {sorted(TEMPLATES)}")
+    try:
+        mt_mod.resolve(db, who.tenant, template)
+    except KeyError as e:
+        names = sorted(mt_mod.list_templates(db, who.tenant))
+        raise HTTPException(422, f"unknown template; choose one of {names}") from e
     return {"entity": entity, "template": template,
             "markdown": build_memo_sections(db, who.tenant, entity, template, visible_doc_ids(db, who))}
 
@@ -1845,6 +2074,51 @@ def email_links(db: Db, who: Who):
     return {"links": links_for(db, who)}
 
 
+class EmailAttachIn(BaseModel):
+    deal: str = Field(min_length=1, max_length=128)
+
+
+@app.get("/deals/{name}/meetings")
+def deal_meetings(name: str, db: Db, who: Who):
+    """Calendar meetings whose title names this deal or one of its aliases, soonest first. A deal the key cannot
+    see, or an MNPI deal the key is not cleared for, answers 404 as if it did not exist."""
+    d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
+    if d is None or deal_hidden(d, who) or (who.deals is not None and name not in who.deals):
+        raise HTTPException(404, "no such deal")
+    rows = db.query(CalendarEvent).filter_by(tenant_id=who.tenant, deal=name).order_by(CalendarEvent.starts_at).all()
+    return {"meetings": [{"title": r.title, "starts_at": r.starts_at, "url": r.url, "board": r.board,
+                          "source": r.source} for r in rows]}
+
+
+@app.get("/email/review")
+def email_review(db: Db, who: Who):
+    """Ingested emails no deal matched, waiting for someone to attach them. Only unscoped keys see them."""
+    if who.deals is not None:
+        return {"emails": []}
+    return {"emails": unattached_emails(db, who.tenant)}
+
+
+@app.post("/email/review/{doc_id}/attach")
+def email_attach(doc_id: str, body: EmailAttachIn, db: Db, who: Writer):
+    """Attach one unattached email to a deal by hand. The deal must be one this key may write to, and not an MNPI
+    deal the key cannot see."""
+    _require(who, "write", "attach an email to a deal", deal=body.deal)
+    if who.deals is not None and body.deal not in who.deals:
+        raise HTTPException(403, "this key is not scoped to that deal")
+    d = db.query(Deal).filter_by(tenant_id=who.tenant, name=body.deal).first()
+    if d is None or deal_hidden(d, who):
+        raise HTTPException(404, "no such deal")
+    doc = db.query(Document).filter_by(tenant_id=who.tenant, id=doc_id).first()
+    is_email = db.query(DocumentSource).filter(DocumentSource.document_id == doc_id,
+                                               DocumentSource.connector.in_(EMAIL_CONNECTORS)).first()
+    if doc is None or doc.deal is not None or is_email is None:
+        raise HTTPException(404, "no unattached email with that id")
+    doc.deal = body.deal
+    log_event(db, who.tenant, actor(who), "email.attach", {"doc_id": doc_id, "deal": body.deal})
+    db.commit()
+    return {"document_id": doc_id, "deal": body.deal}
+
+
 @app.get("/facts.xlsx")
 def facts_xlsx(db: Db, who: Who, entity: str | None = None):
     """Verified and reviewed facts as a workbook; each value cell's comment lists its sources."""
@@ -2072,10 +2346,11 @@ def lp_capital_call(body: CapitalCallIn, who: Writer, db: Db, format: str = "jso
 
 
 @app.get("/memo.docx")
-def memo_docx(entity: str, db: Db, who: Who, peers: str = "", period: str = ""):
+def memo_docx(entity: str, db: Db, who: Who, peers: str = "", period: str = "", legal_doc: str = ""):
     log_event(db, who.tenant, actor(who), "memo.export", {"entity": entity, "format": "docx"})
     comps = _memo_comps(db, who, entity, peers, period)
-    return Response(build_memo_docx(db, who.tenant, entity, visible_doc_ids(db, who), comps), headers={
+    legal = _memo_legal(db, who, legal_doc)
+    return Response(build_memo_docx(db, who.tenant, entity, visible_doc_ids(db, who), comps, legal), headers={
         "Content-Disposition": 'attachment; filename="memo.docx"'},
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
@@ -2172,9 +2447,9 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
 
 
 @app.get("/memo.pptx")
-def memo_pptx(entity: str, db: Db, who: Who):
+def memo_pptx(entity: str, db: Db, who: Who, legal_doc: str = ""):
     log_event(db, who.tenant, actor(who), "memo.export", {"entity": entity, "format": "pptx"})
-    return Response(build_memo_pptx(db, who.tenant, entity, visible_doc_ids(db, who)), headers={
+    return Response(build_memo_pptx(db, who.tenant, entity, visible_doc_ids(db, who), _memo_legal(db, who, legal_doc)), headers={
         "Content-Disposition": 'attachment; filename="memo.pptx"'},
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
@@ -2290,6 +2565,22 @@ def kpis(company_id: int, db: Db, who: Who):
     return [{"metric": o.metric, "period": o.period, "value": str(o.value), "unit": o.unit,
              "fact_id": o.fact_id} for o in current_kpis(db, who.tenant, company_id)
             if fact_visible(db.get(Fact, o.fact_id), scope)]
+
+
+@app.get("/portfolio/submissions")
+def kpi_submissions(period: str, db: Db, who: Who):
+    """Which portfolio companies have filed any KPI for the period and which have not, so the missing ones can be
+    chased. Only observations whose citing document the caller may see count as a submission."""
+    scope = visible_doc_ids(db, who)
+    submitted, missing = [], []
+    for c in db.query(PortfolioCompany).filter_by(tenant_id=who.tenant).order_by(PortfolioCompany.name).all():
+        obs = [o for o in current_kpis(db, who.tenant, c.id) if o.period == period
+               and fact_visible(db.get(Fact, o.fact_id), scope)]
+        row = {"company_id": c.id, "name": c.name, "metrics": sorted({o.metric for o in obs})}
+        (submitted if obs else missing).append(row)
+    return {"period": period, "submitted": submitted, "missing": missing,
+            "pct_submitted": round(100 * len(submitted) / (len(submitted) + len(missing)), 1)
+            if submitted or missing else None}
 
 
 class CovenantIn(BaseModel):
@@ -3047,16 +3338,36 @@ def outreach_queue_send(item_id: int, body: OutreachQueueSend, db: Db, who: Writ
     return {"sent": len(to), "attached": [f[0] for f in files]}
 
 
+def _research_text(db: Session, tenant: str, template: str | None) -> dict:
+    """Firm heading text and intro for the research note, from a saved template. Empty when none is named."""
+    if not template:
+        return {"headings": {}, "intro": ""}
+    headings, intro = mt_mod.firm_text(db, tenant, template)
+    return {"headings": {k: v for k, v in headings.items() if k in research_mod.RESEARCH_KEYS}, "intro": intro}
+
+
 @app.get("/targets/{tid}/research.docx")
-def target_research(tid: int, db: Db, who: Who):
+def target_research(tid: int, db: Db, who: Who, template: str | None = Query(None, max_length=64)):
     """Research note for one target: identity, revenue with filing link, sector benchmark, prior mentions, sources."""
     t = db.get(Target, tid)
     if t is None or t.tenant_id != who.tenant:
         raise HTTPException(404, "target not found")
     log_event(db, who.tenant, actor(who), "target.research_export", {"id": tid})
-    return Response(research_mod.build_docx(db, who.tenant, t, deal_scope(db, who)),
+    return Response(research_mod.build_docx(db, who.tenant, t, deal_scope(db, who), **_research_text(db, who.tenant, template)),
                     headers={"Content-Disposition": f'attachment; filename="research-{tid}.docx"'},
                     media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+@app.get("/targets/{tid}/research.pptx")
+def target_research_deck(tid: int, db: Db, who: Who, template: str | None = Query(None, max_length=64)):
+    """Same research note as slides: one slide per section, built from the same records."""
+    t = db.get(Target, tid)
+    if t is None or t.tenant_id != who.tenant:
+        raise HTTPException(404, "target not found")
+    log_event(db, who.tenant, actor(who), "target.research_export", {"id": tid, "format": "pptx"})
+    return Response(research_mod.build_pptx(db, who.tenant, t, deal_scope(db, who), **_research_text(db, who.tenant, template)),
+                    headers={"Content-Disposition": f'attachment; filename="research-{tid}.pptx"'},
+                    media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
 
 @app.get("/seen-before")
@@ -3094,12 +3405,17 @@ def targets_sic_peers(target_id: int, db: Db, who: Who, pages: int = Query(1, ge
         return {"target_id": t.id, "sic": t.sic, "peers": [], "median": None,
                 "note": "needs a SIC code and a stated revenue"}
     exclude = {t.source_ref.zfill(10)} if t.source == "sec" else set()
-    found = peers_mod.discover(t.revenue, t.sic, exclude, pages=pages)
+    rule_row = fk.newest_accepted(db, who.tenant, "peer_rules")
+    rule = peers_mod.parse_rule(rule_row.value) if rule_row else peers_mod.PeerRule()
+    found = peers_mod.discover_with_group(t.revenue, t.sic, exclude, pages=pages, rule=rule)
     st = comps_mod.stats([p.revenue for p in found])
-    return {"target_id": t.id, "sic": t.sic, "target_revenue": str(t.revenue), "peers": len(found),
+    applied = {"low": str(rule.low), "high": str(rule.high), "min_year": rule.min_year,
+               "min_peers": rule.min_peers, "widen": rule.widen,
+               "rule_source": f"accepted peer_rules rule: {rule_row.value}" if rule_row else "default"}
+    return {"target_id": t.id, "sic": t.sic, "target_revenue": str(t.revenue), "peers": len(found), "applied": applied,
             "median": None if st.median is None else str(st.median),
             "items": [{"cik": p.cik, "name": p.name, "revenue": str(p.revenue), "period": p.period,
-                       "source_url": p.source_url, "rule": p.rule} for p in found]}
+                       "source_url": p.source_url, "rule": p.rule, "matched_on": p.matched_on} for p in found]}
 
 
 class SavedScreenIn(BaseModel):

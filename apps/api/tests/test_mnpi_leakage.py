@@ -5,6 +5,7 @@ from app.acl import Principal
 from app.audit import AuditEvent
 from app.main import SessionLocal, app
 from app.models import Deal
+from app.rls import bind_tenant
 
 c = TestClient(app)
 ADMIN = {"X-Admin-Token": "test-admin"}
@@ -47,6 +48,7 @@ def test_outreach_draft_and_queue_refuse_a_target_that_matches_an_mnpi_deal():
 def test_agent_deal_list_leaves_out_mnpi_deals_for_someone_outside_them():
     tid, _, _, _ = _setup("leak-agent")
     db = SessionLocal()
+    bind_tenant(db, tid)
     try:
         who = Principal(tenant=tid, role="partner", key_id="someone-else")
         names = [d["name"] for d in ag.TOOLS["list_deals"].fn(ag.Ctx(db, who))]
@@ -64,6 +66,7 @@ def test_seen_before_audits_when_a_cleared_person_sees_an_mnpi_deal():
     tid, creator, _, _ = _setup("leak-audit")
     assert c.get("/seen-before?q=Secret", headers=creator).status_code == 200
     db = SessionLocal()
+    bind_tenant(db, tid)
     try:
         actions = [e.action for e in db.query(AuditEvent).filter_by(tenant_id=tid).all()]
     finally:

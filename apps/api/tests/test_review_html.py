@@ -4,8 +4,8 @@ from fastapi.testclient import TestClient
 
 from app.facts import add_html_fact
 from app.main import SessionLocal, app
-from app.models import Document
-from tests.helpers import new_tenant
+from app.rls import bind_tenant
+from tests.helpers import new_tenant_id
 
 c = TestClient(app)
 HTML = """<html><body>
@@ -14,15 +14,13 @@ HTML = """<html><body>
 <p id="other">Borrower shall not permit the Interest Coverage Ratio to be less than 2.00:1.00.</p>
 </body></html>"""
 
-
 def test_reviewer_can_correct_an_html_fact_and_keeps_block_citation():
-    h = new_tenant(c, "review-html")
+    h, tid = new_tenant_id(c, "review-html")
     r = c.post("/documents", files={"file": ("ca.htm", HTML.encode(), "text/html")}, headers=h)
     doc = r.json()[0]["id"] if isinstance(r.json(), list) else r.json()["id"]
     with SessionLocal() as s:
-        d = s.get(Document, doc)
-        tenant = d.tenant_id
-        fact = add_html_fact(s, tenant_id=tenant, entity="Co", metric="covenant total_net_leverage maximum",
+        bind_tenant(s, tid)
+        fact = add_html_fact(s, tenant_id=tid, entity="Co", metric="covenant total_net_leverage maximum",
                              period="per agreement", value=Decimal("4.00"), unit="x", document_id=doc,
                              sources=[(1, "greater than 4.00:1.00")])
         fid = fact.id

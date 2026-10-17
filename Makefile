@@ -13,6 +13,18 @@ demo:  ## API on SQLite plus the built web UI, no Postgres or Docker (see script
 
 .PHONY: demo
 
+test-postgres:  ## Full API suite on a throwaway Postgres 18 (embedded-postgres, no Docker; set PG_RUN_AS=<non-root user>)
+	bash scripts/test_postgres.sh
+
+.PHONY: test-postgres
+
+ci:  ## Local merge gate (Actions is blocked): ruff, alembic heads, pytest on SQLite and Postgres, web tsc + vitest
+	cd apps/api && python3 -m ruff check . && python3 -m pytest -q tests/test_alembic_heads.py && python3 -m pytest -q
+	bash scripts/test_postgres.sh
+	cd apps/web && npm ci --no-audit --no-fund && npx tsc --noEmit && npx vitest run
+
+.PHONY: ci
+
 # Firm-system mocks (all SYNTHETIC): WireMock stubs for DealCloud, iManage, Datasite and fund admin, a Keycloak
 # realm for SSO roles, and an SFTP drop for fund-admin files. Starts them, then runs the tests that use each one.
 demo-mocks:  ## Run the firm-system mock flows: compose mocks when Docker runs, else local jars (see docs/MOCKS.md)

@@ -175,6 +175,7 @@ class DealNote(Base):
     author: Mapped[str] = mapped_column(String(64))
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(String(40), default="")
+    edited_at: Mapped[str] = mapped_column(String(40), default="")  # set on each edit; empty when never edited
 
 
 class DDQuestion(Base):
@@ -383,6 +384,20 @@ class Target(Base):
     web_checked_at: Mapped[str | None] = mapped_column(String(40), default=None)
 
 
+class MemoTemplate(Base):
+    """A firm's own memo layout: which section keys it carries, in order. Built-in templates stay available."""
+    __tablename__ = "memo_template"
+    __table_args__ = (UniqueConstraint("tenant_id", "name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    sections: Mapped[str] = mapped_column(Text)  # JSON list of section keys
+    headings: Mapped[str] = mapped_column(Text, default="{}")  # JSON: section key -> firm heading text
+    intro: Mapped[str] = mapped_column(Text, default="")  # firm line printed under the memo title
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 class MemoVersion(Base):
     """A saved IC memo draft. Stored as the text the reviewer saw, so a later reader sees the same figures and sources."""
     __tablename__ = "memo_version"
@@ -430,6 +445,22 @@ class SavedScreen(Base):
     created_at: Mapped[str] = mapped_column(String(40), default="")
 
 
+class PeerSet(Base):
+    """A saved comps peer set for one deal: the SEC peers picked for a target, kept with their sources and
+    refreshed on schedule (workflow kind `peer_refresh`). A peer that loses its revenue is dropped, never guessed."""
+    __tablename__ = "peer_set"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    deal: Mapped[str] = mapped_column(String(200), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    target_id: Mapped[int] = mapped_column(Integer)
+    items: Mapped[str] = mapped_column(Text)  # JSON list of peers: cik, name, revenue, period, source_url, rule, matched_on
+    dropped: Mapped[str] = mapped_column(Text, default="[]")  # JSON list of {cik, name, reason} from the last refresh
+    refreshed_at: Mapped[str] = mapped_column(String(40), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 class TargetContact(Base):
     """A person at a target who may receive outreach. Only addresses a senior person added are ever mailed."""
     __tablename__ = "target_contact"
@@ -439,6 +470,20 @@ class TargetContact(Base):
     target_id: Mapped[int] = mapped_column(ForeignKey("target.id"), index=True)
     email: Mapped[str] = mapped_column(String(256))
     name: Mapped[str | None] = mapped_column(String(200), default=None)
+
+
+class Person(Base):
+    """An expert or contact the firm has used. Tied to a deal when it was sourced for one, so a walled deal's
+    expert is hidden from keys that cannot see that deal."""
+    __tablename__ = "person"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    organisation: Mapped[str | None] = mapped_column(String(200), default=None)
+    title: Mapped[str | None] = mapped_column(String(200), default=None)
+    expertise: Mapped[str | None] = mapped_column(Text, default=None)  # comma-separated topics
+    deal: Mapped[str | None] = mapped_column(String(128), default=None, index=True)
+    recorded_at: Mapped[str] = mapped_column(String(40), default="")
 
 
 class OutreachItem(Base):
@@ -515,6 +560,8 @@ class CalendarEvent(Base):
     url: Mapped[str] = mapped_column(Text, default="")
     company: Mapped[str | None] = mapped_column(String(256), default=None, index=True)
     board: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # The deal whose name or alias the title names, when exactly one does (app/calendar_events.py)
+    deal: Mapped[str | None] = mapped_column(String(128), default=None, index=True)
 
 
 class Connection(Base):
