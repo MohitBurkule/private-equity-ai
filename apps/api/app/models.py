@@ -93,9 +93,28 @@ class FactSource(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     fact_id: Mapped[int] = mapped_column(ForeignKey("fact.id"), nullable=False)
     document_id: Mapped[str] = mapped_column(ForeignKey("document.id"), nullable=False)
+    # PDF citations use page. HTML filings have no pages: page is 0 and the location is section/anchor/offset.
     page: Mapped[int] = mapped_column(Integer, nullable=False)
     quote: Mapped[str] = mapped_column(Text, nullable=False)
+    section: Mapped[str | None] = mapped_column(String(32), default=None)
+    anchor: Mapped[str | None] = mapped_column(String(128), default=None)
+    offset: Mapped[int | None] = mapped_column(Integer, default=None)
     fact: Mapped[Fact] = relationship(back_populates="sources")
+
+
+class HtmlUnit(Base):
+    """A text block of an HTML filing, in document order. Citations to HTML point at these."""
+    __tablename__ = "html_unit"
+    __table_args__ = (UniqueConstraint("document_id", "idx"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    document_id: Mapped[str] = mapped_column(ForeignKey("document.id"), index=True)
+    idx: Mapped[int] = mapped_column(Integer)
+    section: Mapped[str | None] = mapped_column(String(32), default=None)
+    heading: Mapped[str | None] = mapped_column(String(256), default=None)
+    anchor: Mapped[str | None] = mapped_column(String(128), default=None)
+    offset: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text)
 
 
 class IngestJob(Base):

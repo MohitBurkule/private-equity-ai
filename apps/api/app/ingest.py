@@ -11,9 +11,10 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from app.html_doc import parse_units
 from app.ixbrl import read_ixbrl
 from app.ixbrl_full import read_filing
-from app.models import Document, DocumentFile, PageRow
+from app.models import Document, DocumentFile, HtmlUnit, PageRow
 from app.parse.eml import parse_eml
 from app.parse.office import RawPage, extract_docx, extract_pptx
 from app.parse.pdf import extract_pages
@@ -160,7 +161,27 @@ def ingest_upload(db: Session, tenant_id: str, data: bytes, filename: str) -> Do
         return ingest_ixbrl(db, tenant_id, data, filename)
     if filename.lower().endswith((".csv", ".tsv")):
         return ingest_csv(db, tenant_id, data, filename)
-    raise ValueError("unsupported file type (expected PDF, XLSX, CSV or iXBRL HTML)")
+    if b"<html" in data[:2_000_000].lower() or b"<!doctype html" in data[:2_000].lower():
+        return ingest_html_doc(db, tenant_id, data, filename)
+    raise ValueError("unsupported file type (expected PDF, XLSX, CSV, HTML or iXBRL HTML)")
+
+
+def ingest_html_doc(db: Session, tenant_id: str, data: bytes, filename: str) -> Document:
+    """Plain HTML (a credit agreement exhibit, say). Stored as text blocks with section and anchor, not pages."""
+    sha = hashlib.sha256(data).hexdigest()
+    doc_id = tenant_doc_id(tenant_id, sha)
+    existing = db.get(Document, doc_id)
+    if existing:
+        return existing
+    units = parse_units(data)
+    if not units:
+        raise ValueError("no text found")
+    doc = Document(id=doc_id, tenant_id=tenant_id, sha256=sha, filename=filename, n_pages=0, kind="html")
+    db.add(doc)
+    db.add_all(HtmlUnit(tenant_id=tenant_id, document_id=doc_id, idx=u.idx, section=u.section, heading=u.heading,
+                        anchor=u.anchor, offset=u.offset, text=u.text) for u in units)
+    db.commit()
+    return doc
 
 
 def _store_pages(db: Session, tenant_id: str, data: bytes, filename: str, kind: str,
