@@ -81,7 +81,7 @@ from app.connectors.base import ConnectorError, default_http
 from app.connectors.gsheets import GoogleSheets
 from app.connectors.linkedin import LinkedInExport
 from app.connectors.oauth import OAuthError
-from app.connectors.registry import IMPLEMENTED, status
+from app.connectors.registry import IMPLEMENTED, connection_health, status
 from app.connectors.sync import sync as connector_sync
 from app.crunchbase import read_funding_rounds_numbered
 from app.db import make_engine, make_session_factory
@@ -2341,8 +2341,12 @@ class SyncBody(BaseModel):
 
 @app.get("/connectors")
 def list_connectors(who: Who, db: Db):
-    connected = {r.connector for r in db.query(Connection).filter_by(tenant_id=who.tenant)}
-    return status(connected)
+    rows = {r.connector: r for r in db.query(Connection).filter_by(tenant_id=who.tenant)}
+    out = status(set(rows))
+    for c in out:
+        if c["name"] in rows:
+            c.update(connection_health(rows[c["name"]]))
+    return out
 
 
 @app.post("/connectors/{name}/sync")
@@ -2522,7 +2526,10 @@ class ConnectionBody(BaseModel):
 def _oauth_access_token(row: Connection) -> str:
     """Trade the stored refresh token for an access token. Providers may rotate the refresh token,
     so a new one is re-sealed onto the row (the caller commits)."""
-    tok = oauth.refresh(oauth.config_for(row.connector), vault.unseal(row.token_sealed), CONNECTOR_HTTP)
+    try:
+        tok = oauth.refresh(oauth.config_for(row.connector), vault.unseal(row.token_sealed), CONNECTOR_HTTP)
+    except OAuthError as e:
+        raise ConnectorError(f"token refresh failed, reconnect the account: {e}") from e
     if tok.get("refresh_token"):
         row.token_sealed = vault.seal(tok["refresh_token"])
     return tok["access_token"]
