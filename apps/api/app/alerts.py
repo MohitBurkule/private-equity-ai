@@ -13,8 +13,14 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
+from app import firm_knowledge as fk
 from app.models import Alert, DDRequest, Deal
-from app.portfolio import Covenant, PortfolioCompany, evaluate_covenant
+from app.portfolio import (
+    Covenant,
+    PortfolioCompany,
+    current_kpis,
+    evaluate_covenant,
+)
 
 SEVERITIES = ("info", "warning", "critical")
 STATUSES = ("new", "read", "dismissed")
@@ -77,6 +83,28 @@ def _age_days(stamp: str | None) -> int | None:
 
 def _week() -> str:
     return (datetime.now(UTC) - timedelta(days=datetime.now(UTC).weekday())).date().isoformat()
+
+
+@register_watcher("firm_leverage_limit")
+def firm_leverage_limit(db: Session, tenant_id: str) -> list[AlertDraft]:
+    """Portfolio net leverage above the firm's accepted leverage_limit. The limit and its quote come
+    from the firm profile, so the alert shows the rule it broke."""
+    found = fk.limit(db, tenant_id, "leverage_limit")
+    if found is None:
+        return []
+    cap, rule = found
+    out = []
+    for co in db.query(PortfolioCompany).filter_by(tenant_id=tenant_id):
+        for o in current_kpis(db, tenant_id, co.id):
+            if o.metric != "net_leverage_x" or o.unit != "x" or o.value <= cap:
+                continue
+            out.append(AlertDraft(
+                "leverage", "critical",
+                f"{co.name}: net leverage {o.value}x exceeds firm limit {cap}x ({o.period})",
+                f"Firm rule (document {rule.document_id}, page {rule.page}): \"{rule.quote}\"",
+                f"leverage:{co.id}:{o.period}:{o.value}:{cap}",
+                [o.fact_id]))
+    return out
 
 
 @register_watcher("stalled_deals")

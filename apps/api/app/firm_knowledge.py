@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
@@ -161,6 +162,23 @@ def profile(db: Session, tenant_id: str, include_pending: bool = False) -> dict[
     for r in q.order_by(FirmKnowledge.id):
         out.setdefault(r.key, []).append(row_dict(r))
     return out
+
+
+_NUM = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def limit(db: Session, tenant_id: str, key: str) -> tuple[Decimal, FirmKnowledge] | None:
+    """The first number in the newest accepted value for `key`, with the row it came from.
+
+    None when nothing is accepted or the value has no number. The number was already checked against
+    its quote at extraction, so a limit with no cited source cannot reach a watcher."""
+    rows = (db.query(FirmKnowledge).filter_by(tenant_id=tenant_id, key=key, status="accepted")
+            .order_by(FirmKnowledge.id.desc()).all())
+    for r in rows:
+        m = _NUM.search(r.value)
+        if m:
+            return Decimal(m.group(0)), r
+    return None
 
 
 def coverage(db: Session, tenant_id: str) -> dict:
