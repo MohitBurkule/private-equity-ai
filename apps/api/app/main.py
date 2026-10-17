@@ -3168,6 +3168,18 @@ def target_research(tid: int, db: Db, who: Who):
                     media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
+@app.get("/targets/{tid}/research.pptx")
+def target_research_deck(tid: int, db: Db, who: Who):
+    """Same research note as slides: one slide per section, built from the same records."""
+    t = db.get(Target, tid)
+    if t is None or t.tenant_id != who.tenant:
+        raise HTTPException(404, "target not found")
+    log_event(db, who.tenant, actor(who), "target.research_export", {"id": tid, "format": "pptx"})
+    return Response(research_mod.build_pptx(db, who.tenant, t, deal_scope(db, who)),
+                    headers={"Content-Disposition": f'attachment; filename="research-{tid}.pptx"'},
+                    media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+
+
 @app.get("/seen-before")
 def seen_before(q: str, db: Db, who: Who):
     """Have we seen this company or deal before? Searches targets, portfolio companies and deals you can see."""
