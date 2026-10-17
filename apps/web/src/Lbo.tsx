@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { api2, FactRow, LboRequest, LboResult } from "./api";
+import { useEffect, useState } from "react";
+import { api2, FactRow, LboRequest, LboResult, LboRunDetail, LboRunRow } from "./api";
 import { fmtAmount } from "./format";
 import { useLoad } from "./hooks";
 import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input, Page } from "./ui";
@@ -21,6 +21,40 @@ export function Lbo() {
   const [result, setResult] = useState<LboResult | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [runs, setRuns] = useState<LboRunRow[]>([]);
+  const [opened, setOpened] = useState<LboRunDetail | null>(null);
+  const [request, setRequest] = useState<LboRequest | null>(null);
+  const [name, setName] = useState("");
+  const [compare, setCompare] = useState<number[]>([]);
+  const [compared, setCompared] = useState<LboRunDetail[]>([]);
+
+  const refresh = async () => {
+    const list = await api2.lboRuns().catch(() => [] as LboRunRow[]);
+    setRuns(list);
+    return list;
+  };
+  // Open on the newest saved run (the seeded demo run) so the screen has a result before anyone types.
+  useEffect(() => {
+    void refresh().then(async (list) => {
+      if (list.length === 0) return;
+      const d = await api2.lboRun(list[0].id);
+      setOpened(d); setResult(d.result);
+    });
+  }, []);
+
+  const save = async () => {
+    if (!request || !name.trim()) return;
+    try {
+      await api2.lboSave(name.trim(), request);
+      setName("");
+      await refresh();
+    } catch (e) { setError(String(e)); }
+  };
+  const toggle = async (id: number) => {
+    const next = compare.includes(id) ? compare.filter((x) => x !== id) : [...compare, id].slice(-2);
+    setCompare(next);
+    setCompared(await Promise.all(next.map((x) => api2.lboRun(x))));
+  };
 
   const current = (k: string): Pick => pick[k] ?? EMPTY;
   const set = (k: string, p: Pick) => setPick({ ...pick, [k]: p });
@@ -41,7 +75,10 @@ export function Lbo() {
       else inputs[k] = { value: p.value, assumption: { set_by: p.set_by, set_on: p.set_on, reason: p.reason } };
     }
     try {
-      setResult(await api2.lboReturns({ inputs, entry_multiples: AXIS, exit_multiples: AXIS }));
+      const req: LboRequest = { inputs, entry_multiples: AXIS, exit_multiples: AXIS };
+      setRequest(req);
+      setOpened(null);
+      setResult(await api2.lboReturns(req));
     } catch (e) { setResult(null); setError(String(e)); }
     setBusy(false);
   };
@@ -99,11 +136,46 @@ export function Lbo() {
         <div className="flex items-center gap-3 border-t border-line px-5 py-3">
           <Button variant="primary" disabled={!ready || busy} onClick={() => void run()}>{busy ? "Running..." : "Run returns"}</Button>
           {!ready && <span className="text-xs text-mut">Fill all nine inputs to run.</span>}
+          {result && request && (
+            <form className="ml-auto flex items-center gap-2" onSubmit={(e) => { e.preventDefault(); void save(); }}>
+              <Input placeholder="Name this run" aria-label="Run name" value={name} onChange={(e) => setName(e.target.value)} />
+              <Button type="submit" disabled={!name.trim()}>Save run</Button>
+            </form>
+          )}
         </div>
       </Card>
+      {runs.length > 0 && (
+        <Card>
+          <CardHead title="Saved runs" right={<span className="text-xs text-mut">Pick two to compare</span>} />
+          <ul className="divide-y divide-line">
+            {runs.map((r) => (
+              <li key={r.id} className="flex items-center gap-3 px-5 py-2.5 text-sm">
+                <input type="checkbox" aria-label={`Compare ${r.name}`} checked={compare.includes(r.id)} onChange={() => void toggle(r.id)} />
+                <button type="button" className="flex-1 text-left hover:text-acc" onClick={() => void api2.lboRun(r.id).then((d) => { setOpened(d); setResult(d.result); })}>
+                  {r.name}{opened?.id === r.id && <span className="ml-2 text-xs text-mut">open</span>}
+                </button>
+                <span className="tnum text-mut">MOIC {r.moic}x</span>
+                <span className="tnum text-mut">{r.irr === null ? "IRR n/a" : `IRR ${(Number(r.irr) * 100).toFixed(1)}%`}</span>
+              </li>
+            ))}
+          </ul>
+          {compared.length === 2 && (
+            <table className="tnum w-full text-sm">
+              <thead><tr className="text-left text-xs uppercase tracking-wider text-mut"><th className="px-5 py-2">Metric</th>{compared.map((d) => <th key={d.id} className="px-5 py-2">{d.name}</th>)}</tr></thead>
+              <tbody>
+                <tr className="border-t border-line"><td className="px-5 py-2 text-mut">MOIC</td>{compared.map((d) => <td key={d.id} className="px-5 py-2">{d.result.moic}x</td>)}</tr>
+                <tr className="border-t border-line"><td className="px-5 py-2 text-mut">IRR</td>{compared.map((d) => <td key={d.id} className="px-5 py-2">{d.result.irr === null ? "n/a" : `${(Number(d.result.irr) * 100).toFixed(1)}%`}</td>)}</tr>
+                <tr className="border-t border-line"><td className="px-5 py-2 text-mut">Entry EV</td>{compared.map((d) => <td key={d.id} className="px-5 py-2">{fmtAmount(d.result.entry_ev, "")}</td>)}</tr>
+                <tr className="border-t border-line"><td className="px-5 py-2 text-mut">Exit equity</td>{compared.map((d) => <td key={d.id} className="px-5 py-2">{fmtAmount(d.result.exit_equity, "")}</td>)}</tr>
+                <tr className="border-t border-line"><td className="px-5 py-2 text-mut">Assumptions</td>{compared.map((d) => <td key={d.id} className="px-5 py-2">{d.result.assumptions.map((a) => `${a.input.replace(/_/g, " ")} ${a.value}`).join(", ") || "none"}</td>)}</tr>
+              </tbody>
+            </table>
+          )}
+        </Card>
+      )}
       {result && (
         <Card>
-          <CardHead title="Returns" right={<Badge tone="acc">MOIC {result.moic}x</Badge>} />
+          <CardHead title={opened ? `Returns: ${opened.name}` : "Returns"} right={<Badge tone="acc">MOIC {result.moic}x</Badge>} />
           <dl className="grid grid-cols-2 gap-4 p-5 text-sm sm:grid-cols-4">
             <div><dt className="text-xs text-mut">Equity in</dt><dd className="tnum font-medium">{fmtAmount(result.equity, "")}</dd></div>
             <div><dt className="text-xs text-mut">Exit equity</dt><dd className="tnum font-medium">{fmtAmount(result.exit_equity, "")}</dd></div>

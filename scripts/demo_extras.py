@@ -3,7 +3,7 @@
   python scripts/demo_extras.py API_URL API_KEY DB_URL DATA_DIR DEMO_DIR
 
 1. Term Loan A covenant terms from the XPO exhibit in DATA_DIR/filings (skipped if the file is absent).
-2. An LBO run with derived EBITDA and labelled assumptions, saved to DEMO_DIR/lbo_run.json.
+2. An LBO run with derived EBITDA and labelled assumptions, saved as a run in the app (lbo_run.json has the row).
 3. One candidate watch run over a cached, dated EDGAR result (data/demo/cache). The firm screening rule is
    SYNTHETIC demo text, uploaded as its own document and labelled as such; it is not a real firm's rule.
 Nothing personal is written. Re-running adds nothing new (facts and alerts are deduplicated).
@@ -57,10 +57,12 @@ inputs = {"ebitda": {"derived": {"formula": "ebitda", "entity": "3M Company", "p
 for k, v in {"entry_multiple": "10", "exit_multiple": "11", "leverage": "5", "interest_rate": "8",
              "tax_rate": "25", "cash_conversion": "60", "fees_pct": "2", "years": "5"}.items():
     inputs[k] = {"value": v, "assumption": A}
-run = call("POST", "/lbo/returns", {"inputs": inputs, "entry_multiples": ["8", "9", "10", "11", "12"],
-                                    "exit_multiples": ["8", "9", "10", "11", "12"]})
-(DEMO / "lbo_run.json").write_text(json.dumps(run, indent=1))
-print("lbo run:", {k: run.get(k) for k in ("moic", "irr", "error")})
+AXIS = ["8", "9", "10", "11", "12"]
+request = {"inputs": inputs, "entry_multiples": AXIS, "exit_multiples": AXIS}
+# Saved through /lbo/runs so the LBO screen opens on it and history/compare have a run to show.
+saved = call("POST", "/lbo/runs", {"name": "3M base case (demo assumptions)", "request": request})
+(DEMO / "lbo_run.json").write_text(json.dumps(saved, indent=1))
+print("lbo run:", {k: saved.get(k) for k in ("name", "moic", "irr", "error")})
 
 # 3. Candidate watch over the cached EDGAR result, with a synthetic firm rule
 from sqlalchemy import select  # noqa: E402
