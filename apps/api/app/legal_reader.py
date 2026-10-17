@@ -46,9 +46,41 @@ def candidates(term: str, pages: list[tuple[int, str]]) -> list[tuple[int, str]]
     return out[:MAX_SENTENCES]
 
 
-def read(pages: list[tuple[int, str]], doc_type: str, absent: list[str], llm) -> dict:
-    findings, dropped = [], []
-    page_text = {num: _flat(text) for num, text in pages}
+def _ask(term: str, spec: dict, pages: list[tuple[int, str]], llm) -> tuple[dict | None, str | None]:
+    """The model's quote for one term, or None with the reason. Gate: the quote is on the cited page and the term's
+    pattern matches it. Nothing else gets through."""
+    cands = candidates(term, pages)
+    if not cands:
+        return None, "no sentence with the term's keywords"
+    listing = "\n".join(f"[p{num}] {sent}" for num, sent in cands)
+    try:
+        reply = json.loads(llm.complete(SYSTEM, f"Term: {term.replace('_', ' ')}\n\nSentences:\n{listing}"))
+    except (ValueError, AttributeError, TypeError):
+        return None, "model reply was not JSON"
+    quote, page = reply.get("quote"), reply.get("page")
+    if not quote:
+        return None, "model found no sentence"
+    quote = _flat(str(quote)).strip()
+    if page not in {num for num, _ in pages} or quote not in _flat(dict(pages)[page]):
+        return None, "quote is not on the cited page"
+    m = re.search(spec["re"], quote, re.IGNORECASE)
+    if not m:
+        return None, "quote does not state the term"
+    return {"term": term, "value": m.group(1) if m.groups() else None, "page": page, "quote": quote,
+            "source": "local model second reader"}, None
+
+
+def _same(a: str | None, b: str | None) -> bool:
+    if not a or not b:
+        return False
+    a, b = a.lower().strip(), b.lower().strip()
+    return a == b or a in b or b in a
+
+
+def read(pages: list[tuple[int, str]], doc_type: str, absent: list[str], llm, found: list[dict] = ()) -> dict:
+    """Absent terms: the model's cited finding, or a dropped reason. Found terms (the rules' own findings): the model
+    is asked too, and a disagreement goes to `review` for a person. No automatic pick between the two."""
+    findings, dropped, review = [], [], []
     for term in absent:
         spec = legal.TERMS.get(term)
         if spec is None or doc_type not in spec["doc"]:
@@ -56,28 +88,24 @@ def read(pages: list[tuple[int, str]], doc_type: str, absent: list[str], llm) ->
         if term not in KEYWORDS:
             dropped.append({"term": term, "reason": "no keywords defined for this term, so the model was not asked"})
             continue
-        cands = candidates(term, pages)
-        if not cands:
-            dropped.append({"term": term, "reason": "no sentence with the term's keywords"})
+        got, why = _ask(term, spec, pages, llm)
+        if got:
+            findings.append(got)
+        else:
+            dropped.append({"term": term, "reason": why})
+    for rule in found:
+        term = rule["term"]
+        spec = legal.TERMS.get(term)
+        if spec is None or doc_type not in spec["doc"] or term not in KEYWORDS:
             continue
-        listing = "\n".join(f"[p{num}] {sent}" for num, sent in cands)
-        try:
-            reply = json.loads(llm.complete(SYSTEM, f"Term: {term.replace('_', ' ')}\n\nSentences:\n{listing}"))
-        except (ValueError, AttributeError, TypeError):
-            dropped.append({"term": term, "reason": "model reply was not JSON"})
-            continue
-        quote, page = reply.get("quote"), reply.get("page")
-        if not quote:
-            dropped.append({"term": term, "reason": "model found no sentence"})
-            continue
-        quote = _flat(str(quote)).strip()
-        if page not in page_text or quote not in page_text[page]:
-            dropped.append({"term": term, "reason": "quote is not on the cited page"})
-            continue
-        m = re.search(spec["re"], quote, re.IGNORECASE)  # the rules match governing law case-sensitively; the gate must not
-        if not m:
-            dropped.append({"term": term, "reason": "quote does not state the term"})
-            continue
-        findings.append({"term": term, "value": m.group(1) if m.groups() else None, "page": page, "quote": quote,
-                         "source": "local model second reader"})
-    return {"findings": findings, "dropped": dropped}
+        got, why = _ask(term, spec, pages, llm)
+        if got is None:
+            review.append({"term": term, "rule_value": rule.get("value"), "status": "model_did_not_confirm",
+                           "reason": why})
+        elif _same(rule.get("value"), got["value"]):
+            review.append({"term": term, "rule_value": rule.get("value"), "model_value": got["value"],
+                           "status": "agree", "quote": got["quote"], "page": got["page"]})
+        else:
+            review.append({"term": term, "rule_value": rule.get("value"), "model_value": got["value"],
+                           "status": "conflict", "quote": got["quote"], "page": got["page"]})
+    return {"findings": findings, "dropped": dropped, "review": review}

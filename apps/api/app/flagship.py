@@ -140,11 +140,12 @@ def legal_step(pages: list[tuple[int, str]], doc_id: str, doc_type: str | None, 
         result["model_reader"] = "skipped: no local model configured (LLM_PROVIDER=llamacpp)"
     else:
         from app import legal_reader
-        read = legal_reader.read(pages, doc_type, out.get("absent", []), llm)
+        read = legal_reader.read(pages, doc_type, out.get("absent", []), llm, found=out.get("findings", []))
         for f in read["findings"]:
             f["document_id"] = doc_id
         result["model_findings"] = read["findings"]
         result["model_dropped"] = read["dropped"]
+        result["model_review"] = read["review"]  # rule and model disagree or the model did not confirm: a person decides
     return Step("legal", "ok", result=result)
 
 

@@ -16,10 +16,28 @@ _NEG = re.compile(
 )
 _SENT = re.compile(r"(?<=[.;])\s+(?=[A-Z(\d])")
 
+# Jurisdictions a governing-law clause can name. The capture is limited to these, so a bare mention of a place
+# (a party's address, a court venue) never becomes the governing law.
+US_STATES = (
+    "Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Georgia|Hawaii|Idaho|Illinois|"
+    "Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|"
+    "Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|"
+    "Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|"
+    "West Virginia|Wisconsin|Wyoming|District of Columbia"
+)
+OTHER_JURISDICTIONS = (
+    "England and Wales|Scotland|Ireland|Cayman Islands|Bermuda|British Virgin Islands|Ontario|Quebec|Canada|"
+    "Hong Kong|Singapore|Japan|Germany|France|Switzerland|Netherlands|Luxembourg|Israel|India|Brazil|Mexico|Spain|Italy"
+)
+GOVERNING_LAW_RE = (
+    r"governed by[^.]{0,120}?\blaws?\s+of\s+(?:the\s+)?(?:state\s+of\s+)?"
+    r"((?:" + US_STATES + "|" + OTHER_JURISDICTIONS + r"))\b"
+)
+
 TERMS: dict[str, dict] = {
     "governing_law": {
         "doc": ("nda", "spa", "credit"),
-        "re": r"governed by[^.]{0,80}?laws? of (?:the )?([A-Z][A-Za-z ,]{2,60}?)(?:[,.;]| without| and)",
+        "re": GOVERNING_LAW_RE,  # matched case-insensitively, so "Laws of the State of Delaware" counts
     },
     "term_years": {
         "doc": ("nda",),
@@ -99,7 +117,7 @@ def extract(pages: list[tuple[int, str]], doc_type: str) -> dict:
         if doc_type not in spec["doc"]:
             continue
         rx = re.compile(
-            spec["re"], re.IGNORECASE if term not in ("governing_law",) else 0
+            spec["re"], re.IGNORECASE
         )
         hits = 0
         for num, text in pages:
