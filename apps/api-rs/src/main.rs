@@ -15,6 +15,7 @@ mod notes;
 mod proxy;
 mod ratelimit;
 mod scope;
+mod snapshot;
 mod visibility;
 
 use axum::{extract::State, http::HeaderMap, routing::get, Json, Router};
@@ -53,6 +54,7 @@ pub fn app(state: AppState) -> Router {
         .route("/documents", get(documents::list_documents))
         .route("/deals", get(deals::list_deals))
         .route("/deals/:name/checklist", get(checklist::list_checklist))
+        .route("/deals/:name/snapshot", get(snapshot::deal_snapshot))
         .route("/deals/:name/notes", get(notes::list_deal_notes))
         .route("/targets/:tid/notes", get(notes::list_target_notes))
         .route("/memo/templates", get(memo::list_templates))
