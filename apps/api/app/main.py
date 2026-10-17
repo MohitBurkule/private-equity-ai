@@ -42,6 +42,7 @@ from app import ddq_llm as ddq_llm_mod
 from app import debt_parse as debt_parse_mod
 from app import derived as derived_mod
 from app import firm_knowledge as fk
+from app import flagship as flagship_mod
 from app import html_doc as html_doc_mod
 from app import jobs as jobs_mod
 from app import lbo as lbo_mod
@@ -1595,6 +1596,38 @@ def memo_docx(entity: str, db: Db, who: Who):
     return Response(build_memo_docx(db, who.tenant, entity, visible_doc_ids(db, who)), headers={
         "Content-Disposition": 'attachment; filename="memo.docx"'},
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+class FlagshipIn(BaseModel):
+    document_id: str = Field(min_length=1, max_length=64)
+    entity: str = Field(min_length=1, max_length=256)
+    legal_doc_type: str | None = Field(default=None, pattern="^(nda|spa|credit)$")
+    lbo: dict = Field(default_factory=dict)  # {"inputs": {name: {value, source} | {value, assumption}}, ...}
+
+
+@app.post("/flagship/run")
+def flagship_run(body: FlagshipIn, who: Who, db: Db):
+    """One run over an uploaded document. Steps: intake, extraction (a separate job), comps and precedents (separate
+    runs), legal red flags, LBO returns, and the IC memo deck for the entity. Each step reports ok, skipped or failed
+    with its reason; the memo deck is downloaded from /memo.pptx?entity=..."""
+    doc = _own_doc(db, who, body.document_id)
+    pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc.id).order_by(PageRow.number)]
+    verified = (db.query(Fact).filter_by(tenant_id=who.tenant, entity=body.entity, status="verified").count())
+    steps = [
+        flagship_mod.Step("intake", "ok", result={"document": doc.filename, "pages": len(pages)}),
+        flagship_mod.Step("extraction", "skipped", "run POST /documents/{id}/extract first; it is a separate job"),
+        flagship_mod.Step("comps", "skipped", "needs a peer list and sector; run POST /comps"),
+        flagship_mod.Step("precedents", "skipped", "needs a date range and SEC_USER_AGENT; run GET /precedents/scan"),
+        flagship_mod.legal_step(pages, doc.id, body.legal_doc_type, legal_mod),
+        flagship_mod.lbo_step(body.lbo.get("inputs") or {}, doc.id),
+    ]
+    if verified:
+        steps.append(flagship_mod.Step("memo", "ok", result={
+            "verified_facts": verified, "download": f"/memo.pptx?entity={body.entity}"}))
+    else:
+        steps.append(flagship_mod.Step("memo", "skipped", f"no verified facts for {body.entity} yet"))
+    log_event(db, who.tenant, actor(who), "flagship.run", {"document_id": doc.id, "entity": body.entity})
+    return {"document_id": doc.id, "steps": [s.to_dict() for s in steps]}
 
 
 @app.get("/memo.pptx")
