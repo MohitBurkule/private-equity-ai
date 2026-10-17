@@ -31,8 +31,9 @@ def _workbook() -> bytes:
 
 
 def test_extractor_reads_the_template_and_skips_other_sheets():
-    pages = [(1, "Capital Calls!A1: Call | row: Call\nCapital Calls!B1: Date\nCapital Calls!C1: Amount (USD)\n"
-                 "Capital Calls!B2: 2026-09-30\nCapital Calls!C2: 12,500,000 | row: 2026-09-30")]
+    text = ("Capital Calls!A1: Call | row: Call\nCapital Calls!B1: Date\nCapital Calls!C1: Amount (USD)\n"
+            "Capital Calls!B2: 2026-09-30\nCapital Calls!C2: 12,500,000 | row: 2026-09-30")
+    pages = [(1, text)]
     (found,) = fundadmin.extract(pages)
     assert (found.metric, found.period, found.value, found.page) == ("capital_call_usd", "2026-09-30", "12500000", 1)
     assert found.quote == "Capital Calls!C2: 12,500,000"
