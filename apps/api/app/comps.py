@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -169,7 +169,7 @@ def is_stale_as_of(as_of: str | None, today: date | None = None) -> bool:
         d = date.fromisoformat(as_of)
     except ValueError:
         return True  # a date we cannot read is not one we can call fresh
-    return ((today or date.today()) - d).days > MAX_AS_OF_AGE_DAYS
+    return ((today or datetime.now(UTC).date()) - d).days > MAX_AS_OF_AGE_DAYS
 
 
 def _cell(db: Session, f: Fact) -> dict:
