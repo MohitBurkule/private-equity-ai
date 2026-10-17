@@ -24,6 +24,8 @@ ci:  ## Local merge gate (Actions is blocked): ruff, alembic heads, pytest on SQ
 	bash scripts/test_postgres.sh
 	cd apps/web && npm ci --no-audit --no-fund && npx tsc --noEmit && npx vitest run
 	cd apps/api-rs && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+	@command -v helm >/dev/null || { echo "make ci needs helm 3 on PATH (https://helm.sh/docs/intro/install/)"; exit 1; }
+	helm lint deploy/helm/pe-platform && helm template pe deploy/helm/pe-platform >/dev/null
 
 .PHONY: ci
 

@@ -1,0 +1,44 @@
+# Image is built from apps/api/Dockerfile. Set image.repository to where you push it.
+image:
+  repository: ghcr.io/example/pe-api
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+replicas: 2
+
+# Runs `alembic upgrade head` as a Helm hook before each install or upgrade, with the owner DB URL from the Secret.
+migrations:
+  enabled: true
+
+# A Secret you create with: DATABASE_URL, MIGRATE_DATABASE_URL, ADMIN_TOKEN (see docs/SECRETS.md).
+# Nothing secret is set in this chart.
+existingSecret: pe-api-secrets
+
+app:
+  appDbRole: pe_app
+  rateLimitBackend: postgres
+  spoolDir: /spool
+
+otel:
+  # Set to an OTLP/HTTP endpoint (e.g. http://otel-collector:4318) to export request spans. Empty = off.
+  endpoint: ""
+  serviceName: pe-api
+
+resources:
+  requests: {cpu: 250m, memory: 512Mi}
+  limits: {memory: 2Gi}
+
+service:
+  port: 8000
+
+ingress:
+  # TLS terminates here. Leave enabled=false and use your own load balancer if you prefer.
+  enabled: false
+  className: nginx
+  host: pe.example.internal
+  tlsSecretName: pe-api-tls
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
