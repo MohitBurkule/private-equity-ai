@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { api2, RefreshOut, ScreenBody, ScreenOut, Target, TargetFilter } from "./api";
+import { api2, RefreshOut, ScreenBody, ScreenOut, Target, TargetFilter, targetNotes } from "./api";
+import { NotesPanel } from "./Notes";
 import { fmtAmount } from "./format";
 import { useLoad } from "./hooks";
 import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input } from "./ui";
@@ -169,6 +170,7 @@ export function Targets() {
               )}
             </div>
           </Card>
+          {cur && <NotesPanel title={`Notes: ${cur.name}`} hint="Shared with everyone who can see this target" api={targetNotes(cur.id)} deps={[cur.id]} />}
           <ScreenPanel />
           <Card className="lg:col-span-2">
             <CardHead title="Targets" />

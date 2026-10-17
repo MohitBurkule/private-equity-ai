@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { api, api2, LegalOut } from "./api";
+import { api, api2, dealNotes, LegalOut } from "./api";
 import { useLoad } from "./hooks";
 import { SourceChip } from "./source";
 import { Badge, Button, Card, CardHead, Empty, ErrorLine } from "./ui";
+import { NotesPanel } from "./Notes";
 
 const TYPES = [["nda", "NDA"], ["spa", "SPA"], ["credit", "Credit agreement"]] as const;
 
@@ -19,6 +20,7 @@ export function DealWorkspace({ deal }: { deal: string }) {
   };
   const cats = sum.data ? Object.entries(sum.data.by_category) : [];
   return (
+    <>
     <Card>
       <CardHead title={`Workspace: ${deal}`} hint="Progress, documents and key legal terms" right={sum.data?.pct_complete != null && <Badge tone="acc">{sum.data.pct_complete}% of requests closed</Badge>} />
       <ErrorLine e={err || docs.error} />
@@ -61,5 +63,7 @@ export function DealWorkspace({ deal }: { deal: string }) {
         ))}
       </ul>
     </Card>
+    <div className="mt-4"><NotesPanel title="Deal notes" hint="Shared with everyone who can see this deal" api={dealNotes(deal)} deps={[deal]} /></div>
+    </>
   );
 }
