@@ -19,10 +19,16 @@ def _none(v) -> str:
     return "not stated in the record" if v in (None, "") else str(v)
 
 
-def _sections(db: Session, tenant: str, t: Target, scope_deals: set[str] | None) -> list[tuple[str, list[str]]]:
+RESEARCH_KEYS = {"identity": "Identity", "revenue": "Revenue", "benchmark": "Sector benchmark",
+                 "prior": "Prior mentions in firm records", "sources": "Sources"}
+
+
+def _sections(db: Session, tenant: str, t: Target, scope_deals: set[str] | None,
+              headings: dict[str, str] | None = None) -> list[tuple[str, list[str]]]:
+    h = {k: (headings or {}).get(k, v) for k, v in RESEARCH_KEYS.items()}
     """Ordered (heading, lines) pairs. The Word and slide renderers both read this, so they never disagree."""
     out: list[tuple[str, list[str]]] = []
-    out.append(("Identity", [f"{label}: {_none(val)}" for label, val in (
+    out.append((h["identity"], [f"{label}: {_none(val)}" for label, val in (
         ("Source", t.source), ("Source reference", t.source_ref), ("Sector", t.sector),
         ("SIC", t.sic), ("Country", t.country), ("Region", t.region), ("Pipeline status", t.status))]))
 
@@ -31,7 +37,7 @@ def _sections(db: Session, tenant: str, t: Target, scope_deals: set[str] | None)
     else:
         money = " ".join(x for x in (t.currency, str(t.revenue)) if x)
         rev = [f"Revenue: {money} for {_none(t.revenue_period)}.", f"Filing: {_none(t.revenue_url)}"]
-    out.append(("Revenue", rev))
+    out.append((h["revenue"], rev))
 
     b = tg_mod.benchmark(db, tenant, t.sector.split(" (")[0] if t.sector else None, t)
     if b["peers"] == 0:
@@ -42,7 +48,7 @@ def _sections(db: Session, tenant: str, t: Target, scope_deals: set[str] | None)
                  f"Median {b['median']}; interquartile {b['q1']} to {b['q3']}."]
         if "target" in b:
             bench.append(f"This target sits at percentile {b['target']['percentile']} among those peers.")
-    out.append(("Sector benchmark", bench))
+    out.append((h["benchmark"], bench))
 
     hits = seen_mod.lookup(db, tenant, t.name, scope_deals)["hits"]
     others = [h for h in hits if not (h["kind"] == "target" and h["id"] == t.id)]
@@ -50,22 +56,25 @@ def _sections(db: Session, tenant: str, t: Target, scope_deals: set[str] | None)
         prior = [f"{h['kind'].replace('_', ' ')}: {h['name']} ({h['rule']} name match)" for h in others]
     else:
         prior = ["No other matching record. This may be a first look; confirm by name variants."]
-    out.append(("Prior mentions in firm records", prior))
+    out.append((h["prior"], prior))
 
     srcs = [f"Target record: {t.source}:{t.source_ref} {t.source_url or ''}".strip()]
     if t.revenue_url:
         srcs.append(f"Revenue filing: {t.revenue_period or 'period not stated'} {t.revenue_url}")
-    out.append(("Sources", srcs))
+    out.append((h["sources"], srcs))
     return out
 
 
-def build_docx(db: Session, tenant: str, t: Target, scope_deals: set[str] | None) -> bytes:
+def build_docx(db: Session, tenant: str, t: Target, scope_deals: set[str] | None,
+               headings: dict[str, str] | None = None, intro: str = "") -> bytes:
     from docx import Document as Docx
 
     d = Docx()
     d.add_heading(t.name, level=1)
     d.add_paragraph("DRAFT research note. Built from stored records only; each figure links to its source.")
-    for heading, lines in _sections(db, tenant, t, scope_deals):
+    if intro:
+        d.add_paragraph(intro)
+    for heading, lines in _sections(db, tenant, t, scope_deals, headings):
         d.add_heading(heading, level=2)
         for line in lines:
             d.add_paragraph(line, style="List Bullet")
@@ -74,7 +83,8 @@ def build_docx(db: Session, tenant: str, t: Target, scope_deals: set[str] | None
     return buf.getvalue()
 
 
-def build_pptx(db: Session, tenant: str, t: Target, scope_deals: set[str] | None) -> bytes:
+def build_pptx(db: Session, tenant: str, t: Target, scope_deals: set[str] | None,
+               headings: dict[str, str] | None = None, intro: str = "") -> bytes:
     """Same sections as the Word note, one slide each. Title slide carries the DRAFT line."""
     from pptx import Presentation
     from pptx.util import Pt
@@ -82,8 +92,8 @@ def build_pptx(db: Session, tenant: str, t: Target, scope_deals: set[str] | None
     prs = Presentation()
     s = prs.slides.add_slide(prs.slide_layouts[0])
     s.shapes.title.text = f"Research: {t.name}"
-    s.placeholders[1].text = "DRAFT · built from stored records only; each figure links to its source"
-    for heading, lines in _sections(db, tenant, t, scope_deals):
+    s.placeholders[1].text = intro or "DRAFT · built from stored records only; each figure links to its source"
+    for heading, lines in _sections(db, tenant, t, scope_deals, headings):
         s = prs.slides.add_slide(prs.slide_layouts[1])
         s.shapes.title.text = heading
         tf = s.placeholders[1].text_frame

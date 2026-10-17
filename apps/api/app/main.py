@@ -3318,26 +3318,34 @@ def outreach_queue_send(item_id: int, body: OutreachQueueSend, db: Db, who: Writ
     return {"sent": len(to), "attached": [f[0] for f in files]}
 
 
+def _research_text(db: Session, tenant: str, template: str | None) -> dict:
+    """Firm heading text and intro for the research note, from a saved template. Empty when none is named."""
+    if not template:
+        return {"headings": {}, "intro": ""}
+    headings, intro = mt_mod.firm_text(db, tenant, template)
+    return {"headings": {k: v for k, v in headings.items() if k in research_mod.RESEARCH_KEYS}, "intro": intro}
+
+
 @app.get("/targets/{tid}/research.docx")
-def target_research(tid: int, db: Db, who: Who):
+def target_research(tid: int, db: Db, who: Who, template: str | None = Query(None, max_length=64)):
     """Research note for one target: identity, revenue with filing link, sector benchmark, prior mentions, sources."""
     t = db.get(Target, tid)
     if t is None or t.tenant_id != who.tenant:
         raise HTTPException(404, "target not found")
     log_event(db, who.tenant, actor(who), "target.research_export", {"id": tid})
-    return Response(research_mod.build_docx(db, who.tenant, t, deal_scope(db, who)),
+    return Response(research_mod.build_docx(db, who.tenant, t, deal_scope(db, who), **_research_text(db, who.tenant, template)),
                     headers={"Content-Disposition": f'attachment; filename="research-{tid}.docx"'},
                     media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 @app.get("/targets/{tid}/research.pptx")
-def target_research_deck(tid: int, db: Db, who: Who):
+def target_research_deck(tid: int, db: Db, who: Who, template: str | None = Query(None, max_length=64)):
     """Same research note as slides: one slide per section, built from the same records."""
     t = db.get(Target, tid)
     if t is None or t.tenant_id != who.tenant:
         raise HTTPException(404, "target not found")
     log_event(db, who.tenant, actor(who), "target.research_export", {"id": tid, "format": "pptx"})
-    return Response(research_mod.build_pptx(db, who.tenant, t, deal_scope(db, who)),
+    return Response(research_mod.build_pptx(db, who.tenant, t, deal_scope(db, who), **_research_text(db, who.tenant, template)),
                     headers={"Content-Disposition": f'attachment; filename="research-{tid}.pptx"'},
                     media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
