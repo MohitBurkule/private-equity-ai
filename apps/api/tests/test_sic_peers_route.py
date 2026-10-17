@@ -21,7 +21,11 @@ def test_sic_peers_route_lists_peers_with_rule_and_median(monkeypatch):
     seen = {}
 
     def fake(rev, sic, exclude, pages=1, **kw):
-        seen.update(rev=rev, sic=sic, exclude=exclude)
+        seen.setdefault("sic", sic)  # first call is the exact code; widening may follow
+        seen.setdefault("rev", rev)
+        seen.setdefault("exclude", exclude)
+        if sic != "7372":  # the family widening asks for other codes; this stub has peers for the exact code only
+            return []
         return [peers_mod.Peer("0000000002", Decimal(120), "FY2024", "https://sec.gov/x", "SIC 7372", "Beta"),
                 peers_mod.Peer("0000000003", Decimal(80), "FY2024", "https://sec.gov/y", "SIC 7372", "Gamma")]
 

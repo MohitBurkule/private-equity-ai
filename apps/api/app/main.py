@@ -61,6 +61,7 @@ from app import memo_diff as memo_diff_mod
 from app import memo_templates as mt_mod
 from app import notify as notify_mod
 from app import outreach as outreach_mod
+from app import peer_sets as peer_sets_mod
 from app import peers as peers_mod
 from app import people_enrich as pe_mod
 from app import precedent_fetch as pfetch_mod
@@ -164,6 +165,7 @@ from app.models import (
     MemoVersion,
     OutreachItem,
     PageRow,
+    PeerSet,
     Person,
     SavedScreen,
     SavedSearch,
@@ -1432,6 +1434,47 @@ def deal_notes_add(name: str, body: DealNoteIn, db: Db, who: Writer):
     db.commit()
     log_event(db, who.tenant, actor(who), "deal.note", {"deal": name, "id": n.id})
     return _note_out(n)
+
+
+class PeerSetIn(BaseModel):
+    target_id: int
+    name: str = Field(min_length=1, max_length=120)
+
+
+@app.get("/deals/{name}/peer-sets")
+def peer_sets_list(name: str, db: Db, who: Who):
+    _visible_deal_or_404(db, who, name)
+    rows = db.query(PeerSet).filter_by(tenant_id=who.tenant, deal=name).order_by(PeerSet.id).all()
+    return [peer_sets_mod.out(r) for r in rows]
+
+
+@app.post("/deals/{name}/peer-sets", status_code=201)
+def peer_sets_save(name: str, body: PeerSetIn, db: Db, who: Writer):
+    """Save the comps peers for one target under this deal. Needs the target's SIC code and stated revenue."""
+    _visible_deal_or_404(db, who, name)
+    _require(who, "write", "save a peer set", deal=name)
+    t = db.get(Target, body.target_id)
+    if t is None or t.tenant_id != who.tenant:
+        raise HTTPException(404, "target not found")
+    if not t.sic or t.revenue is None:
+        raise HTTPException(422, "a peer set needs the target's SIC code and stated revenue")
+    row = peer_sets_mod.save(db, who.tenant, name, body.name.strip(), t, actor(who))
+    log_event(db, who.tenant, actor(who), "peer_set.save", {"deal": name, "id": row.id, "target": t.id})
+    return peer_sets_mod.out(row)
+
+
+@app.post("/deals/{name}/peer-sets/{sid}/refresh")
+def peer_sets_refresh(name: str, sid: int, db: Db, who: Writer):
+    """Re-read each stored peer's revenue from EDGAR now. The `peer_refresh` workflow does the same on schedule."""
+    _visible_deal_or_404(db, who, name)
+    _require(who, "write", "refresh a peer set", deal=name)
+    row = db.get(PeerSet, sid)
+    if row is None or row.tenant_id != who.tenant or row.deal != name:
+        raise HTTPException(404, "peer set not found")
+    peer_sets_mod.refresh_stored(db, who.tenant, sid)
+    log_event(db, who.tenant, actor(who), "peer_set.refresh", {"deal": name, "id": sid})
+    db.refresh(row)
+    return peer_sets_mod.out(row)
 
 
 @app.get("/deals/{name}/checklist")
@@ -3240,12 +3283,12 @@ def targets_sic_peers(target_id: int, db: Db, who: Who, pages: int = Query(1, ge
         return {"target_id": t.id, "sic": t.sic, "peers": [], "median": None,
                 "note": "needs a SIC code and a stated revenue"}
     exclude = {t.source_ref.zfill(10)} if t.source == "sec" else set()
-    found = peers_mod.discover(t.revenue, t.sic, exclude, pages=pages)
+    found = peers_mod.discover_with_group(t.revenue, t.sic, exclude, pages=pages)
     st = comps_mod.stats([p.revenue for p in found])
     return {"target_id": t.id, "sic": t.sic, "target_revenue": str(t.revenue), "peers": len(found),
             "median": None if st.median is None else str(st.median),
             "items": [{"cik": p.cik, "name": p.name, "revenue": str(p.revenue), "period": p.period,
-                       "source_url": p.source_url, "rule": p.rule} for p in found]}
+                       "source_url": p.source_url, "rule": p.rule, "matched_on": p.matched_on} for p in found]}
 
 
 class SavedScreenIn(BaseModel):

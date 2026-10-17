@@ -442,6 +442,22 @@ class SavedScreen(Base):
     created_at: Mapped[str] = mapped_column(String(40), default="")
 
 
+class PeerSet(Base):
+    """A saved comps peer set for one deal: the SEC peers picked for a target, kept with their sources and
+    refreshed on schedule (workflow kind `peer_refresh`). A peer that loses its revenue is dropped, never guessed."""
+    __tablename__ = "peer_set"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    deal: Mapped[str] = mapped_column(String(200), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    target_id: Mapped[int] = mapped_column(Integer)
+    items: Mapped[str] = mapped_column(Text)  # JSON list of peers: cik, name, revenue, period, source_url, rule, matched_on
+    dropped: Mapped[str] = mapped_column(Text, default="[]")  # JSON list of {cik, name, reason} from the last refresh
+    refreshed_at: Mapped[str] = mapped_column(String(40), default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 class TargetContact(Base):
     """A person at a target who may receive outreach. Only addresses a senior person added are ever mailed."""
     __tablename__ = "target_contact"

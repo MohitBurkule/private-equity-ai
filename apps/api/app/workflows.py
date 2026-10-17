@@ -21,12 +21,13 @@ from app import candidate_verify as cv_mod
 from app import ch_search as chs_mod
 from app import companies_house as ch_mod
 from app import comps as comps_mod
+from app import peer_sets as peer_sets_mod
 from app import sourcing_search as ss_mod
 from app import targets as tg_mod
 from app.models import Alert, WorkflowSchedule
 from app.report import build_report
 
-KINDS = ("portfolio_report", "comps", "alert_digest", "candidate_watch", "daily_brief", "universe_refresh")
+KINDS = ("portfolio_report", "comps", "alert_digest", "candidate_watch", "daily_brief", "universe_refresh", "peer_refresh")
 Mailer = Callable[[list[str], str, str], None]
 
 
@@ -64,6 +65,9 @@ def _summary(kind: str, result: dict) -> str:
         return alerts_mod.brief_text(result["brief"])
     if kind == "candidate_watch":
         return "\n".join(f"- {a['title']}: {a['detail']}" for a in result["alerts"]) or "No new candidates."
+    if kind == "peer_refresh":
+        r = result["peer_refresh"]
+        return f"Peer set {r['name']}: {r['kept']} kept, {r['dropped']} dropped."
     if kind == "universe_refresh":
         r = result["refresh"]
         return (f"Universe refresh: {r['refreshed']} of {r['checked']} refreshed, {r['failed']} failed, "
@@ -130,6 +134,8 @@ def _execute(db: Session, w: WorkflowSchedule, scope: set[str] | None) -> dict:
     if w.kind == "universe_refresh":
         return {"alerts": [], "refresh": tg_mod.refresh_universe(db, w.tenant_id, tg_mod.live_sec_fetch,
                                                                  ch_mod.fetch_company, limit=p.get("limit", 200))}
+    if w.kind == "peer_refresh":
+        return {"alerts": [], "peer_refresh": peer_sets_mod.refresh_stored(db, w.tenant_id, int(p["peer_set_id"]))}
     if w.kind == "daily_brief":
         return _daily_brief(db, w)
     if w.kind == "portfolio_report":
