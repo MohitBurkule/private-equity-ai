@@ -47,6 +47,7 @@ from app import legal as legal_mod
 from app import lp_docs as lp_mod
 from app import lp_tone as lp_tone_mod
 from app import lp_waterfall as wf_lp_mod
+from app import memo_diff as memo_diff_mod
 from app import notify as notify_mod
 from app import outreach as outreach_mod
 from app import peers as peers_mod
@@ -1088,6 +1089,18 @@ def retention_documents(body: RetentionIn, db: Db, who: Writer):
 @app.get("/memo")
 def memo(entity: str, db: Db, who: Who):
     return {"entity": entity, "markdown": build_memo(db, who.tenant, entity, visible_doc_ids(db, who))}
+
+
+class MemoDiffBody(BaseModel):
+    entity: str = Field(min_length=1, max_length=200)
+    previous: str = Field(min_length=1, max_length=200_000)
+
+
+@app.post("/memo/diff")
+def memo_diff(body: MemoDiffBody, db: Db, who: Who):
+    """Current memo draft against the previous text the reviewer sends: lines added and removed, sources kept."""
+    current = build_memo(db, who.tenant, body.entity, visible_doc_ids(db, who))
+    return {"entity": body.entity, **memo_diff_mod.diff_memos(body.previous, current)}
 
 
 def get_sec_fetch():
