@@ -194,3 +194,13 @@ Labels: 13 more rows (Lands' End FY totals, Adjusted EBITDA and net loss from th
 
 Still open: the larger text-only tables in the other decks are not labelled; the PGT release is not in the set.
 
+
+## Layout fallback wired into fact creation, PGT release labelled
+
+- `facts.add_verified_fact`: when the quote is not in the page's text layer, it is looked for in the poppler `-layout` text of the kept PDF. A layout-only match is stored as `ocr_unverified` with no bbox (review queue, never auto-verified). Test: `test_quote_found_only_in_layout_text_is_ocr_unverified`.
+- PGT Q1 2023 earnings release (EX-99.1, p6, statement of operations, 11 rows, 22 values; replaces the 8-K cover that was in the set). PGT's own earnings presentation (EX-99.2) is also in `data/real_decks/`, not labelled yet.
+- Labels for the release are as printed. One row was first labelled "Weighted average diluted shares"; the printed row is "Diluted" under the heading "Weighted average number of common shares outstanding:", so the label was corrected to "Diluted".
+
+Scores on all labelled table rows (146 values, 49 rows incl. 6 KPI tiles):
+- Router alone: 58/146 values on the row line, 27/49 rows.
+- Router plus layout fallback: every table value (140/140) and every table row (43/43). Layout-only hits carry no bbox.
