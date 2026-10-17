@@ -231,3 +231,25 @@ def test_dataroom_sync_expands_archive_with_walls(monkeypatch):
     r = c.post("/connectors/datasite/sync", json=body, headers=h).json()
     assert r["ingested"] and r["ingested"][0]["source_url"] == "https://acme.datasite.com/"
     assert r["ingested"][0]["filename"] == "Legal/nda.eml"
+
+
+def test_linkedin_export_import_is_walled_and_idempotent(monkeypatch):
+    import io
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("Connections.csv", "First Name,Last Name,Company,Position\nAda,Lovelace,Atlas Capital,Partner\n")
+        z.writestr("readme.txt", "ignored")
+    payload = buf.getvalue()
+    h = new_tenant(c, "li")
+    r = c.post("/connectors/linkedin/import", files={"file": ("export.zip", payload, "application/zip")},
+               data={"deal": "atlas"}, headers=h)
+    assert r.status_code == 200, r.text
+    assert r.json()["ingested"][0]["source_url"] == "https://www.linkedin.com/"
+    again = c.post("/connectors/linkedin/import", files={"file": ("export.zip", payload, "application/zip")},
+                   data={"deal": "atlas"}, headers=h).json()
+    assert again["ingested"] == [] and again["unchanged"] == 1
+    bad = c.post("/connectors/linkedin/import", files={"file": ("x.zip", b"not a zip", "application/zip")},
+                 data={"deal": "atlas"}, headers=h)
+    assert bad.status_code == 422
+    assert any(x["name"] == "linkedin" and x["status"] == "live" for x in c.get("/connectors", headers=h).json())

@@ -24,10 +24,13 @@ CATALOG = [  # (name, label, category, auth)
     ("datasite", "Datasite", "dataroom", "bulk export URL"),
     ("capiq", "S&P Capital IQ", "market data", "licensed API"), ("factset", "FactSet", "market data", "licensed API"),
     ("pitchbook", "PitchBook", "market data", "licensed API / export"),
-    ("linkedin", "LinkedIn", "people", "official API only"),
+    ("linkedin", "LinkedIn", "people", "member data export (upload)"),
 ]
+
+
+IMPORTS = {"linkedin"}  # upload-only sources: no token sync, see connectors/linkedin.py
 
 
 def catalog() -> list[dict]:
     return [{"name": n, "label": lbl, "category": cat, "auth": auth,
-             "status": "live" if n in IMPLEMENTED else "planned"} for n, lbl, cat, auth in CATALOG]
+             "status": "live" if n in IMPLEMENTED or n in IMPORTS else "planned"} for n, lbl, cat, auth in CATALOG]
