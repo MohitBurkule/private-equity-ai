@@ -871,6 +871,23 @@ def list_facts(db: Db, who: Who, status: str | None = None, entity: str | None =
     return [_fact_out(f) for f in q.order_by(Fact.id).all() if fact_visible(f, scope)]
 
 
+REVIEW_STATUSES = ("auto", "ocr_unverified")  # facts that need a human before they can drive a memo
+
+
+@app.get("/facts/review-queue")
+def fact_review_queue(db: Db, who: Who, entity: str | None = None, limit: int = Query(50, ge=1, le=500)):
+    """Facts still waiting for a human, both kinds together: auto (extracted, not yet reviewed) and ocr_unverified
+    (read by OCR or a chart model). Each item carries its source quote, so the reviewer sees the evidence beside
+    the value. Counts cover everything visible, not just the page returned."""
+    q = db.query(Fact).filter(Fact.tenant_id == who.tenant, Fact.status.in_(REVIEW_STATUSES))
+    if entity:
+        q = q.filter(Fact.entity == entity)
+    scope = visible_doc_ids(db, who)
+    rows = [f for f in q.order_by(Fact.id).all() if fact_visible(f, scope)]
+    counts = {st: sum(1 for f in rows if f.status == st) for st in REVIEW_STATUSES}
+    return {"counts": counts, "total": len(rows), "items": [_fact_out(f) for f in rows[:limit]]}
+
+
 class ReviewIn(BaseModel):
     action: str  # accept | reject | edit
     note: str | None = None
