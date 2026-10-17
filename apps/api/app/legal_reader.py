@@ -67,7 +67,7 @@ def _ask(term: str, spec: dict, pages: list[tuple[int, str]], llm) -> tuple[dict
     m = re.search(spec["re"], quote, re.IGNORECASE)
     if not m:
         return None, "quote does not state the term"
-    return {"term": term, "value": m.group(1) if m.groups() else None, "page": page, "quote": quote,
+    return {"term": term, "value": next((g for g in m.groups() if g), None), "page": page, "quote": quote,
             "source": "local model second reader"}, None
 
 

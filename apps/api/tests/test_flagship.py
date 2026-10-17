@@ -180,3 +180,24 @@ def test_legal_model_reader_positive_case_from_a_real_merger_exhibit():
     fake = legal_reader.read(pages, "spa", ["governing_law"], Local(
         ['{"quote": "This Agreement is governed by the laws of the State of New York.", "page": 1}']))
     assert fake["findings"] == [] and fake["dropped"][0]["reason"] == "quote is not on the cited page"
+
+
+def test_legal_model_reader_reads_an_amount_first_termination_fee_from_a_real_merger_exhibit():
+    """GBTG EX-2.3 (2025-09): '... pay ... a fee in the amount of $25,000,000 (the "Termination Fee")'. The rules did not
+    read the amount before the term; the reader keeps the real quote, and a quote the page does not hold is rejected."""
+    from app import legal_reader
+
+    class Local:
+        def __init__(self, replies):
+            self.replies = list(replies)
+
+        def complete(self, system, prompt):
+            return self.replies.pop(0)
+    sentence = ("Parent shall pay, or cause to be paid, to the Company a fee in the amount of $25,000,000 "
+                "(the “Termination Fee”).")
+    pages = [(23, "Section 7.2(b). " + sentence)]
+    real = legal_reader.read(pages, "spa", ["termination_fee"], Local(['{"quote": "' + sentence + '", "page": 23}']))
+    assert [(f["term"], f["value"]) for f in real["findings"]] == [("termination_fee", "$25,000,000")]
+    fake = legal_reader.read(pages, "spa", ["termination_fee"], Local(
+        ['{"quote": "Parent shall pay a fee in the amount of $30,000,000 (the “Termination Fee”).", "page": 23}']))
+    assert fake["findings"] == [] and fake["dropped"][0]["reason"] == "quote is not on the cited page"
