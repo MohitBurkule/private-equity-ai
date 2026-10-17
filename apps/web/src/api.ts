@@ -79,6 +79,10 @@ export type Target = {
   sector: string | null; country: string | null; region: string | null; lat: string | null; lng: string | null;
   revenue: string | null; currency: string | null; revenue_period: string | null; revenue_url: string | null; status: string;
 };
+export type TargetBenchmark = {
+  sector: string | null; peers: number; excluded_no_revenue: number; median: string | null; q1: string | null; q3: string | null;
+  target?: { id: number; name: string; revenue: string; percentile: number };
+};
 export type TargetFilter = { sector?: string; country?: string; min_revenue?: string; max_revenue?: string; q?: string };
 export type Facets = { sector: { value: string | null; count: number }[]; country: { value: string | null; count: number }[]; total: number; revenue_unknown: number };
 
@@ -88,6 +92,8 @@ export const api2 = {
     Object.entries(f).forEach(([k, v]) => v && p.set(k, v));
     return call<{ total: number; items: Target[] }>(`/targets?${p}`);
   },
+  targetBenchmark: (targetId: number, sector: string) =>
+    call<TargetBenchmark>(`/targets/benchmark?target_id=${targetId}&sector=${encodeURIComponent(sector)}`),
   targetFacets: () => call<Facets>("/targets/facets"),
   facts: (status?: string) => call<FactRow[]>(`/facts${status ? `?status=${status}` : ""}`),
   review: (id: number, action: "accept" | "reject", note?: string) => call<FactRow>(`/facts/${id}/review`, "POST", { action, note }),
