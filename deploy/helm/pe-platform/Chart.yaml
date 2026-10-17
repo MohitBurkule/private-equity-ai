@@ -1,0 +1,6 @@
+apiVersion: v2
+name: pe-platform
+description: PE AI platform API. Bring your own PostgreSQL and TLS ingress; secrets come from an existing Secret.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -21,6 +22,8 @@ from app.models import Fact
 
 MIN_PEERS = 3
 EV_METRIC = "enterprise_value"
+# a market figure older than this is flagged stale: comps on last month's EV would read as current
+MAX_AS_OF_AGE_DAYS = 7
 
 
 @dataclass
@@ -31,6 +34,8 @@ class Row:
     facts: dict[str, int] = field(default_factory=dict)  # role -> fact id
     fx: dict[str, dict] = field(default_factory=dict)  # metric -> cited rate when the denominator was converted
     derived: dict[str, dict] = field(default_factory=dict)  # metric -> formula and component fact ids when computed
+    cells: dict[str, dict] = field(default_factory=dict)  # "ev" / metric -> as-of period and cited source of that input
+    stale: list[str] = field(default_factory=list)  # inputs whose period differs from the comparison period
 
 
 @dataclass
@@ -118,6 +123,7 @@ def build_rows(db: Session, tenant: str, entities: list[str], period: str, metri
         ev = _find(db, tenant, ent, EV_METRIC, ev_period or period, scope)
         if ev is not None:
             r.facts["enterprise_value"] = ev.id
+            r.cells["ev"] = _cell(db, ev)
         for m in metrics:
             d = _denominator(db, tenant, ent, m, period, scope)
             if ev is None or d is None:
@@ -127,8 +133,11 @@ def build_rows(db: Session, tenant: str, entities: list[str], period: str, metri
             value, unit, fact_id, derivation = d
             if fact_id is not None:
                 r.facts[m] = fact_id
+                r.cells[m] = _cell(db, db.get(Fact, fact_id))
             if derivation is not None:
                 r.derived[m] = derivation
+                r.cells[m] = {"period": period, "unit": unit, "derived": derivation["formula"],
+                              "components": derivation["components"]}
             denom = value
             if ev.unit != unit:
                 if fx is None:
@@ -144,8 +153,28 @@ def build_rows(db: Session, tenant: str, entities: list[str], period: str, metri
             r.multiples[m], r.nm[m] = multiple(ev.value, denom)
             if r.multiples[m] is not None:
                 r.nm.pop(m)
+        if ev is not None and ev.period != period:
+            r.stale.append("ev")
+        if ev is not None and is_stale_as_of(ev.as_of):
+            r.stale.append("ev_as_of")
         rows.append(r)
     return rows
+
+
+def is_stale_as_of(as_of: str | None, today: date | None = None) -> bool:
+    """True when the figure is dated older than MAX_AS_OF_AGE_DAYS. Undated figures are not flagged: no date, no claim."""
+    if not as_of:
+        return False
+    try:
+        d = date.fromisoformat(as_of)
+    except ValueError:
+        return True  # a date we cannot read is not one we can call fresh
+    return ((today or date.today()) - d).days > MAX_AS_OF_AGE_DAYS
+
+
+def _cell(db: Session, f: Fact) -> dict:
+    # the period is the as-of the figure is stated for; the citation is the document locator it came from
+    return {"fact_id": f.id, "period": f.period, "as_of": f.as_of, "unit": f.unit, "source": _cite(db, f.id)}
 
 
 def run(db: Session, tenant: str, target: str, entities: list[str], period: str, metrics: list[str],
@@ -170,6 +199,7 @@ def run(db: Session, tenant: str, target: str, entities: list[str], period: str,
                                   for k in ("low", "mid", "high")}})
     for r in rows:
         out["peers"].append({"entity": r.entity, "facts": r.facts, "nm": r.nm, "fx": r.fx, "derived": r.derived,
+                             "cells": r.cells, "stale": r.stale,
                              "multiples": {k: None if v is None else str(v.quantize(Decimal("0.01")))
                                            for k, v in r.multiples.items()}})
     return out

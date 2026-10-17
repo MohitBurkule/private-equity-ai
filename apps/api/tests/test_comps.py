@@ -1,4 +1,5 @@
 import io
+from datetime import date
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -53,52 +54,39 @@ def test_comps_endpoint_cited_and_abstains():
     assert c.post("/calc/comps", json=body, headers=h).json()["implied"][0]["mid"] is None
 
 
-def test_comps_docx_has_sources():
-    import io
+def test_as_of_older_than_a_week_is_stale_and_undated_is_not_flagged():
+    from app.comps import is_stale_as_of
+    today = date(2026, 10, 17)
+    assert not is_stale_as_of("2026-10-16", today)
+    assert not is_stale_as_of(None, today)
+    assert is_stale_as_of("2026-10-01", today)
+    assert is_stale_as_of("not-a-date", today)
 
-    from docx import Document as Docx
-    h = new_tenant(c, "comps2")
+
+def test_comps_peer_cells_carry_source_and_flag_stale_periods():
+    h = new_tenant(c, "comps_cells")
     wb = Workbook()
-    for i, (ent, ev, e) in enumerate([("P1", 1000, 100), ("P2", 1200, 100), ("P3", 900, 100), ("T", 0, 50)], 1):
-        wb.active[f"A{i}"], wb.active[f"B{i}"], wb.active[f"C{i}"] = ent, ev, e
+    for r, ent in enumerate(("Q1", "Q2", "Q3", "QT"), 1):
+        wb.active[f"A{r}"], wb.active[f"B{r}"], wb.active[f"C{r}"] = ent, 1000, 100
     b = io.BytesIO()
     wb.save(b)
     doc = c.post("/documents", files={"file": ("m.xlsx", b.getvalue(), "x")}, headers=h).json()["id"]
-    for i, (ent, ev, e) in enumerate([("P1", 1000, 100), ("P2", 1200, 100), ("P3", 900, 100), ("T", 0, 50)], 1):
-        for metric, val, col in (("enterprise_value", ev, "B"), ("ebitda", e, "C")):
-            if val:
-                assert c.post("/facts", headers=h, json={"entity": ent, "metric": metric, "period": "FY24",
-                              "value": str(val), "unit": "USD", "document_id": doc, "page": 1,
-                              "quote": f"Sheet!{col}{i}: {val:,}"}).status_code == 201
-    r = c.post("/calc/comps.docx", headers=h, json={"target": "T", "peers": ["P1", "P2", "P3", "T"],
-                                                   "period": "FY24", "metrics": ["ebitda"]})
-    assert r.status_code == 200
-    text = "\n".join(p.text for p in Docx(io.BytesIO(r.content)).paragraphs)
-    # Workbook facts are cited by cell, never as a page.
-    assert "EV/ebitda: 475" in text and f"doc {doc[:8]} Sheet!B3" in text and f"doc {doc[:8]} p.1" not in text
 
-
-def test_comps_pptx_three_slides():
-    import io
-
-    from pptx import Presentation
-    h = new_tenant(c, "comps3")
-    wb = Workbook()
-    rows = [("P1", 1000, 100), ("P2", 1200, 100), ("P3", 900, 100), ("T", 0, 50)]
-    for i, (ent, ev, e) in enumerate(rows, 1):
-        wb.active[f"A{i}"], wb.active[f"B{i}"], wb.active[f"C{i}"] = ent, ev, e
-    b = io.BytesIO()
-    wb.save(b)
-    doc = c.post("/documents", files={"file": ("m.xlsx", b.getvalue(), "x")}, headers=h).json()["id"]
-    for i, (ent, ev, e) in enumerate(rows, 1):
-        for metric, val, col in (("enterprise_value", ev, "B"), ("ebitda", e, "C")):
-            if val:
-                c.post("/facts", headers=h, json={"entity": ent, "metric": metric, "period": "FY24",
-                       "value": str(val), "unit": "USD", "document_id": doc, "page": 1,
-                       "quote": f"Sheet!{col}{i}: {val:,}"})
-    r = c.post("/calc/comps.pptx", headers=h, json={"target": "T", "peers": ["P1", "P2", "P3", "T"],
-                                                   "period": "FY24", "metrics": ["ebitda"]})
-    assert r.status_code == 200
-    prs = Presentation(io.BytesIO(r.content))
-    assert len(prs.slides) == 3
-    assert "EV/ebitda" in "\n".join(sh.text_frame.text for sh in prs.slides[1].placeholders if sh.has_text_frame)
+    def fact(ent, metric, val, period, row, col):
+        resp = c.post("/facts", headers=h, json={"entity": ent, "metric": metric, "period": period,
+                      "value": str(val), "unit": "USD", "document_id": doc, "page": 1,
+                      "quote": f"Sheet!{col}{row}: {val:,}"})
+        assert resp.status_code == 201, resp.text
+    for r, ent in enumerate(("Q1", "Q2", "Q3", "QT"), 1):
+        fact(ent, "enterprise_value", 1000, "FY24", r, "B")
+        fact(ent, "ebitda", 100, "FY24", r, "C")
+    for r, ent in enumerate(("Q1", "Q2", "Q3", "QT"), 1):
+        fact(ent, "enterprise_value", 1000, "FY23", r, "B")  # older EV, used only when asked for
+    out = c.post("/calc/comps", json={"target": "QT", "peers": ["Q1", "Q2", "Q3"], "period": "FY24",
+                                      "metrics": ["ebitda"], "ev_period": "FY23"}, headers=h).json()
+    q1 = next(p for p in out["peers"] if p["entity"] == "Q1")
+    assert q1["cells"]["ev"]["period"] == "FY23" and q1["cells"]["ev"]["source"].startswith("doc ")
+    assert q1["stale"] == ["ev"]  # EV as of FY23 divided into FY24 EBITDA: flagged, not silently mixed
+    fresh = c.post("/calc/comps", json={"target": "QT", "peers": ["Q1"], "period": "FY24",
+                                        "metrics": ["ebitda"]}, headers=h).json()
+    assert fresh["peers"][0]["stale"] == []

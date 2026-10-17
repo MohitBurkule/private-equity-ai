@@ -289,6 +289,18 @@ export const api2 = {
   documentAccess: (tenantId: string, adminToken: string) => fetch(`/api/admin/tenants/${encodeURIComponent(tenantId)}/document-access`, {
     headers: { "X-Admin-Token": adminToken },
   }).then((r) => j<DocumentAccess>(r)),
+  budgetVsActual: (companyId: number, period: string) => call<BudgetVsActual>(`/portfolio/companies/${companyId}/budget-vs-actual?period=${encodeURIComponent(period)}`),
+  portfolioSubmissions: (period: string) => call<SubmissionsOut>(`/portfolio/submissions?period=${encodeURIComponent(period)}`),
+  rollForward: (companyId: number, period: string, prior: string, markMetric?: string) => {
+    const p = new URLSearchParams({ period, prior });
+    if (markMetric) p.set("mark_metric", markMetric);
+    return call<RollForward>(`/portfolio/companies/${companyId}/roll-forward?${p}`);
+  },
+  lpReport: (period: string, prior: string) => call<LpReport>(`/portfolio/lp-report?period=${encodeURIComponent(period)}&prior=${encodeURIComponent(prior)}`),
+  // The report as a file: fetched with the key and saved from a blob, as the memo download is.
+  lpReportBlob: (period: string, prior: string, format: "docx" | "pptx") =>
+    fetch(`/api/portfolio/lp-report?period=${encodeURIComponent(period)}&prior=${encodeURIComponent(prior)}&format=${format}`, { headers: auth() })
+      .then((r) => { if (!r.ok) throw new Error(`lp report: ${r.status}`); return r.blob(); }),
   emailAttach: (docId: string, deal: string) => call<{ document_id: string; deal: string }>(`/email/review/${encodeURIComponent(docId)}/attach`, "POST", { deal }),
 };
 
@@ -305,5 +317,19 @@ export interface PersonIn { name: string; organisation?: string; title?: string;
 
 export interface DocumentAccessRow { document_id: string; filename: string; deal: string | null; connector: string; grants: string[] }
 export interface DocumentAccess { documents: DocumentAccessRow[]; restricted: number }
+
+/** A figure as the portfolio routes return it: its fact, and the document it was read from. */
+export interface CitedFigure { value: string; fact_id: number; source: string; url: string | null }
+export interface BudgetMetric { metric: string; unit: string; actual: CitedFigure | null; budget: CitedFigure | null; variance: string | null; variance_pct: string | null }
+export interface BudgetVsActual { period: string; metrics: BudgetMetric[] }
+export interface SubmissionRow { company_id: number; name: string; metrics: string[] }
+export interface SubmissionsOut { period: string; submitted: SubmissionRow[]; missing: SubmissionRow[]; pct_submitted: number | null }
+
+export interface RollForward { period: string; prior: string; opening: CitedFigure | null; closing: CitedFigure | null; contributions: CitedFigure | null; distributions: CitedFigure | null; change_in_value: string | null }
+
+/** The LP report: numbered paragraphs, each citing sources by number. Source n is listed once at the end. */
+export interface LpReportSource { n: number; value: string; source: string; url: string | null }
+export interface LpReportPara { text: string; source: number | null }
+export interface LpReport { title: string; paragraphs: LpReportPara[][]; sources: LpReportSource[] }
 
 export const STAGES = ["sourcing", "screening", "dd", "ic", "signed", "closed", "passed"];

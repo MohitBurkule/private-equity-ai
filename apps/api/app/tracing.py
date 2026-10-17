@@ -8,6 +8,8 @@ import threading
 import time
 import uuid
 
+from app import otel
+
 log = logging.getLogger("pe.access")
 log.setLevel(logging.INFO)
 if not log.handlers:  # uvicorn leaves app loggers unconfigured
@@ -50,12 +52,14 @@ async def tracing_middleware(request, call_next):
     rid = request_id(request.headers.get("x-request-id"))
     t0 = time.perf_counter()
     status = 500
+    span = otel.start(request, rid)
     try:
         response = await call_next(request)
         status = response.status_code
         response.headers["X-Request-ID"] = rid
         return response
     finally:
+        otel.finish(span, request, status)
         ms = round((time.perf_counter() - t0) * 1000, 1)
         _record(request, status, ms)
         log.info(json.dumps({"request_id": rid, "method": request.method, "path": request.url.path,

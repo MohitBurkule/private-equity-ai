@@ -12,12 +12,12 @@ use axum::{
 };
 use serde_json::{json, Value};
 
-/// Same rule as Python list_documents: the deal wall applies, the source ACL does not (kept as the app does it).
+/// Python list_documents: the deal wall and the source ACL both apply, so hidden filenames are not listed.
 pub async fn list_documents(
     State(s): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Value>, ApiError> {
-    let (p, mut tx) = principal(&s.pool, &headers).await?;
+    let (p, mut tx) = principal(&s, &headers).await?;
     let vis = Visibility::load(&mut tx, &p).await?;
     let rows: Vec<(String, String, i32, Option<String>)> =
         sqlx::query_as("SELECT id, filename, n_pages, deal FROM document ORDER BY id")
@@ -26,7 +26,8 @@ pub async fn list_documents(
     tx.commit().await?;
     let out: Vec<Value> = rows
         .into_iter()
-        .filter(|(_, _, _, deal)| vis.deal_allows(deal.as_deref()))
+        // Same test as get_page: a listed name must also open, so ACL-restricted filenames stay hidden.
+        .filter(|(id, _, _, deal)| vis.deal_allows(deal.as_deref()) && vis.acl_allows(id))
         .map(|(id, filename, n_pages, deal)| json!({ "id": id, "filename": filename, "n_pages": n_pages, "deal": deal }))
         .collect();
     Ok(Json(Value::Array(out)))
@@ -37,7 +38,7 @@ pub async fn get_page(
     headers: HeaderMap,
     Path((doc_id, number)): Path<(String, i32)>,
 ) -> Result<Json<Value>, ApiError> {
-    let (p, mut tx) = principal(&s.pool, &headers).await?;
+    let (p, mut tx) = principal(&s, &headers).await?;
     let vis = Visibility::load(&mut tx, &p).await?;
     // _own_doc: missing, other-tenant, walled and ACL-hidden documents all get the same 404.
     let doc: Option<(String, Option<String>)> =

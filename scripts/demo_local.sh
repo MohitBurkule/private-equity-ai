@@ -16,6 +16,8 @@ API_PORT="${API_PORT:-8000}"
 WEB_PORT="${WEB_PORT:-5173}"
 ADMIN_TOKEN="${ADMIN_TOKEN:-demo-admin-token}"
 export ADMIN_TOKEN DATABASE_URL="sqlite:///$DEMO_DIR/demo.db"
+# Scanned pages (no text layer) are read by OCR only when this is on; the demo seeds a scanned page on purpose.
+export OCR_ENABLED=1
 
 # SEC rejects anonymous requests, so live EDGAR search needs a contact string. It is asked for here and never
 # written to the repo. Leave it empty to skip live search; the rest of the demo does not need it.
@@ -52,6 +54,10 @@ if [ -f "$DATA_DIR/filings/3M_2019_10K.htm" ]; then
   if [ -f "$DATA_DIR/filings/XPO_10-K_FY2024.htm" ]; then
     python3 scripts/seed_xpo_qoe.py "http://localhost:$API_PORT" "$KEY" "$DATA_DIR/filings" | sed 's/^/qoe: /'
   fi
+  # A synthetic holding with budget, marks and a target note, for the portfolio and targets screens.
+  python3 scripts/seed_portfolio_synthetic.py "http://localhost:$API_PORT" "$KEY" | sed 's/^/synthetic: /'
+  # SYNTHETIC peer EVs and FY2025 revenue so the comps screen has usable peers; no real prices offline.
+  python3 scripts/seed_peer_ev_synthetic.py "$DATABASE_URL" | sed 's/^/synthetic peers: /'
   echo "Dated EDGAR cache: data/demo/cache (captured 2026-10-17). Firm rule is synthetic demo text."
 else
   echo "No seed data at $DATA_DIR; the UI starts empty. Add a tenant with POST /admin/tenants."

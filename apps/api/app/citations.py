@@ -5,6 +5,7 @@ by code against the span text; an LLM never judges numeric correctness.
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
@@ -51,6 +52,19 @@ def numbers_in(text: str) -> list[ParsedNumber]:
         if p is not None:
             out.append(p)
     return out
+
+
+def paragraphs_for(quote: str, page_text: str, spans_json: str | None) -> list[int] | None:
+    """The DOCX paragraph numbers a verified quote falls in (a range when it spans several). Matches the quote
+    the way quote_in_page does, whitespace- and case-insensitive, then maps its offset through the page's spans."""
+    if not spans_json:
+        return None
+    words = quote.split()
+    m = re.search(r"\s+".join(map(re.escape, words)), page_text, re.IGNORECASE) if words else None
+    if m is None:
+        return None
+    nums = sorted({n for start, end, n in json.loads(spans_json) if start < m.end() and end > m.start()})
+    return nums or None
 
 
 def quote_in_page(quote: str, page_text: str) -> bool:

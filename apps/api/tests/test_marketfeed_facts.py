@@ -38,6 +38,9 @@ def test_latest_tev_becomes_cited_enterprise_value():
         assert out["metric"] == EV_METRIC and out["value"] == "1300" and out["unit"] == "USD"
         assert out["quote"].startswith("row 2: ") and "tev=1300" in out["quote"]
         assert seen[0][1]["Authorization"] == "Bearer tok"
+        with m.SessionLocal() as db:
+            bind_tenant(db, tid)
+            assert comps_mod._find(db, tid, "ACME", EV_METRIC, "LTM", None).as_of == "2026-10-16"  # the feed row's date
         again = c.post("/market/tev-sync", json=body, headers=h).json()
         assert again["fact_id"] == out["fact_id"]
         with m.SessionLocal() as db:
@@ -93,3 +96,22 @@ def test_unreadable_feed_is_422_not_500():
 
 def _bad_url_fetch(url, headers):
     raise ValueError("URL can't contain control characters")
+
+
+def test_refresh_isolates_a_failed_feed_from_the_rest():
+    def fetch(url, headers):
+        if "bad" in url:
+            raise OSError("feed down")
+        return json.dumps({"data": [{"id": "ACME", "tev": 900, "currency": "USD", "date": "2026-10-16"}]}).encode()
+    app.dependency_overrides[m.get_market_fetch] = lambda: fetch
+    try:
+        h, _ = new_tenant_id(c, "tev-refresh")
+        item = {"entity": "ACME", "period": "LTM", "source": "capiq", "url": URL, "token": "tok"}
+        bad = {**item, "entity": "BADCO", "url": "https://bad.example/feed"}
+        r = c.post("/market/tev-refresh", json={"items": [bad, item]}, headers=h)
+        assert r.status_code == 200, r.text
+        bad_row, good_row = r.json()["results"]
+        assert bad_row["ok"] is False and "feed" in bad_row["error"]
+        assert good_row["ok"] is True and good_row["as_of"] == "2026-10-16"
+    finally:
+        app.dependency_overrides.clear()

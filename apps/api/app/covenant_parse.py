@@ -93,12 +93,15 @@ def check(tests: list[dict], observed: dict[str, dict]) -> list[dict]:
             continue
         value, limit = Decimal(str(obs["value"])), Decimal(t["threshold"])
         ok = value <= limit if t["operator"] == "<=" else value >= limit
+        gap = (limit - value) if t["operator"] == "<=" else (value - limit)
+        headroom = str((gap / abs(limit) * 100).quantize(Decimal("0.1"))) if limit else None  # + = room left
         rows.append(
             {
                 "kpi_metric": t["kpi_metric"],
                 "status": "ok" if ok else "breach",
                 "value": str(value),
                 "threshold": t["threshold"],
+                "headroom_pct": headroom,
                 "operator": t["operator"],
                 "period": obs.get("period"),
                 "observation_source": obs.get("source"),

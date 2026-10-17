@@ -61,6 +61,7 @@ from app import marketfeed_facts as marketfeed_facts_mod
 from app import memo_diff as memo_diff_mod
 from app import memo_templates as mt_mod
 from app import notify as notify_mod
+from app import otel as otel_mod
 from app import outreach as outreach_mod
 from app import peer_sets as peer_sets_mod
 from app import peers as peers_mod
@@ -94,6 +95,7 @@ from app.auth import (
     hash_key,
     key_id,
     list_keys,
+    principal_for_identity,
     principal_for_key,
     revoke_key,
 )
@@ -102,6 +104,8 @@ from app.calendar_events import retag_deals
 from app.chat_alerts import chat_poster
 from app.chat_inbound import (
     HELP,
+    NOT_LINKED,
+    chat_identity,
     format_answer,
     slack_question,
     slack_reply,
@@ -207,6 +211,7 @@ from app.portfolio import (
     PortfolioCompany,
     add_covenant,
     budget_variance,
+    compliance_summary,
     current_kpis,
     evaluate_covenant,
     qoq_change,
@@ -242,6 +247,7 @@ MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
 
 app = FastAPI(title="PE Platform API", version="0.0.1")
 app.middleware("http")(tracing_middleware)
+otel_mod.setup()
 
 
 def get_db():
@@ -697,8 +703,10 @@ def get_page(doc_id: str, number: int, db: Db, who: Who):
 @app.get("/documents")
 def list_documents(db: Db, who: Who):
     hidden = hidden_deal_names(db, who)
+    acl_hidden = acl_hidden_doc_ids(db, who)  # the same test _own_doc applies, so a listed name always opens
     return [{"id": d.id, "filename": d.filename, "n_pages": d.n_pages, "deal": d.deal}
-            for d in db.query(Document).filter_by(tenant_id=who.tenant).all() if doc_visible(d, who, hidden)]
+            for d in db.query(Document).filter_by(tenant_id=who.tenant).all()
+            if doc_visible(d, who, hidden) and d.id not in acl_hidden]
 
 
 class FactIn(BaseModel):
@@ -837,6 +845,30 @@ def market_tev_sync(body: TevSyncIn, db: Db, who: Writer, fetch: Annotated[Calla
     db.commit()
     return {"fact_id": f.id, "metric": f.metric, "value": str(f.value), "unit": f.unit,
             "quote": f.sources[0].quote, "document_id": f.sources[0].document_id}
+
+
+class TevRefreshIn(BaseModel):
+    items: list[TevSyncIn]
+
+
+@app.post("/market/tev-refresh")
+def market_tev_refresh(body: TevRefreshIn, db: Db, who: Writer, fetch: Annotated[Callable, Depends(get_market_fetch)]):
+    """Re-pull enterprise value for many entities in one call. Each item stands alone: a failed feed is reported
+    on its own line and never stops the others or leaves a half-written fact."""
+    if len(body.items) > 50:
+        raise HTTPException(422, "too many items")
+    out = []
+    for it in body.items:
+        try:
+            f = marketfeed_facts_mod.sync_tev(db, who.tenant, entity=it.entity, period=it.period, source=it.source,
+                                              url=it.url, token=it.token, fetch=fetch)
+            db.commit()
+            out.append({"entity": it.entity, "ok": True, "fact_id": f.id, "value": str(f.value), "unit": f.unit,
+                        "as_of": f.as_of})
+        except (NoData, CitationError, ValueError) as e:
+            db.rollback()
+            out.append({"entity": it.entity, "ok": False, "error": str(e)})
+    return {"results": out}
 
 
 @app.post("/lbo/returns")
@@ -2681,9 +2713,9 @@ def budget_vs_actual(company_id: int, period: str, db: Db, who: Who):
         row = {"metric": metric, "unit": (act or bud).unit, "actual": None, "budget": None,
                "variance": None, "variance_pct": None}
         if act is not None:
-            row["actual"] = {"value": str(act.value), "fact_id": act.fact_id}
+            row["actual"] = _cited_figure(db, act.fact_id, str(act.value))
         if bud is not None:
-            row["budget"] = {"value": str(bud.value), "fact_id": bud.fact_id}
+            row["budget"] = _cited_figure(db, bud.fact_id, str(bud.value))
         if act is not None and bud is not None:
             diff, pct = budget_variance(act.value, bud.value)
             row["variance"] = str(diff)
@@ -2704,7 +2736,7 @@ def valuation_roll_forward(company_id: int, period: str, prior: str, db: Db, who
         o = next((o for o in rows if o.metric == metric and o.period == p), None)
         if o is None or not fact_visible(db.get(Fact, o.fact_id), scope):
             return None, None
-        return o.value, {"value": str(o.value), "fact_id": o.fact_id}
+        return o.value, _cited_figure(db, o.fact_id, str(o.value))
 
     marks = current_kpis(db, who.tenant, company_id, "mark")
     actuals = current_kpis(db, who.tenant, company_id)
@@ -2716,6 +2748,12 @@ def valuation_roll_forward(company_id: int, period: str, prior: str, db: Db, who
     return {"period": period, "prior": prior, "opening": open_c, "closing": close_c,
             "contributions": contrib_c, "distributions": dist_c,
             "change_in_value": None if change is None else str(change)}
+
+
+def _cited_figure(db: Session, fact_id: int, value: str) -> dict:
+    """A figure as the portfolio routes return it: the value, its fact, and the document it was read from."""
+    c = _fact_cite(db, fact_id, value)
+    return {"value": value, "fact_id": fact_id, "source": c.source, "url": c.url}
 
 
 def _fact_cite(db: Session, fact_id: int, value: str) -> lp_mod.Cite:
@@ -2796,7 +2834,7 @@ def covenant_status(company_id: int, db: Db, who: Who):
     scope = visible_doc_ids(db, who)
     covs = db.query(Covenant).filter_by(tenant_id=who.tenant, company_id=company_id).all()
     out = [{"id": c.id, "kpi_metric": c.kpi_metric, "operator": c.operator,
-            "tests": evaluate_covenant(db, c, scope)} for c in covs]
+            "tests": (tests := evaluate_covenant(db, c, scope)), "compliance": compliance_summary(tests)} for c in covs]
     breaches = [{"covenant_id": c["id"], "kpi_metric": c["kpi_metric"], **t}
                 for c in out for t in c["tests"] if t["status"] in ("breach", "unit_mismatch")]
     return {"covenants": out, "breaches": breaches}
@@ -3915,7 +3953,8 @@ def ask(body: AskIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_dependenc
     a = answer_question(db, tenant, llm, body.question, body.doc_id, scope=visible_doc_ids(db, who))
     log_event(db, tenant, actor(who), "ask", {"question": body.question, "status": a.status,
                                          "claims": len(a.claims), "rejected": len(a.rejected)})
-    cite = lambda c: {"text": c.text, "document_id": c.doc_id, "page": c.page, "quote": c.quote}
+    cite = lambda c: {"text": c.text, "document_id": c.doc_id, "page": c.page, "quote": c.quote,
+                      "paragraphs": c.paragraphs}
     return {"status": a.status, "detail": a.detail, "claims": [cite(c) for c in a.claims],
             "rejected": [{**cite(c), "reason": c.reason} for c in a.rejected]}
 
@@ -3927,11 +3966,8 @@ async def chat_inbound(kind: str, request: Request, db: Db):
     if kind not in ("slack", "teams"):
         raise HTTPException(404, "unknown chat app")
     body = await request.body()
-    if kind == "slack":
-        secret, token = os.environ.get("SLACK_SIGNING_SECRET"), os.environ.get("SLACK_INBOUND_API_KEY")
-    else:
-        secret, token = os.environ.get("TEAMS_SECURITY_TOKEN"), os.environ.get("TEAMS_INBOUND_API_KEY")
-    if not secret or not token:
+    secret = os.environ.get("SLACK_SIGNING_SECRET" if kind == "slack" else "TEAMS_SECURITY_TOKEN")
+    if not secret:
         raise HTTPException(503, f"{kind} inbound is not configured")
     if kind == "slack":
         ok = verify_slack(secret, request.headers.get("X-Slack-Request-Timestamp", ""),
@@ -3945,15 +3981,15 @@ async def chat_inbound(kind: str, request: Request, db: Db):
     reply = slack_reply if kind == "slack" else teams_reply
     if not question:
         return reply(HELP)
-    who = principal_for_key(db, token)
+    who = principal_for_identity(db, chat_identity(kind, body))
     if who is None:
-        raise HTTPException(503, f"{kind} inbound key is not valid")
+        return reply(NOT_LINKED)
     bind_tenant(db, who.tenant)
     a = answer_question(db, who.tenant, llm_dependency(), question, scope=visible_doc_ids(db, who))
     filenames = {d.id: d.filename for d in db.query(Document).filter(
         Document.tenant_id == who.tenant, Document.id.in_([c.doc_id for c in a.claims] or [""]))}
-    log_event(db, who.tenant, f"chat:{kind}", "chat.ask", {"question": question, "status": a.status,
-                                                          "claims": len(a.claims), "rejected": len(a.rejected)})
+    log_event(db, who.tenant, who.identity or f"chat:{kind}", "chat.ask", {"question": question, "status": a.status,
+                                                                         "claims": len(a.claims), "rejected": len(a.rejected)})
     db.commit()
     return reply(format_answer(a, filenames))
 

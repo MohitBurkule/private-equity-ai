@@ -73,6 +73,7 @@ class PageRow(Base):
     label: Mapped[str | None] = mapped_column(String(256), default=None)  # sheet name
     method: Mapped[str] = mapped_column(String(16), default="text", server_default="text")  # text | ocr
     ocr_confidence: Mapped[float | None] = mapped_column(default=None)
+    spans: Mapped[str | None] = mapped_column(Text, default=None)  # JSON [[start, end, paragraph]], DOCX only
     document: Mapped[Document] = relationship(back_populates="pages")
 
 
@@ -90,6 +91,8 @@ class Fact(Base):
     reviewed_by: Mapped[str | None] = mapped_column(String(64), default=None)
     reviewed_at: Mapped[str | None] = mapped_column(String(40), default=None)
     review_note: Mapped[str | None] = mapped_column(Text, default=None)
+    # date the figure was true as of, when the source states one (e.g. a market close); None when it does not
+    as_of: Mapped[str | None] = mapped_column(String(32), default=None)
     sources: Mapped[list[FactSource]] = relationship(back_populates="fact", cascade="all")
 
 
