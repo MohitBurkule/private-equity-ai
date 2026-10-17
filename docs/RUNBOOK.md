@@ -132,3 +132,14 @@ exports; add the headers you see there.
 - `POST /uk/psc/extract?companies=01234567,...` with the free PSC snapshot (`.jsonl` or `.zip`) picks those companies out with the source line number. For the multi-GB national file use `app/chbulk.iter_psc_snapshot` from a script instead of uploading it.
 - `app/chbulk.iter_basic_company_csv` reads the Basic Company Data CSV. A missing status, category or notification date stays missing; the parsers never default them. Ported from your `companyhousev1` project's formats, without its defaults.
 - Nominee holders (platforms) hide individual owners in PSC data; treat a corporate PSC as a lead, not an answer.
+
+## Local Gemma model (no API key)
+
+Used by the local LLM evals and the `llm-local` CI job.
+
+- **Install:** `pip install 'llama-cpp-python>=0.3'` (the `llamacpp` extra in `apps/api/pyproject.toml`; tested with 0.3.36).
+- **Shared copies:** `/mnt/project-files/models/gemma2-9b-q4km.gguf` and `/mnt/project-files/models/gemma2-2b-q4km.gguf`. Use them directly; no download needed.
+- **9B source (CI uses this):** `https://huggingface.co/bartowski/gemma-2-9b-it-GGUF/resolve/main/gemma-2-9b-it-Q4_K_M.gguf`. Our copy matches sha256 `13b2a7b4115bbd0900162edcebe476da1ba1fc24e718e8b40d32f6e300f56dfe`.
+- **2B source:** not recorded when the copy was made, so the origin is unverified. Check sha256 `e0aee85060f168f0f2d8473d7ea41ce2f3230c1bc1374847505ea599288a7787` before trusting results from it.
+- **Run:** `LLM_PROVIDER=llamacpp LLAMA_MODEL_PATH=/mnt/project-files/models/gemma2-9b-q4km.gguf python evals/run_llm_eval.py`.
+- **Hugging Face access:** the sandbox can return 403 on the Hub. The shared copies avoid that. If you must fetch fresh, check the network policy first.
