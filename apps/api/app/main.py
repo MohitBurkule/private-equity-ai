@@ -181,6 +181,11 @@ def writer(p: Who) -> Principal:
     return p
 
 
+def _require(p: Principal, capability: str, what: str) -> None:
+    if not p.can(capability):
+        raise HTTPException(403, f"role {p.role} cannot {what}")
+
+
 Writer = Annotated[Principal, Depends(writer)]
 Tenant = Annotated[str, Depends(get_tenant)]
 
@@ -656,6 +661,8 @@ def _deal_out(db: Session, who: Principal, d: Deal) -> dict:
 def deal_create(body: DealIn, db: Db, who: Writer):
     if who.deals is not None:
         raise HTTPException(403, "walled keys cannot create deals")
+    if body.mnpi:
+        _require(who, "govern", "flag a deal MNPI")
     if body.stage not in STAGES:
         raise HTTPException(422, f"stage must be one of {STAGES}")
     name = body.name.strip()
@@ -748,11 +755,17 @@ def checklist_delete(name: str, item_id: int, db: Db, who: Writer):
 
 
 @app.patch("/deals/{name}")
-def deal_update(name: str, body: DealUpdate, db: Db, who: Writer):
+def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
     d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
     if d is None or not _dd_scope_ok(who, name) or deal_hidden(d, who):
         raise HTTPException(404, "deal not found")
+    # Compliance may hold and flag a deal without being able to change its analysis.
+    if body.stage is not None or body.note is not None:
+        _require(who, "write", "edit deal stage or notes")
+    if body.legal_hold is not None:
+        _require(who, "govern", "change a legal hold")
     if body.mnpi is not None:
+        _require(who, "govern", "change the MNPI flag")
         d.mnpi = body.mnpi
         if body.mnpi and d.created_by is None:
             d.created_by = who.key_id or None
@@ -777,6 +790,7 @@ def deal_delete(name: str, db: Db, who: Writer):
         raise HTTPException(404, "deal not found")
     # Holds and linked documents are refused rather than cascaded: deleting evidence the team
     # still relies on is the one step here that cannot be walked back.
+    _require(who, "govern", "delete deals")
     if d.legal_hold:
         raise HTTPException(409, "deal is under legal hold")
     if db.query(Document).filter_by(tenant_id=who.tenant, deal=name).first():
@@ -816,6 +830,7 @@ class RetentionIn(BaseModel):
 
 @app.post("/retention/deals")
 def retention_deals(body: RetentionIn, db: Db, who: Writer):
+    _require(who, "govern", "run retention purges")
     """Dry run lists what would go. A real run deletes candidates that have no linked documents
     and records each deletion in the audit chain. Holds and linked documents are always skipped."""
     cands = _retention_candidates(db, who, body.older_than_days)
@@ -837,6 +852,7 @@ def retention_deals(body: RetentionIn, db: Db, who: Writer):
 
 @app.post("/retention/documents")
 def retention_documents(body: RetentionIn, db: Db, who: Writer):
+    _require(who, "govern", "run retention purges")
     """Same rules as deal retention, for documents. Unknown creation time is never a candidate.
     A document cited by a fact or a DD item is kept, and a document on a held or walled deal is
     skipped whatever its age."""

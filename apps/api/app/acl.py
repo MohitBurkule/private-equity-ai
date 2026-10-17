@@ -1,6 +1,7 @@
 """Roles and deal scopes (ethical walls) on top of tenant isolation.
 
-A key has a role (admin | analyst | viewer) and an optional deal scope.
+A key has a role and an optional deal scope. Roles map to capabilities (see CAPABILITIES): what a
+role may do is decided here, in one table, not in each endpoint.
 - deals=None: unrestricted inside the tenant (sees every document, including unassigned ones).
 - deals=[...]: sees only documents tagged with one of those deals. Untagged documents are hidden,
   so forgetting to tag fails closed. A fact is visible only if ALL its source documents are.
@@ -16,19 +17,32 @@ from sqlalchemy.orm import Session
 
 from app.models import Deal, Document, Fact
 
-ROLES = ("admin", "analyst", "viewer")
+# Why these roles: the associate/VP/partner split decides who may change a deal, and compliance must be
+# able to hold and purge deals without being able to edit analysis. "analyst" is the legacy name for
+# associate and stays valid so existing keys keep working. IR reads the tenant but writes nothing yet.
+ROLES = ("admin", "partner", "vp", "associate", "analyst", "compliance", "ir", "viewer")
+
+CAPABILITIES: dict[str, frozenset[str]] = {
+    # Upload, extract, create facts, edit deals and checklists.
+    "write": frozenset({"admin", "partner", "vp", "associate", "analyst"}),
+    # Legal hold, MNPI flag, deal delete, retention purges.
+    "govern": frozenset({"admin", "partner", "vp", "compliance"}),
+}
 
 
 @dataclass(frozen=True)
 class Principal:
     tenant: str
-    role: str = "analyst"
+    role: str = "associate"
     deals: frozenset[str] | None = None
     key_id: str = ""
 
+    def can(self, capability: str) -> bool:
+        return self.role in CAPABILITIES[capability]
+
     @property
     def can_write(self) -> bool:
-        return self.role in ("admin", "analyst")
+        return self.can("write")
 
     @property
     def restricted(self) -> bool:
