@@ -17,6 +17,12 @@ const LBO_DEFAULTS: FlagshipBody["lbo"] = {
 };
 const TONE = { ok: "ok", skipped: "mut", failed: "bad" } as const;
 
+// Acronyms and hyphenated names lose their casing under capitalize, so each step gets an explicit label.
+const STEP_LABELS: Record<string, string> = {
+  lbo: "LBO",
+  crosscheck: "Cross-check",
+};
+
 /** One click from a 10-K to the IC memo. Each step shows its own status and reason, so a skipped or failed step is visible. */
 export function Flagship() {
   const [docs, setDocs] = useState<DocumentInfo[]>([]);
@@ -93,7 +99,7 @@ export function Flagship() {
               <li key={s.step} className="flex items-start gap-3 px-5 py-3 text-sm">
                 <Badge tone={TONE[s.status]}>{s.status}</Badge>
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium capitalize">{s.step.replace(/_/g, " ")}</p>
+                  <p className="font-medium">{STEP_LABELS[s.step] ?? s.step.replace(/_/g, " ")}</p>
                   {s.reason && <p className="text-mut">{s.reason}</p>}
                 </div>
               </li>
