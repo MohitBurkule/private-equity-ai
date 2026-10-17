@@ -40,6 +40,7 @@ from app import (
     notify,
     opendata_tools,  # noqa: F401  (registers open-data agent tools)
     outbound,
+    webhooks,
 )
 from app import agent as ag
 from app import alerts as al
@@ -203,6 +204,7 @@ from app.models import (
     TargetContact,
     TargetNote,
     ValuationRound,
+    WebhookEndpoint,
     WorkflowSchedule,
 )
 from app.models import Tenant as TenantRow
@@ -236,6 +238,7 @@ from app.tracing import render_metrics, tracing_middleware
 from app.valuation_rounds import parse_rounds
 from app.versions import superseded
 from app.waterfall import PrefClass, waterfall
+from app.webhooks import UnsafeWebhookUrl
 from app.xbrl import candidates, crosscheck, load_companyfacts
 
 engine = make_engine()
@@ -576,7 +579,7 @@ def documents_bulk_deal(body: BulkDealIn, db: Db, who: Writer):
         _visible_deal_or_404(db, who, body.deal)
     hidden = hidden_deal_names(db, who)
     acl_hidden = acl_hidden_doc_ids(db, who)
-    moved, refused = [], []
+    moved, refused, moves = [], [], []
     for doc_id in body.doc_ids:
         doc = db.get(Document, doc_id)
         if not doc_visible(doc, who, hidden) or doc_id in acl_hidden:
@@ -591,8 +594,54 @@ def documents_bulk_deal(body: BulkDealIn, db: Db, who: Writer):
                   {"doc_id": doc.id, "from": before, "to": body.deal,
                    "deals": [d for d in (before, body.deal) if d]})  # the deal report matches on these
         moved.append(doc_id)
+        moves.append((doc_id, before))
     db.commit()
+    # Sent after the commit, so a slow or failing receiver cannot undo a move. One post per source deal.
+    pii = outbound.pii_on(db, who.tenant)
+    by_source: dict[str | None, list[str]] = {}
+    for doc_id, before in moves:
+        by_source.setdefault(before, []).append(doc_id)
+    for before, ids in by_source.items():
+        webhooks.emit(db, who.tenant, "document.moved", ids, before, body.deal, pii=pii)
     return {"moved": moved, "refused": refused}
+
+
+class WebhookIn(BaseModel):
+    url: str
+
+
+@app.post("/webhooks", status_code=201)
+def webhook_create(body: WebhookIn, db: Db, who: Writer):
+    """Register a tenant system for signed event posts. The secret is returned here only; store it on the receiver."""
+    _require(who, "govern", "manage webhooks")
+    try:
+        url = webhooks.check_url(body.url)
+    except UnsafeWebhookUrl as e:
+        raise HTTPException(422, str(e)) from e
+    ep = WebhookEndpoint(tenant_id=who.tenant, url=url, secret=webhooks.new_secret(), active=True)
+    db.add(ep)
+    db.flush()
+    log_event(db, who.tenant, actor(who), "webhook.created", {"endpoint_id": ep.id})
+    db.commit()
+    return {"id": ep.id, "url": ep.url, "secret": ep.secret}
+
+
+@app.get("/webhooks")
+def webhook_list(db: Db, who: Who):
+    _require(who, "govern", "manage webhooks")
+    rows = db.query(WebhookEndpoint).filter_by(tenant_id=who.tenant).order_by(WebhookEndpoint.id).all()
+    return [{"id": r.id, "url": r.url, "active": r.active} for r in rows]
+
+
+@app.delete("/webhooks/{endpoint_id}", status_code=204)
+def webhook_delete(endpoint_id: int, db: Db, who: Writer):
+    _require(who, "govern", "manage webhooks")
+    ep = db.query(WebhookEndpoint).filter_by(tenant_id=who.tenant, id=endpoint_id).first()
+    if ep is None:
+        raise HTTPException(404, "no webhook with that id")
+    db.delete(ep)
+    log_event(db, who.tenant, actor(who), "webhook.deleted", {"endpoint_id": endpoint_id})
+    db.commit()
 
 
 @app.post("/documents/{doc_id}/capital-form/facts", status_code=201)

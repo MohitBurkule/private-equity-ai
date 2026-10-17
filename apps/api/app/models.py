@@ -279,6 +279,16 @@ class ValuationRound(Base):
     line: Mapped[int] = mapped_column(Integer)
 
 
+class WebhookEndpoint(Base):
+    """A tenant system that receives signed event posts. The secret is shown once, at creation."""
+    __tablename__ = "webhook_endpoint"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    url: Mapped[str] = mapped_column(String(512))
+    secret: Mapped[str] = mapped_column(String(64))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
 class Holding(Base):
     """One row of a user-supplied secondary-market holdings export, tied to the file it came from."""
     __tablename__ = "holding"
