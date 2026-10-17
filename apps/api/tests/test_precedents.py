@@ -50,7 +50,14 @@ def test_zero_multiple_and_repeat_ignored():
         {
             "name": "X",
             "document_id": "x",
-            "terms": extract([(1, "0x revenue. 5x revenue. 7x revenue.")]),
+            "terms": extract(
+                [
+                    (
+                        1,
+                        "The price represents 0x revenue. The price represents 5x revenue. The price represents 7x revenue.",
+                    )
+                ]
+            ),
         }
     ]
     s = summarise(deals)["revenue"]
@@ -75,3 +82,15 @@ def test_banker_and_pro_forma_figures_flagged_and_left_out_of_stats():
     assert t["multiples"][0]["needs_review"] is False
     s = summarise([{"name": "A", "document_id": "a", "terms": t}])
     assert s == {} or "revenue" in s
+
+
+def test_headline_skips_banker_range_and_takes_deal_price():
+    pages = [
+        (
+            1,
+            "Piper Sandler reviewed implied multiples of 6.0x to 9.0x LTM revenue in its analysis.",
+        ),
+        (2, "The price represents 8.5x LTM revenue."),
+    ]
+    s = summarise([{"name": "A", "document_id": "a", "terms": extract(pages)}])
+    assert s["revenue"]["n"] == 1 and s["revenue"]["inputs"][0]["page"] == 2
