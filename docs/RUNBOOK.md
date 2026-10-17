@@ -106,7 +106,9 @@ Some filing text drops blank cells, so a row has fewer values than columns. `POS
 
 ## Retrieval choice
 
-Search uses BM25. A hybrid index (BM25 plus char-trigram ranker, fused with RRF) exists in `app/hybrid.py` but is not wired in: on the 14 FinanceBench questions whose filings are available it gave recall@1 0.143 / @3 0.429 / @5 0.429 / @10 0.5 against BM25 0.143 / 0.286 / 0.5 / 0.571, so it is not clearly better and n is small. Dense rankers plug in through the `Ranker` protocol once model access exists; wire hybrid only if the eval shows a gain on a larger set.
+The product retriever is `default_index` (`app/hybrid.py`): BM25 + char-trigram + dense (bge-small-en-v1.5) fused with RRF. It falls back to the lexical pair when fastembed is not installed. The cross-encoder rerank is not in the default. `/ask` still requires a lexical term match before it calls the model, because dense ranking always returns neighbours.
+
+Recorded numbers are in ARCHITECTURE.md section 13.
 
 ## Reading SH01 forms
 

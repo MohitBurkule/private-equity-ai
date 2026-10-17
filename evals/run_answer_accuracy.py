@@ -7,7 +7,7 @@ N new questions, so each foreground command stays inside the tool timeout.
 Reports:
   exact_numeric_match  share of questions whose answer contains the gold number
   verified_wrong       share answered with a verified claim whose number is wrong
-  abstain              share the system declined to answer
+  abstain              share the system declined to answer (not_found); model errors are counted separately
   abstain_when_unsure  of the questions it did not get right, the share it abstained on
 
 Usage: python evals/run_answer_accuracy.py DATA_DIR [--n 50] [--chunk 10] [--checkpoint PATH]
@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps" / "api"))
 from app.answer import answer_question
 from app.citations import numbers_in
 from app.db import Base, make_engine
-from app.llm import get_llm
+from app.llm import LlamaCppLLM
 from app.models import Document, PageRow
 from app.parse.pdf import extract_pages
 from run_llm_eval import _id
@@ -70,11 +70,11 @@ def run(data: Path, n: int, chunk: int, checkpoint: Path) -> dict:
     todo = [g for g in items if g["financebench_id"] not in done][:chunk]
     if todo:
         db = _db(data, items, checkpoint.with_suffix(".pages"))
-        llm = get_llm()
+        llm = LlamaCppLLM(max_tokens=160, n_ctx=4096)  # short answers; prompt is the top-k pages only
         with checkpoint.open("a") as out:
             for g in todo:
                 want = float(g["answer"].replace("$", "").replace(",", ""))
-                a = answer_question(db, "t", llm, g["question"], doc_id=_id(g["doc_name"]))
+                a = answer_question(db, "t", llm, g["question"], doc_id=_id(g["doc_name"]), k=2)
                 nums = {abs(float(x.value)) for c in a.claims for x in numbers_in(c.text)}
                 row = {"id": g["financebench_id"], "status": a.status,
                        "correct": a.status == "answered" and want in nums,
@@ -86,11 +86,13 @@ def run(data: Path, n: int, chunk: int, checkpoint: Path) -> dict:
     rows = [done[g["financebench_id"]] for g in items if g["financebench_id"] in done]
     total, correct = len(items), sum(r["correct"] for r in rows)
     not_correct = len(rows) - correct
-    abstained = sum(r["status"] != "answered" for r in rows)
+    abstained = sum(r["status"] == "not_found" for r in rows)
+    errors = sum(r["status"] == "error" for r in rows)
     return {"suite": "answer_accuracy", "n": total, "done": len(rows), "remaining": total - len(rows),
             "exact_numeric_match": round(correct / len(rows), 3) if rows else None,
             "verified_wrong": round(sum(r["verified_wrong"] for r in rows) / len(rows), 3) if rows else None,
             "abstain": round(abstained / len(rows), 3) if rows else None,
+            "errors": errors,
             "abstain_when_unsure": round(abstained / not_correct, 3) if not_correct else None}
 
 
@@ -98,7 +100,7 @@ if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("data", type=Path)
-    ap.add_argument("--n", type=int, default=50)
+    ap.add_argument("--n", type=int, default=20)
     ap.add_argument("--chunk", type=int, default=10)
     ap.add_argument("--checkpoint", type=Path, default=Path("answer_accuracy.checkpoint.jsonl"))
     a = ap.parse_args()
