@@ -87,7 +87,7 @@ def test_sector_benchmark_excludes_unknown_and_places_target():
     c.post("/targets", headers=h, json=rows)
     tid = next(t["id"] for t in c.get("/targets?q=S30", headers=h).json()["items"])
     b = c.get(f"/targets/benchmark?sector=software&target_id={tid}", headers=h).json()
-    assert b["peers"] == 4 and b["excluded_no_revenue"] == 1
-    assert Decimal(b["median"]) == 25 and Decimal(b["min"]) == 10 and Decimal(b["max"]) == 40
-    assert b["target"]["percentile"] == 50  # 30 is above 10 and 20 of 4 peers
+    assert b["peers"] == 3 and b["excluded_no_revenue"] == 1  # S30 is not its own peer
+    assert Decimal(b["median"]) == 20 and Decimal(b["min"]) == 10 and Decimal(b["max"]) == 40
+    assert b["target"]["percentile"] == 67  # 30 is above 10 and 20 of 3 peers
     assert c.get("/targets/benchmark?target_id=999999", headers=h).status_code == 404

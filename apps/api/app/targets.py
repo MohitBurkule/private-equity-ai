@@ -154,7 +154,7 @@ def benchmark(db: Session, tenant: str, sector: str | None, target: Target | Non
     q = db.query(Target).filter(Target.tenant_id == tenant)
     if sector:
         q = q.filter(Target.sector.ilike(f"%{sector}%"))
-    rows = q.all()
+    rows = [r for r in q.all() if target is None or r.id != target.id]  # the target is not its own peer
     known = [r.revenue for r in rows if r.revenue is not None]
     st = stats(known)
     out = {"sector": sector, "peers": st.n, "excluded_no_revenue": len(rows) - st.n,
@@ -162,7 +162,7 @@ def benchmark(db: Session, tenant: str, sector: str | None, target: Target | Non
            "q1": None if st.q1 is None else str(st.q1), "q3": None if st.q3 is None else str(st.q3),
            "min": None if st.low is None else str(st.low), "max": None if st.high is None else str(st.high)}
     if target is not None and target.revenue is not None and known:
-        below = sum(1 for v in known if v < target.revenue)
+        below = sum(1 for v in known if v < target.revenue)  # peers strictly below the target
         out["target"] = {"id": target.id, "name": target.name, "revenue": str(target.revenue),
                          "percentile": round(100 * below / len(known))}
     return out

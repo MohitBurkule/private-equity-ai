@@ -30,6 +30,7 @@ from app import (
     opendata_tools,  # noqa: F401  (registers open-data agent tools)
 )
 from app import outreach as outreach_mod
+from app import research as research_mod
 from app import seen_before as seen_mod
 from app import targets as tg_mod
 from app import workflows as wf_mod
@@ -1311,6 +1312,18 @@ def targets_facets(db: Db, who: Who):
     out["total"] = db.query(Target).filter_by(tenant_id=who.tenant).count()
     out["revenue_unknown"] = db.query(Target).filter(Target.tenant_id == who.tenant, Target.revenue.is_(None)).count()
     return out
+
+
+@app.get("/targets/{tid}/research.docx")
+def target_research(tid: int, db: Db, who: Who):
+    """Research note for one target: identity, revenue with filing link, sector benchmark, prior mentions, sources."""
+    t = db.get(Target, tid)
+    if t is None or t.tenant_id != who.tenant:
+        raise HTTPException(404, "target not found")
+    log_event(db, who.tenant, actor(who), "target.research_export", {"id": tid})
+    return Response(research_mod.build_docx(db, who.tenant, t, None if who.deals is None else set(who.deals)),
+                    headers={"Content-Disposition": f'attachment; filename="research-{tid}.docx"'},
+                    media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
 @app.get("/seen-before")
