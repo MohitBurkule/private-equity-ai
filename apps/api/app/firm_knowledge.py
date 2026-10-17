@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
@@ -45,6 +46,8 @@ TERMS: list[Term] = (
         ("leverage_limit", "Leverage limit", "maximum debt to EBITDA the firm will use"),
         ("esg_exclusions", "ESG exclusions", "sectors or activities never invested in"),
     ]) + _t("deal_process", [
+        ("deal_stall_days", "Deal stall days", "days a live deal may go without an update before the team is alerted"),
+        ("dd_response_days", "DD response days", "days a due-diligence request may stay open before escalation"),
         ("deal_screening_criteria", "Deal screening criteria", "size, sector, geography, growth and margin floors for a deal worth reviewing"),
         ("target_ev_range", "Target EV range", "enterprise value range the firm targets"),
         ("target_ebitda_range", "Target EBITDA range", "EBITDA range the firm targets"),
@@ -161,6 +164,28 @@ def profile(db: Session, tenant_id: str, include_pending: bool = False) -> dict[
     for r in q.order_by(FirmKnowledge.id):
         out.setdefault(r.key, []).append(row_dict(r))
     return out
+
+
+_NUM = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def newest_accepted(db: Session, tenant_id: str, key: str) -> FirmKnowledge | None:
+    return (db.query(FirmKnowledge).filter_by(tenant_id=tenant_id, key=key, status="accepted")
+            .order_by(FirmKnowledge.id.desc()).first())
+
+
+def limit(db: Session, tenant_id: str, key: str) -> tuple[Decimal, FirmKnowledge] | None:
+    """The first number in the newest accepted value for `key`, with the row it came from.
+
+    None when nothing is accepted or the value has no number. The number was already checked against
+    its quote at extraction, so a limit with no cited source cannot reach a watcher."""
+    rows = (db.query(FirmKnowledge).filter_by(tenant_id=tenant_id, key=key, status="accepted")
+            .order_by(FirmKnowledge.id.desc()).all())
+    for r in rows:
+        m = _NUM.search(r.value)
+        if m:
+            return Decimal(m.group(0)), r
+    return None
 
 
 def coverage(db: Session, tenant_id: str) -> dict:

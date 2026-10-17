@@ -3,7 +3,16 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    false,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -123,6 +132,12 @@ class Deal(Base):
     name: Mapped[str] = mapped_column(String(128))
     stage: Mapped[str] = mapped_column(String(16), default="sourcing")
     note: Mapped[str | None] = mapped_column(Text, default=None)
+    # Set by compliance: a held deal cannot be deleted until the hold is lifted.
+    legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Material non-public information: visible only to keys scoped to this deal by name.
+    mnpi: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # Key id that flagged the deal MNPI; that key keeps access so its creator is not locked out.
+    created_by: Mapped[str | None] = mapped_column(String(64), default=None)
     updated_at: Mapped[str] = mapped_column(String(40), default="")
 
 
@@ -193,6 +208,46 @@ class DocumentSource(Base):
     url: Mapped[str] = mapped_column(Text)
 
 
+class WorkflowSchedule(Base):
+    """A recurring job (portfolio report, comps) run on a cadence; result is mailed or left in the outbox."""
+    __tablename__ = "workflow_schedule"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    kind: Mapped[str] = mapped_column(String(32))  # portfolio_report | comps
+    params: Mapped[str] = mapped_column(Text, default="{}")  # JSON
+    every_days: Mapped[int] = mapped_column(Integer)
+    recipients: Mapped[str] = mapped_column(Text, default="")  # comma separated
+    next_run: Mapped[str] = mapped_column(String(40))  # ISO UTC
+    last_run: Mapped[str | None] = mapped_column(String(40), default=None)
+    last_status: Mapped[str | None] = mapped_column(String(16), default=None)  # ok | failed
+    last_result: Mapped[str | None] = mapped_column(Text, default=None)  # JSON or error text
+    active: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class Target(Base):
+    """An acquisition / add-on candidate with its provenance. Revenue is only set when a source states it."""
+    __tablename__ = "target"
+    __table_args__ = (UniqueConstraint("tenant_id", "source", "source_ref"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(256))
+    source: Mapped[str] = mapped_column(String(32))  # sec | companies_house | manual
+    source_ref: Mapped[str] = mapped_column(String(64))  # CIK, company number, or your own key
+    source_url: Mapped[str | None] = mapped_column(Text, default=None)
+    sector: Mapped[str | None] = mapped_column(String(128), default=None, index=True)
+    sic: Mapped[str | None] = mapped_column(String(8), default=None)
+    country: Mapped[str | None] = mapped_column(String(64), default=None, index=True)
+    region: Mapped[str | None] = mapped_column(String(64), default=None)
+    lat: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), default=None)
+    lng: Mapped[Decimal | None] = mapped_column(Numeric(9, 6), default=None)
+    revenue: Mapped[Decimal | None] = mapped_column(Numeric(24, 2), default=None)
+    currency: Mapped[str | None] = mapped_column(String(8), default=None)
+    revenue_period: Mapped[str | None] = mapped_column(String(32), default=None)
+    revenue_url: Mapped[str | None] = mapped_column(Text, default=None)  # where the revenue figure is filed
+    status: Mapped[str] = mapped_column(String(16), default="new")  # new | screened | contacted | passed
+    notes: Mapped[str | None] = mapped_column(Text, default=None)
+
 class Alert(Base):
     """An inbox item written by a watcher. dedupe_key makes repeated scans idempotent."""
     __tablename__ = "alert"
@@ -207,3 +262,19 @@ class Alert(Base):
     fact_ids: Mapped[str] = mapped_column(Text, default="[]")  # JSON list of fact ids
     status: Mapped[str] = mapped_column(String(16), default="new", server_default="new")
     created_at: Mapped[str] = mapped_column(String(40), default="")
+    emailed_at: Mapped[str | None] = mapped_column(String(40), default=None)
+
+
+class Connection(Base):
+    """A saved connector setup: options, deal wall, encrypted token and an optional sync interval."""
+    __tablename__ = "connection"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    connector: Mapped[str] = mapped_column(String(32))
+    deal: Mapped[str | None] = mapped_column(String(128), default=None)
+    options: Mapped[str] = mapped_column(Text, default="{}")  # JSON of non-secret options
+    token_sealed: Mapped[str] = mapped_column(Text)
+    interval_minutes: Mapped[int | None] = mapped_column(Integer, default=None)
+    last_run: Mapped[str | None] = mapped_column(String(40), default=None)
+    last_status: Mapped[str | None] = mapped_column(Text, default=None)
+    created_by: Mapped[str] = mapped_column(String(64))

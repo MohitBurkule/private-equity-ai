@@ -142,6 +142,74 @@ def _rapidocr(path, pages, scale: float = 2.0):
         yield PageResult("rapidocr", p, [Line(ln.text, ln.bbox, "rapidocr", conf) for ln in lines], method="ocr")
 
 
+def _camelot(path, pages):
+    """Camelot stream tables (text-layer only): one line per table row, cells joined by ' | '."""
+    import camelot
+    for p in pages:
+        lines: list[Line] = []
+        try:
+            tables = camelot.read_pdf(str(path), pages=str(p), flavor="stream")
+        except Exception:  # noqa: BLE001  camelot raises on pages without tables
+            tables = []
+        for t in tables:
+            x0, y0, x1, y1 = t._bbox
+            h = t.pdf_size[1] if hasattr(t, "pdf_size") else 0
+            for row in t.df.itertuples(index=False):
+                cells = [str(c).strip() for c in row if str(c).strip()]
+                if cells:
+                    lines.append(Line(" | ".join(cells), (x0, h - y1, x1, h - y0) if h else None, "camelot"))
+        yield PageResult("camelot", p, lines)
+
+
+_marker = None
+
+
+def _marker_engine(path, pages):
+    """Marker (layout + OCR models, Apache-2.0 code; weights are separately licensed). One page per
+    conversion via page_range; text is markdown, so one line per block."""
+    global _marker
+    from marker.config.parser import ConfigParser
+    from marker.converters.pdf import PdfConverter
+    from marker.models import create_model_dict
+    if _marker is None:
+        _marker = create_model_dict()
+    for p in pages:
+        cfg = ConfigParser({"output_format": "markdown", "page_range": str(p - 1)})
+        conv = PdfConverter(config=cfg.generate_config_dict(), artifact_dict=_marker)
+        md = conv(str(path)).markdown
+        lines = [Line(x.strip(), None, "marker") for x in md.splitlines() if x.strip()]
+        yield PageResult("marker", p, lines)
+
+
+_docling = None
+
+
+def _docling_engine(path, pages):
+    """Docling (layout model + TableFormer). Tables become one line per row, cells joined by ' | '."""
+    global _docling
+    from docling.document_converter import DocumentConverter
+    _docling = _docling or DocumentConverter()
+    for p in pages:
+        doc = _docling.convert(str(path), page_range=(p, p)).document
+        lines: list[Line] = []
+        for item, _ in doc.iterate_items():
+            prov = getattr(item, "prov", None)
+            bb = None
+            if prov:
+                h = doc.pages[prov[0].page_no].size.height
+                b = prov[0].bbox
+                bb = (b.l, h - b.t, b.r, h - b.b) if b.coord_origin.name == "BOTTOMLEFT" else (b.l, b.t, b.r, b.b)
+            data = getattr(item, "data", None)
+            if data is not None and getattr(data, "grid", None):
+                for row in data.grid:
+                    cells = [c.text.strip() for c in row if c.text.strip()]
+                    if cells:
+                        lines.append(Line(" | ".join(dict.fromkeys(cells)), bb, "docling"))
+            elif getattr(item, "text", "").strip():
+                lines.append(Line(item.text.strip(), bb, "docling"))
+        yield PageResult("docling", p, lines)
+
+
 ENGINES = {
     "pdftotext": (_pdftotext, lambda: shutil.which("pdftotext") is not None),
     "pdftotext_layout": (_pdftotext_layout, lambda: shutil.which("pdftotext") is not None),
@@ -150,6 +218,9 @@ ENGINES = {
     "pdfplumber": (_pdfplumber, lambda: _has("pdfplumber")),
     "pypdf": (_pypdf, lambda: _has("pypdf")),
     "pdfium": (_pdfium, lambda: _has("pypdfium2")),
+    "camelot": (_camelot, lambda: _has("camelot")),
+    "marker": (_marker_engine, lambda: _has("marker")),
+    "docling": (_docling_engine, lambda: _has("docling")),
     "rapidocr": (_rapidocr, lambda: _has("rapidocr_onnxruntime") and _has("pypdfium2")),
 }
 

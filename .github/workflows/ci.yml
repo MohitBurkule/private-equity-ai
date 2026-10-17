@@ -67,3 +67,71 @@ jobs:
           nohup python -m uvicorn app.main:app --port 8000 > /tmp/api.log 2>&1 &
           for i in $(seq 1 30); do curl -sf localhost:8000/health && break; sleep 1; done
           python ../../scripts/smoke.py http://localhost:8000 ci-admin || { cat /tmp/api.log; exit 1; }
+  compose-e2e:
+    runs-on: ubuntu-latest
+    env: {ADMIN_TOKEN: ci-admin}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the full stack
+        run: docker compose up -d --build --wait --wait-timeout 300
+      - name: Wait for API
+        run: for i in $(seq 1 60); do curl -sf localhost:8000/health && break; sleep 2; done
+      - name: Web serves the UI
+        run: curl -sf localhost:8080/ | grep -qi "<div id"
+      - name: End-to-end smoke through the container
+        run: python3 scripts/smoke.py http://localhost:8000 ci-admin
+      - if: failure()
+        run: docker compose logs --no-color | tail -200
+      - if: always()
+        run: docker compose down -v
+  llm-local:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      LLM_PROVIDER: llamacpp
+      LLAMA_MODEL_PATH: ${{ github.workspace }}/models/gemma-2-9b-it-Q4_K_M.gguf
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: actions/cache@v4
+        with: {path: models, key: gguf-gemma-2-9b-it-q4km-v1}
+      - name: Fetch model weights (cached)
+        run: |
+          mkdir -p models
+          [ -f "$LLAMA_MODEL_PATH" ] || curl -fsSL -o "$LLAMA_MODEL_PATH" \
+            https://huggingface.co/bartowski/gemma-2-9b-it-GGUF/resolve/main/gemma-2-9b-it-Q4_K_M.gguf
+      - run: pip install -e 'apps/api[dev]' llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+      - name: Local-model evals, gated (must pass)
+        run: python evals/run_llm_eval.py > llm-eval.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: llm-eval, path: llm-eval.json}
+  chart-vlm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CHART_VLM: "1"
+      CHART_VLM_MODEL: ${{ github.workspace }}/models/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf
+      CHART_VLM_MMPROJ: ${{ github.workspace }}/models/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - uses: actions/cache@v4
+        with: {path: models, key: gguf-qwen25vl-3b-q4km-v1}
+      - name: Fetch vision model weights (cached)
+        run: |
+          mkdir -p models
+          [ -f "$CHART_VLM_MODEL" ] || curl -fsSL -o "$CHART_VLM_MODEL" \
+            https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf
+          [ -f "$CHART_VLM_MMPROJ" ] || curl -fsSL -o "$CHART_VLM_MMPROJ" \
+            https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
+      - run: pip install -e 'apps/api[dev,pdf,ocr]' matplotlib llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+      - name: Chart VLM tests, flag on (must pass)
+        working-directory: apps/api
+        run: pytest tests/test_chart_vlm.py -v -rs
+      - name: Chart VLM tests, flag off
+        working-directory: apps/api
+        env: {CHART_VLM: "0"}
+        run: pytest tests/test_chart_vlm.py -q

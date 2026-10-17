@@ -1,5 +1,7 @@
+import json
 import os
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from datetime import date as DateT
 from decimal import Decimal
 from typing import Annotated
@@ -14,16 +16,35 @@ from fastapi import (
     Response,
     UploadFile,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import agent as ag
 from app import alerts as al
+from app import companies_house as ch_mod
 from app import comps as comps_mod
 from app import firm_knowledge as fk
 from app import jobs as jobs_mod
 from app import legal as legal_mod
-from app.acl import Principal, doc_visible, fact_visible, visible_doc_ids
+from app import (
+    notify,
+    opendata_tools,  # noqa: F401  (registers open-data agent tools)
+)
+from app import outreach as outreach_mod
+from app import precedents as prec_mod
+from app import research as research_mod
+from app import seen_before as seen_mod
+from app import targets as tg_mod
+from app import workflows as wf_mod
+from app.acl import (
+    Principal,
+    deal_hidden,
+    doc_visible,
+    fact_visible,
+    hidden_deal_names,
+    visible_doc_ids,
+    visible_mnpi_deal_names,
+)
 from app.answer import answer_question
 from app.audit import log_event, verify_chain
 from app.auth import (
@@ -36,7 +57,10 @@ from app.auth import (
     revoke_key,
 )
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
+from app.connectors import oauth, vault
 from app.connectors.base import ConnectorError, default_http
+from app.connectors.linkedin import LinkedInExport
+from app.connectors.oauth import OAuthError
 from app.connectors.registry import IMPLEMENTED, catalog
 from app.connectors.sync import sync as connector_sync
 from app.db import make_engine, make_session_factory
@@ -46,6 +70,7 @@ from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
 from app.facts import CitationError, add_verified_fact, review_fact
+from app.factsxlsx import build_facts_xlsx
 from app.fundmetrics import fund_metrics
 from app.holdings import parse_holdings
 from app.ingest import finalize_upload, ingest_any
@@ -56,6 +81,7 @@ from app.models import (
     STAGES,
     AgentRun,
     Alert,
+    Connection,
     DDRequest,
     Deal,
     Document,
@@ -65,6 +91,8 @@ from app.models import (
     Holding,
     IngestJob,
     PageRow,
+    Target,
+    WorkflowSchedule,
 )
 from app.models import Tenant as TenantRow
 from app.parse.sh01 import parse_capital_form
@@ -98,6 +126,7 @@ apply_rls(_owner, os.environ.get("APP_DB_ROLE"))
 verify_app_role(engine)
 
 jobs_mod.requeue_pending(SessionLocal)
+notify.start_periodic_scan(SessionLocal)
 MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
 
 app = FastAPI(title="PE Platform API", version="0.0.1")
@@ -272,8 +301,11 @@ def admin_requeue(x_admin_token: Annotated[str | None, Header()] = None):
 
 def _own_doc(db: Session, who: Principal, doc_id: str) -> Document:
     doc = db.get(Document, doc_id)
-    if not doc_visible(doc, who):  # same 404 for "missing", "other tenant" and "behind a wall"
+    if not doc_visible(doc, who, hidden_deal_names(db, who)):  # same 404 for "missing", "other tenant", "behind a wall"
         raise HTTPException(404, "document not found")
+    if doc.deal and doc.deal in visible_mnpi_deal_names(db, who):
+        log_event(db, who.tenant, actor(who), "document.mnpi_access", {"doc_id": doc.id, "deal": doc.deal})
+        db.commit()
     return doc
 
 
@@ -311,8 +343,9 @@ def get_page(doc_id: str, number: int, db: Db, who: Who):
 
 @app.get("/documents")
 def list_documents(db: Db, who: Who):
+    hidden = hidden_deal_names(db, who)
     return [{"id": d.id, "filename": d.filename, "n_pages": d.n_pages, "deal": d.deal}
-            for d in db.query(Document).filter_by(tenant_id=who.tenant).all() if doc_visible(d, who)]
+            for d in db.query(Document).filter_by(tenant_id=who.tenant).all() if doc_visible(d, who, hidden)]
 
 
 class FactIn(BaseModel):
@@ -399,6 +432,7 @@ def fact_conflicts(db: Db, who: Who, entity: str | None = None):
     """Same entity, metric, period and basis with different values across facts. Reports only."""
     return [{"entity": c.entity, "metric": c.metric, "period": c.period, "basis": c.basis,
              "spread_pct": str(c.spread_pct.quantize(Decimal("0.01"))), "likely_rounding": c.likely_rounding,
+             "severity": c.severity, "cross_document": c.cross_document, "sources": c.sources,
              "values": [{"value": str(v), "fact_id": fid} for v, fid in c.values]}
             for c in find_conflicts(db, who.tenant, visible_doc_ids(db, who), entity)]
 
@@ -501,7 +535,7 @@ def dd_update(rid: int, body: DDUpdate, db: Db, who: Writer):
         raise HTTPException(422, f"status must be one of {STATUSES}")
     if body.document_id is not None:
         doc = db.get(Document, body.document_id)
-        if not doc_visible(doc, who):
+        if not doc_visible(doc, who, hidden_deal_names(db, who)):
             raise HTTPException(404, "document not found")
         if doc.deal != r.deal:
             raise HTTPException(422, "document belongs to a different deal")
@@ -538,18 +572,21 @@ class DealIn(BaseModel):
     name: str
     stage: str = "sourcing"
     note: str | None = None
+    mnpi: bool = False
 
 
 class DealUpdate(BaseModel):
     stage: str | None = None
     note: str | None = None
+    legal_hold: bool | None = None
+    mnpi: bool | None = None
 
 
 def _deal_out(db: Session, who: Principal, d: Deal) -> dict:
     dd = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=d.name).all()
     docs = db.query(Document).filter_by(tenant_id=who.tenant, deal=d.name).count()
     closed = sum(r.status != "open" for r in dd)
-    return {"name": d.name, "stage": d.stage, "note": d.note, "updated_at": d.updated_at,
+    return {"name": d.name, "stage": d.stage, "note": d.note, "legal_hold": d.legal_hold, "mnpi": d.mnpi, "updated_at": d.updated_at,
             "documents": docs, "dd_total": len(dd), "dd_open": len(dd) - closed}
 
 
@@ -564,7 +601,8 @@ def deal_create(body: DealIn, db: Db, who: Writer):
         raise HTTPException(422, "name required")
     if db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first():
         raise HTTPException(409, "deal already exists")
-    d = Deal(tenant_id=who.tenant, name=name, stage=body.stage, note=body.note, updated_at=_now_iso())
+    d = Deal(tenant_id=who.tenant, name=name, stage=body.stage, note=body.note, mnpi=body.mnpi,
+             created_by=who.key_id if body.mnpi else None, updated_at=_now_iso())
     db.add(d)
     db.commit()
     log_event(db, who.tenant, actor(who), "deal.create", {"name": name, "stage": d.stage})
@@ -574,24 +612,53 @@ def deal_create(body: DealIn, db: Db, who: Writer):
 @app.get("/deals")
 def deal_list(db: Db, who: Who):
     rows = db.query(Deal).filter_by(tenant_id=who.tenant).order_by(Deal.id).all()
-    return [_deal_out(db, who, d) for d in rows if _dd_scope_ok(who, d.name)]
+    shown = [d for d in rows if _dd_scope_ok(who, d.name) and not deal_hidden(d, who)]
+    mnpi_shown = [d.name for d in shown if d.mnpi]
+    if mnpi_shown:
+        log_event(db, who.tenant, actor(who), "deal.mnpi_access", {"deals": mnpi_shown, "via": "list"})
+        db.commit()
+    return [_deal_out(db, who, d) for d in shown]
 
 
 @app.patch("/deals/{name}")
 def deal_update(name: str, body: DealUpdate, db: Db, who: Writer):
     d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
-    if d is None or not _dd_scope_ok(who, name):
+    if d is None or not _dd_scope_ok(who, name) or deal_hidden(d, who):
         raise HTTPException(404, "deal not found")
+    if body.mnpi is not None:
+        d.mnpi = body.mnpi
+        if body.mnpi and d.created_by is None:
+            d.created_by = who.key_id or None
     if body.stage is not None:
         if body.stage not in STAGES:
             raise HTTPException(422, f"stage must be one of {STAGES}")
         d.stage = body.stage
     if body.note is not None:
         d.note = body.note
+    if body.legal_hold is not None:
+        d.legal_hold = body.legal_hold
     d.updated_at = _now_iso()
     db.commit()
-    log_event(db, who.tenant, actor(who), "deal.update", {"name": name, "stage": d.stage})
+    log_event(db, who.tenant, actor(who), "deal.update", {"name": name, "stage": d.stage, "legal_hold": d.legal_hold})
     return _deal_out(db, who, d)
+
+
+@app.delete("/deals/{name}")
+def deal_delete(name: str, db: Db, who: Writer):
+    d = db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first()
+    if d is None or not _dd_scope_ok(who, name) or deal_hidden(d, who):
+        raise HTTPException(404, "deal not found")
+    # Holds and linked documents are refused rather than cascaded: deleting evidence the team
+    # still relies on is the one step here that cannot be walked back.
+    if d.legal_hold:
+        raise HTTPException(409, "deal is under legal hold")
+    if db.query(Document).filter_by(tenant_id=who.tenant, deal=name).first():
+        raise HTTPException(409, "documents still linked to this deal; unlink them first")
+    removed = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=name).delete()
+    db.delete(d)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "deal.delete", {"name": name, "dd_requests_removed": removed})
+    return {"deleted": name, "dd_requests_removed": removed}
 
 
 @app.get("/memo")
@@ -772,6 +839,15 @@ async def uk_psc_extract(file: Annotated[UploadFile, File()], who: Who, companie
             found.append(asdict(rec))
     missing = sorted(want - {r["company_number"] for r in found})
     return {"records": found, "not_in_file": missing, "unreadable_lines": len(errors), "unreadable_sample": errors[:5]}
+
+
+@app.get("/facts.xlsx")
+def facts_xlsx(db: Db, who: Who, entity: str | None = None):
+    """Verified and reviewed facts as a workbook; each value cell's comment lists its sources."""
+    log_event(db, who.tenant, actor(who), "facts.export", {"entity": entity, "format": "xlsx"})
+    return Response(build_facts_xlsx(db, who.tenant, entity, visible_doc_ids(db, who)), headers={
+        "Content-Disposition": 'attachment; filename="facts.xlsx"'},
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @app.get("/memo.docx")
@@ -1103,6 +1179,26 @@ def calc_comps(body: CompsIn, db: Db, who: Who):
                          visible_doc_ids(db, who), body.target_period, body.ev_period)
 
 
+@app.post("/calc/comps.docx")
+def calc_comps_docx(body: CompsIn, db: Db, who: Who):
+    """Word note of the comps result with a source for every input."""
+    res = comps_mod.run(db, who.tenant, body.target, body.peers, body.period, body.metrics,
+                        visible_doc_ids(db, who), body.target_period, body.ev_period)
+    log_event(db, who.tenant, actor(who), "comps.export", {"format": "docx", "target": body.target})
+    return Response(comps_mod.to_docx(db, res), headers={"Content-Disposition": 'attachment; filename="comps.docx"'},
+                    media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+@app.post("/calc/comps.pptx")
+def calc_comps_pptx(body: CompsIn, db: Db, who: Who):
+    """Slide deck of the comps result; every figure cites its source line."""
+    res = comps_mod.run(db, who.tenant, body.target, body.peers, body.period, body.metrics,
+                        visible_doc_ids(db, who), body.target_period, body.ev_period)
+    log_event(db, who.tenant, actor(who), "comps.export", {"format": "pptx", "target": body.target})
+    return Response(comps_mod.to_pptx(db, res), headers={"Content-Disposition": 'attachment; filename="comps.pptx"'},
+                    media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+
+
 @app.get("/documents/{doc_id}/legal-terms")
 def legal_terms(doc_id: str, doc_type: str, db: Db, who: Who):
     """Key terms (governing law, term, caps, covenants...) as cited sentences. doc_type: nda | spa | credit."""
@@ -1114,7 +1210,279 @@ def legal_terms(doc_id: str, doc_type: str, db: Db, who: Who):
         raise HTTPException(422, str(e)) from e
     for f in out["findings"]:
         f["document_id"] = doc_id
+    out["red_flags"] = legal_mod.red_flags(out)
     return out
+
+
+@app.get("/precedents/summary")
+def precedents_summary(db: Db, who: Who, document_ids: str):
+    """Stated EV and multiples across deal documents (comma-separated ids), with page and quote per input."""
+    ids = [x for x in document_ids.split(",") if x][:200]
+    if not ids:
+        raise HTTPException(422, "document_ids required")
+    deals = []
+    for doc_id in ids:
+        _own_doc(db, who, doc_id)
+        pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc_id).order_by(PageRow.number)]
+        deals.append({"name": doc_id, "document_id": doc_id, "terms": prec_mod.extract(pages)})
+    return {"deals": deals, "stats": prec_mod.summarise(deals)}
+
+
+class WorkflowIn(BaseModel):
+    name: str
+    kind: str
+    every_days: int
+    params: dict = {}
+    recipients: list[str] = []
+
+
+def _wf_out(w) -> dict:
+    return {"id": w.id, "name": w.name, "kind": w.kind, "every_days": w.every_days, "next_run": w.next_run,
+            "last_run": w.last_run, "last_status": w.last_status, "active": bool(w.active)}
+
+
+@app.post("/workflows", status_code=201)
+def workflow_create(body: WorkflowIn, db: Db, who: Writer):
+    if body.kind == "alert_digest" and who.restricted:
+        raise HTTPException(403, "alert digests cover the whole tenant; use an unrestricted key")
+    try:
+        w = wf_mod.create(db, who.tenant, body.name, body.kind, body.every_days, body.params, body.recipients)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    log_event(db, who.tenant, actor(who), "workflow.create", {"id": w.id, "kind": w.kind})
+    return _wf_out(w)
+
+
+@app.get("/workflows")
+def workflow_list(db: Db, who: Who):
+    return [_wf_out(w) for w in db.query(WorkflowSchedule).filter_by(tenant_id=who.tenant).order_by(WorkflowSchedule.id)]
+
+
+@app.get("/workflows/{wid}/last")
+def workflow_last(wid: int, db: Db, who: Who):
+    w = db.get(WorkflowSchedule, wid)
+    if w is None or w.tenant_id != who.tenant:
+        raise HTTPException(404, "workflow not found")
+    return {**_wf_out(w), "last_result": w.last_result}
+
+
+@app.delete("/workflows/{wid}")
+def workflow_delete(wid: int, db: Db, who: Writer):
+    w = db.get(WorkflowSchedule, wid)
+    if w is None or w.tenant_id != who.tenant:
+        raise HTTPException(404, "workflow not found")
+    w.active = 0
+    db.commit()
+    log_event(db, who.tenant, actor(who), "workflow.delete", {"id": wid})
+    return {"id": wid, "active": False}
+
+
+@app.post("/workflows/run-due")
+def workflow_run_due(db: Db, who: Writer):
+    """Run every due schedule of this tenant now. Call from cron; emails when SMTP_HOST is set."""
+    runs = wf_mod.run_due(db, who.tenant, visible_doc_ids(db, who), wf_mod.smtp_mailer())
+    log_event(db, who.tenant, actor(who), "workflow.run_due", {"ran": len(runs)})
+    return runs
+
+
+class TargetBody(BaseModel):
+    name: str
+    source: str = "manual"
+    source_ref: str
+    source_url: str | None = None
+    sector: str | None = None
+    sic: str | None = None
+    country: str | None = None
+    region: str | None = None
+    lat: Decimal | None = None
+    lng: Decimal | None = None
+    revenue: Decimal | None = None
+    currency: str | None = None
+    revenue_period: str | None = None
+    revenue_url: str | None = None
+
+
+class SecImport(BaseModel):
+    submissions: dict
+    companyfacts: dict | None = None
+
+
+class ChImport(BaseModel):
+    csv_text: str
+
+
+class ChNumbersImport(BaseModel):
+    numbers: list[str] = Field(min_length=1, max_length=200)
+
+
+class Screen(BaseModel):
+    sectors: list[str] = []
+    countries: list[str] = []
+    min_revenue: Decimal | None = None
+    max_revenue: Decimal | None = None
+    limit: int = 200
+
+
+@app.post("/targets", status_code=201)
+def targets_add(body: list[TargetBody], db: Db, who: Writer):
+    if not 0 < len(body) <= 500:
+        raise HTTPException(422, "send 1 to 500 targets")
+    if any(t.revenue is not None and not (t.revenue_url or t.source_url) for t in body):
+        raise HTTPException(422, "revenue needs a revenue_url or source_url")
+    new, upd = tg_mod.upsert(db, who.tenant, [tg_mod.TargetIn(**t.model_dump()) for t in body])
+    log_event(db, who.tenant, actor(who), "target.upsert", {"new": new, "updated": upd})
+    return {"new": new, "updated": upd}
+
+
+@app.post("/targets/import/sec", status_code=201)
+def targets_import_sec(body: SecImport, db: Db, who: Writer):
+    try:
+        t = tg_mod.sec_target(body.submissions, body.companyfacts)
+    except (KeyError, ValueError) as e:
+        raise HTTPException(422, f"not a SEC submissions document: {e}") from e
+    new, upd = tg_mod.upsert(db, who.tenant, [t])
+    return {"new": new, "updated": upd, "revenue_found": t.revenue is not None}
+
+
+@app.post("/targets/import/companies-house", status_code=201)
+def targets_import_ch(body: ChImport, db: Db, who: Writer):
+    items = tg_mod.ch_targets(body.csv_text)[:5000]
+    new, upd = tg_mod.upsert(db, who.tenant, items)
+    return {"new": new, "updated": upd}
+
+
+@app.post("/targets/import/companies-house/numbers", status_code=201)
+def targets_import_ch_numbers(body: ChNumbersImport, db: Db, who: Writer):
+    """Live lookup per number: CH_API_KEY when set, else the keyless public page. Each row keeps its
+    source link, so a target can always be traced back to the Companies House page it came from."""
+    items, skipped = ch_mod.company_numbers_to_targets(body.numbers)
+    new, upd = tg_mod.upsert(db, who.tenant, items)
+    return {"new": new, "updated": upd, "skipped": skipped}
+
+
+def _target_query(db, tenant, sector, country, min_revenue, max_revenue, q, status):
+    qs = db.query(Target).filter(Target.tenant_id == tenant)
+    if sector:
+        qs = qs.filter(Target.sector.ilike(f"%{sector}%"))
+    if country:
+        qs = qs.filter(Target.country == country)
+    if min_revenue is not None:
+        qs = qs.filter(Target.revenue >= min_revenue)
+    if max_revenue is not None:
+        qs = qs.filter(Target.revenue <= max_revenue)
+    if q:
+        qs = qs.filter(Target.name.ilike(f"%{q}%"))
+    if status:
+        qs = qs.filter(Target.status == status)
+    return qs
+
+
+@app.get("/targets")
+def targets_list(db: Db, who: Who, sector: str | None = None, country: str | None = None,
+                 min_revenue: Decimal | None = None, max_revenue: Decimal | None = None,
+                 q: str | None = None, status: str | None = None, limit: int = 100, offset: int = 0):
+    """Filterable target list for the map and table. Revenue filters exclude targets with unknown revenue."""
+    qs = _target_query(db, who.tenant, sector, country, min_revenue, max_revenue, q, status)
+    total = qs.count()
+    rows = qs.order_by(Target.id).offset(max(offset, 0)).limit(min(max(limit, 1), 1000)).all()
+    return {"total": total, "items": [tg_mod.to_dict(t) for t in rows]}
+
+
+@app.get("/targets/facets")
+def targets_facets(db: Db, who: Who):
+    """Counts for the filter panel and map: by sector, country, status, plus how many have no revenue."""
+    from sqlalchemy import func
+    out = {}
+    for name, col in (("sector", Target.sector), ("country", Target.country), ("status", Target.status)):
+        rows = (db.query(col, func.count()).filter(Target.tenant_id == who.tenant).group_by(col)
+                .order_by(func.count().desc()).all())
+        out[name] = [{"value": v, "count": n} for v, n in rows]
+    out["total"] = db.query(Target).filter_by(tenant_id=who.tenant).count()
+    out["revenue_unknown"] = db.query(Target).filter(Target.tenant_id == who.tenant, Target.revenue.is_(None)).count()
+    return out
+
+
+@app.get("/targets/{tid}/research.docx")
+def target_research(tid: int, db: Db, who: Who):
+    """Research note for one target: identity, revenue with filing link, sector benchmark, prior mentions, sources."""
+    t = db.get(Target, tid)
+    if t is None or t.tenant_id != who.tenant:
+        raise HTTPException(404, "target not found")
+    log_event(db, who.tenant, actor(who), "target.research_export", {"id": tid})
+    return Response(research_mod.build_docx(db, who.tenant, t, None if who.deals is None else set(who.deals)),
+                    headers={"Content-Disposition": f'attachment; filename="research-{tid}.docx"'},
+                    media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+@app.get("/seen-before")
+def seen_before(q: str, db: Db, who: Who):
+    """Have we seen this company or deal before? Searches targets, portfolio companies and deals you can see."""
+    if len(q.strip()) < 2:
+        raise HTTPException(422, "query must be at least 2 characters")
+    return seen_mod.lookup(db, who.tenant, q, None if who.deals is None else set(who.deals))
+
+
+@app.get("/targets/benchmark")
+def targets_benchmark(db: Db, who: Who, sector: str | None = None, target_id: int | None = None):
+    """Revenue median and quartiles for a sector, and where one target sits. Excludes targets with no revenue."""
+    t = None
+    if target_id is not None:
+        t = db.get(Target, target_id)
+        if t is None or t.tenant_id != who.tenant:
+            raise HTTPException(404, "target not found")
+    return tg_mod.benchmark(db, who.tenant, sector, t)
+
+
+@app.post("/targets/screen")
+def targets_screen(body: Screen, db: Db, who: Who):
+    """Apply strategy criteria. verdict: match | review (some criterion unknown) | fail. Failures are omitted."""
+    c = tg_mod.Criteria(body.sectors, body.countries, body.min_revenue, body.max_revenue)
+    out = []
+    for t in db.query(Target).filter_by(tenant_id=who.tenant).order_by(Target.id).all():
+        e = tg_mod.evaluate(t, c)
+        if e["verdict"] != "fail":
+            out.append({**tg_mod.to_dict(t), **e})
+    out.sort(key=lambda r: r["verdict"] != "match")
+    return {"matches": sum(r["verdict"] == "match" for r in out), "review": sum(r["verdict"] == "review" for r in out),
+            "items": out[:min(max(body.limit, 1), 1000)]}
+
+
+class OutreachIn(BaseModel):
+    target_ids: list[int]
+    sender: str
+    firm: str
+    thesis: str | None = None
+
+
+@app.post("/targets/outreach")
+def targets_outreach(body: OutreachIn, db: Db, who: Writer):
+    """Mail-merge drafts for chosen targets. Nothing is sent; revenue is quoted only with its filing link."""
+    if not 0 < len(body.target_ids) <= 200:
+        raise HTTPException(422, "send 1 to 200 target ids")
+    rows = db.query(Target).filter(Target.tenant_id == who.tenant, Target.id.in_(body.target_ids)).all()
+    missing = sorted(set(body.target_ids) - {t.id for t in rows})
+    if missing:
+        raise HTTPException(404, f"targets not found: {missing}")
+    log_event(db, who.tenant, actor(who), "target.outreach_draft", {"count": len(rows)})
+    return [outreach_mod.draft(t, body.sender, body.firm, body.thesis) for t in rows]
+
+
+class TargetStatus(BaseModel):
+    status: str
+    notes: str | None = None
+
+
+@app.patch("/targets/{tid}")
+def targets_update(tid: int, body: TargetStatus, db: Db, who: Writer):
+    if body.status not in ("new", "screened", "contacted", "passed"):
+        raise HTTPException(422, "status must be new, screened, contacted or passed")
+    t = db.get(Target, tid)
+    if t is None or t.tenant_id != who.tenant:
+        raise HTTPException(404, "target not found")
+    t.status, t.notes = body.status, body.notes if body.notes is not None else t.notes
+    db.commit()
+    log_event(db, who.tenant, actor(who), "target.status", {"id": tid, "status": body.status})
+    return tg_mod.to_dict(t)
 
 
 @app.get("/portfolio/report")
@@ -1321,10 +1689,18 @@ def agent_run(body: AgentIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_d
     return ag.run_dict(r)
 
 
-@app.post("/agent/workflows/{name}/run")
-def agent_workflow_run(name: str, body: WorkflowIn, db: Db, who: Who):
+def optional_llm_dependency():
     try:
-        r = ag.run_workflow(ag.Ctx(db, who, _optional_llm(), allow_writes=who.can_write), name, body.inputs)
+        return get_llm()
+    except NoLLMConfigured:
+        return None
+
+
+@app.post("/agent/workflows/{name}/run")
+def agent_workflow_run(name: str, body: WorkflowIn, db: Db, who: Who,
+                       llm: Annotated[LLM | None, Depends(optional_llm_dependency)]):
+    try:
+        r = ag.run_workflow(ag.Ctx(db, who, llm, allow_writes=who.can_write), name, body.inputs)
     except ag.ToolError as e:
         raise HTTPException(422 if "unknown workflow" not in str(e) else 404, str(e)) from e
     log_event(db, who.tenant, actor(who), "agent.workflow", {"run_id": r.id, "name": name, "status": r.status})
@@ -1337,12 +1713,6 @@ def agent_runs(db: Db, who: Who, limit: int = 20):
             .limit(max(1, min(limit, 100))).all())
     return [ag.run_dict(r) for r in rows]
 
-
-def _optional_llm():
-    try:
-        return get_llm()
-    except NoLLMConfigured:
-        return None
 
 
 CONNECTOR_HTTP = default_http  # tests replace this with recorded responses
@@ -1423,3 +1793,186 @@ def alerts_status(alert_id: int, body: AlertStatusIn, db: Db, who: Writer):
     if a is None:
         raise HTTPException(404, "not found")
     return al.alert_dict(a)
+
+
+class DigestIn(BaseModel):
+    to: list[str]
+
+
+@app.post("/alerts/digest")
+def alerts_digest(body: DigestIn, db: Db, who: Writer):
+    """Email the alerts that have not been emailed yet to the given addresses."""
+    _unrestricted(who)
+    try:
+        n = notify.send_digest(db, who.tenant, body.to)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except notify.MailNotConfigured as e:
+        raise HTTPException(503, str(e)) from e
+    except OSError as e:
+        raise HTTPException(502, f"mail server error: {e}") from e
+    log_event(db, who.tenant, actor(who), "alerts.digest", {"sent": n, "recipients": len(body.to)})
+    return {"sent": n}
+
+
+class ConnectionBody(BaseModel):
+    connector: str
+    token: str
+    deal: str | None = None
+    options: dict[str, str] = {}
+    interval_minutes: int | None = None  # None = manual only
+
+
+def _oauth_access_token(row: Connection) -> str:
+    """Trade the stored refresh token for an access token. Providers may rotate the refresh token,
+    so a new one is re-sealed onto the row (the caller commits)."""
+    tok = oauth.refresh(oauth.config_for(row.connector), vault.unseal(row.token_sealed), CONNECTOR_HTTP)
+    if tok.get("refresh_token"):
+        row.token_sealed = vault.seal(tok["refresh_token"])
+    return tok["access_token"]
+
+
+def _run_connection(db: Session, who: Principal, row: Connection) -> dict:
+    cls = IMPLEMENTED[row.connector]
+    try:
+        opts = json.loads(row.options)
+        token = _oauth_access_token(row) if opts.pop("auth", None) == "oauth" else vault.unseal(row.token_sealed)
+        conn = cls(token, CONNECTOR_HTTP, **opts)
+        out = connector_sync(db, who, conn, row.deal)
+        row.last_status = f"ok: {len(out['ingested'])} new, {out['unchanged']} unchanged"
+    except (ConnectorError, vault.VaultError, ValueError, OSError, PermissionError) as e:
+        out = {"error": str(e)}
+        row.last_status = f"error: {e}"
+    row.last_run = _now_iso()
+    db.commit()
+    return out
+
+
+@app.post("/connections", status_code=201)
+def create_connection(body: ConnectionBody, db: Db, who: Writer):
+    if body.connector not in IMPLEMENTED:
+        raise HTTPException(404, "connector not implemented")
+    deal = (body.deal or "").strip() or None
+    if who.restricted and deal not in who.deals:
+        raise HTTPException(403, "deal is required and must be within this key's scope")
+    if body.interval_minutes is not None and body.interval_minutes < 5:
+        raise HTTPException(422, "interval_minutes must be at least 5")
+    try:
+        sealed = vault.seal(body.token)
+    except vault.VaultError as e:
+        raise HTTPException(503, str(e)) from e
+    row = Connection(tenant_id=who.tenant, connector=body.connector, deal=deal, options=json.dumps(body.options),
+                     token_sealed=sealed, interval_minutes=body.interval_minutes, created_by=actor(who))
+    db.add(row)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "connection.create", {"id": row.id, "connector": body.connector, "deal": deal})
+    return {"id": row.id, "connector": row.connector, "deal": row.deal, "interval_minutes": row.interval_minutes}
+
+
+def _visible_connections(db: Session, who: Principal):
+    q = db.query(Connection).filter_by(tenant_id=who.tenant)
+    rows = q.order_by(Connection.id).all()
+    return [r for r in rows if not who.restricted or r.deal in who.deals]  # walled keys see only their deals
+
+
+@app.get("/connections")
+def list_connections(db: Db, who: Who):
+    return [{"id": r.id, "connector": r.connector, "deal": r.deal, "interval_minutes": r.interval_minutes,
+             "last_run": r.last_run, "last_status": r.last_status} for r in _visible_connections(db, who)]
+
+
+@app.post("/connections/{cid}/sync")
+def sync_saved_connection(cid: int, db: Db, who: Writer):
+    row = next((r for r in _visible_connections(db, who) if r.id == cid), None)
+    if row is None:
+        raise HTTPException(404, "connection not found")
+    out = _run_connection(db, who, row)
+    if "error" in out:
+        raise HTTPException(502, f"connector failed: {out['error']}")
+    return out
+
+
+@app.post("/connections/run-due")
+def run_due_connections(db: Db, who: Writer):
+    """Cron entry point: run every visible connection whose interval has elapsed. Call it every few minutes."""
+    now = datetime.now(UTC)
+    ran = []
+    for r in _visible_connections(db, who):
+        if r.interval_minutes is None:
+            continue
+        if r.last_run and now - datetime.fromisoformat(r.last_run) < timedelta(minutes=r.interval_minutes):
+            continue
+        _run_connection(db, who, r)
+        ran.append({"id": r.id, "status": r.last_status})
+    return {"ran": ran}
+
+
+@app.post("/connectors/linkedin/import")
+async def import_linkedin(file: Annotated[UploadFile, File()], db: Db, who: Writer,
+                          deal: Annotated[str | None, Form()] = None):
+    """Upload the zip from LinkedIn's data export. Same deal wall and source records as token syncs."""
+    deal = (deal or "").strip() or None
+    if who.restricted and deal not in who.deals:
+        raise HTTPException(403, "deal is required and must be within this key's scope")
+    data = await file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
+    try:
+        out = connector_sync(db, who, LinkedInExport(data), deal)
+    except ConnectorError as e:
+        raise HTTPException(422, str(e)) from e
+    log_event(db, who.tenant, actor(who), "connector.sync",
+              {"connector": "linkedin", "deal": deal, "ingested": len(out["ingested"])})
+    return out
+
+
+class OAuthStartBody(BaseModel):
+    deal: str | None = None
+    interval_minutes: int | None = None
+    options: dict[str, str] = {}
+
+
+@app.post("/oauth/{name}/start")
+def oauth_start(name: str, body: OAuthStartBody, db: Db, who: Writer):
+    """Returns the provider's consent URL. The signed state carries the tenant, key, deal wall and options,
+    so the callback needs no bearer token."""
+    if name not in IMPLEMENTED:
+        raise HTTPException(404, "connector not implemented")
+    deal = (body.deal or "").strip() or None
+    if who.restricted and deal not in who.deals:
+        raise HTTPException(403, "deal is required and must be within this key's scope")
+    if body.interval_minutes is not None and body.interval_minutes < 5:
+        raise HTTPException(422, "interval_minutes must be at least 5")
+    try:
+        state = oauth.sign_state({"tenant": who.tenant, "key": actor(who), "connector": name, "deal": deal,
+                                  "interval": body.interval_minutes, "options": body.options})
+        url = oauth.authorize_url(oauth.config_for(name), oauth.redirect_uri(name), state)
+    except OAuthError as e:
+        raise HTTPException(503, str(e)) from e
+    return {"authorize_url": url}
+
+
+@app.get("/oauth/{name}/callback", status_code=201)
+def oauth_callback(name: str, code: str, state: str, db: Db):
+    try:
+        claims = oauth.verify_state(state)
+        if claims.get("connector") != name:
+            raise OAuthError("state was issued for another connector")
+        tok = oauth.exchange_code(oauth.config_for(name), code, oauth.redirect_uri(name), CONNECTOR_HTTP)
+    except OAuthError as e:
+        raise HTTPException(400, str(e)) from e
+    if not tok.get("refresh_token"):
+        raise HTTPException(400, "provider returned no refresh token; consent must grant offline access")
+    try:
+        sealed = vault.seal(tok["refresh_token"])
+    except vault.VaultError as e:
+        raise HTTPException(503, str(e)) from e
+    bind_tenant(db, claims["tenant"])  # no bearer token on this route: the signed state names the tenant
+    row = Connection(tenant_id=claims["tenant"], connector=name, deal=claims.get("deal"),
+                     options=json.dumps(dict(claims.get("options", {}), auth="oauth")), token_sealed=sealed,
+                     interval_minutes=claims.get("interval"), created_by=claims["key"])
+    db.add(row)
+    db.commit()
+    log_event(db, claims["tenant"], claims["key"], "connection.create",
+              {"id": row.id, "connector": name, "deal": row.deal, "auth": "oauth"})
+    return {"id": row.id, "connector": name, "deal": row.deal, "interval_minutes": row.interval_minutes}

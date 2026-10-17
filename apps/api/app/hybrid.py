@@ -72,3 +72,50 @@ class HybridIndex:
         lists = [self.bm25.search(query, depth, doc_ids)]
         lists += [r.search(query, depth, doc_ids) for r in self.rankers]
         return rrf(lists, k)
+
+
+class DenseRanker:
+    """Dense retrieval with a small open ONNX embedding model (fastembed, no torch, no API key).
+
+    Pages are embedded once at construction; scope is applied before ranking. Needs the `dense`
+    extra and the model weights from Hugging Face on first use (cached afterwards).
+    """
+
+    def __init__(self, pages: list[tuple[str, int, str]], model: str = "BAAI/bge-small-en-v1.5"):
+        import numpy as np
+        from fastembed import (
+            TextEmbedding,  # lazy: only required when dense retrieval is used
+        )
+        self.np = np
+        self.model = TextEmbedding(model)
+        self.keys = [(d, p) for d, p, _ in pages]
+        self.vecs = np.array(list(self.model.embed([t[:4000] for _, _, t in pages])), dtype="float32")
+
+    def search(self, query: str, k: int, doc_ids: set[str] | None) -> list[Hit]:
+        q = next(iter(self.model.query_embed(query)))
+        sims = self.vecs @ q  # bge vectors are unit length
+        order = self.np.argsort(-sims)
+        out: list[Hit] = []
+        for i in order:
+            d, p = self.keys[i]
+            if doc_ids is None or d in doc_ids:
+                out.append(Hit(d, p, float(sims[i])))
+                if len(out) == k:
+                    break
+        return out
+
+
+class CrossEncoderReranker:
+    """Rescore the top fused candidates with a small cross-encoder (fastembed, ONNX)."""
+
+    def __init__(self, pages: list[tuple[str, int, str]], model: str = "Xenova/ms-marco-MiniLM-L-6-v2"):
+        from fastembed.rerank.cross_encoder import TextCrossEncoder
+        self.model = TextCrossEncoder(model)
+        self.text = {(d, p): t for d, p, t in pages}
+
+    def rerank(self, query: str, hits: list[Hit], k: int) -> list[Hit]:
+        if not hits:
+            return []
+        scores = list(self.model.rerank(query, [self.text[(h.doc_id, h.page)][:3000] for h in hits]))
+        ranked = sorted(zip(hits, scores), key=lambda x: -x[1])
+        return [Hit(h.doc_id, h.page, float(s)) for h, s in ranked[:k]]

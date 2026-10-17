@@ -135,3 +135,80 @@ def run(db: Session, tenant: str, target: str, entities: list[str], period: str,
 
 
 __all__ = ["Fact", "implied_range", "multiple", "run", "stats"]
+
+
+def _cite(db: Session, fact_id: int | None) -> str:
+    f = db.get(Fact, fact_id) if fact_id else None
+    if f is None or not f.sources:
+        return "no source"
+    return "; ".join(f"doc {s.document_id[:8]} p.{s.page}" for s in f.sources)
+
+
+def to_docx(db: Session, result: dict) -> bytes:
+    """Valuation-range note from a `run` result. Every multiple lists the facts behind it; ranges say when absent."""
+    import io
+
+    from docx import Document as Docx
+    d = Docx()
+    d.add_heading(f"Comparable companies: {result['target']} ({result['period']})", level=1)
+    d.add_paragraph("DRAFT. Multiples are computed in code from verified, cited facts. Peers with a missing or "
+                    "non-positive input are shown as not meaningful and excluded from the statistics.")
+    d.add_heading("Implied valuation", level=2)
+    for im in result["implied"]:
+        if im.get("mid"):
+            d.add_paragraph(f"{im['multiple']}: {im['low']} to {im['high']} {im.get('unit') or ''} "
+                            f"(median-based {im['mid']}); target input: {_cite(db, im.get('target_fact_id'))}",
+                            style="List Bullet")
+        else:
+            d.add_paragraph(f"{im['multiple']}: no range ({im.get('note') or 'insufficient data'})",
+                            style="List Bullet")
+    d.add_heading("Peers", level=2)
+    for p in result["peers"]:
+        parts = []
+        for m, v in p["multiples"].items():
+            parts.append(f"EV/{m} {v}" if v else f"EV/{m} n.m. ({p['nm'].get(m, 'unavailable')})")
+        srcs = ", ".join(f"{k}: {_cite(db, fid)}" for k, fid in p["facts"].items())
+        d.add_paragraph(f"{p['entity']}: " + "; ".join(parts) + (f" [{srcs}]" if srcs else ""),
+                        style="List Bullet")
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+
+def to_pptx(db: Session, result: dict) -> bytes:
+    """One slide per topic: implied ranges, then peer multiples. Each figure carries its source line."""
+    import io
+
+    from pptx import Presentation
+    from pptx.util import Pt
+
+    prs = Presentation()
+    s = prs.slides.add_slide(prs.slide_layouts[0])
+    s.shapes.title.text = f"Comparable companies: {result['target']}"
+    s.placeholders[1].text = f"{result['period']} · DRAFT · every multiple computed from cited facts"
+
+    s = prs.slides.add_slide(prs.slide_layouts[1])
+    s.shapes.title.text = "Implied valuation"
+    tf = s.placeholders[1].text_frame
+    tf.clear()
+    for i, im in enumerate(result["implied"]):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        if im.get("mid"):
+            p.text = f"{im['multiple']}: {im['low']} to {im['high']} (median {im['mid']}) · {_cite(db, im.get('target_fact_id'))}"
+        else:
+            p.text = f"{im['multiple']}: no range ({im.get('note') or 'insufficient data'})"
+        p.font.size = Pt(16)
+
+    s = prs.slides.add_slide(prs.slide_layouts[1])
+    s.shapes.title.text = "Peers"
+    tf = s.placeholders[1].text_frame
+    tf.clear()
+    for i, p_row in enumerate(result["peers"]):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        parts = [f"EV/{m} {v}" if v else f"EV/{m} n.m. ({p_row['nm'].get(m, 'unavailable')})"
+                 for m, v in p_row["multiples"].items()]
+        p.text = f"{p_row['entity']}: " + "; ".join(parts)
+        p.font.size = Pt(14)
+    buf = io.BytesIO()
+    prs.save(buf)
+    return buf.getvalue()

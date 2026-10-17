@@ -1,4 +1,4 @@
-export interface DocumentInfo { id: string; filename: string; n_pages: number }
+export interface DocumentInfo { id: string; filename: string; n_pages: number; deal?: string | null }
 export interface Hit { document_id: string; page: number; score: number; snippet: string }
 export interface Claim { text: string; document_id: string; page: number; quote: string; reason?: string }
 export interface AskResult { status: string; detail: string; claims: Claim[]; rejected: Claim[] }
@@ -58,6 +58,8 @@ export interface AgentRunOut {
 export interface WorkflowInfo { name: string; description: string; inputs: Record<string, string>; steps: { id: string; tool: string }[] }
 export interface FirmRow { id: number; key: string; value: string; status: string; source: { document_id: string; page: number; quote: string } }
 export interface FirmOut { profile: Record<string, FirmRow[]>; coverage: { known: number; total: number; missing: string[] } }
+export interface DDSummary { total: number; closed: number; pct_complete: number | null; by_category: Record<string, { open: number; received: number; waived: number }> }
+export interface LegalOut { doc_type: string; absent: string[]; findings: { term: string; value: string; page: number; quote: string; needs_review: boolean; document_id: string }[] }
 export interface Report {
   breaches: Breach[];
   companies: { id: number; name: string; kpis: { metric: string; period: string; value: string; unit: string; sources: { document_id: string; page: number }[] }[] }[];
@@ -72,7 +74,27 @@ async function call<T>(path: string, method = "GET", body?: unknown): Promise<T>
   return j<T>(r);
 }
 
+export type Target = {
+  id: number; name: string; source: string; source_ref: string; source_url: string | null;
+  sector: string | null; country: string | null; region: string | null; lat: string | null; lng: string | null;
+  revenue: string | null; currency: string | null; revenue_period: string | null; revenue_url: string | null; status: string;
+};
+export type TargetBenchmark = {
+  sector: string | null; peers: number; excluded_no_revenue: number; median: string | null; q1: string | null; q3: string | null;
+  target?: { id: number; name: string; revenue: string; percentile: number };
+};
+export type TargetFilter = { sector?: string; country?: string; min_revenue?: string; max_revenue?: string; q?: string };
+export type Facets = { sector: { value: string | null; count: number }[]; country: { value: string | null; count: number }[]; total: number; revenue_unknown: number };
+
 export const api2 = {
+  targets: (f: TargetFilter) => {
+    const p = new URLSearchParams({ limit: "1000" });
+    Object.entries(f).forEach(([k, v]) => v && p.set(k, v));
+    return call<{ total: number; items: Target[] }>(`/targets?${p}`);
+  },
+  targetBenchmark: (targetId: number, sector: string) =>
+    call<TargetBenchmark>(`/targets/benchmark?target_id=${targetId}&sector=${encodeURIComponent(sector)}`),
+  targetFacets: () => call<Facets>("/targets/facets"),
   facts: (status?: string) => call<FactRow[]>(`/facts${status ? `?status=${status}` : ""}`),
   review: (id: number, action: "accept" | "reject", note?: string) => call<FactRow>(`/facts/${id}/review`, "POST", { action, note }),
   deals: () => call<DealRow[]>("/deals"),
@@ -92,6 +114,8 @@ export const api2 = {
   firm: () => call<FirmOut>("/firm-knowledge?include_pending=true"),
   firmTerms: () => call<{ key: string; group: string; label: string; hint: string }[]>("/firm-knowledge/terms"),
   firmReview: (id: number, status: string) => call<unknown>(`/firm-knowledge/${id}/review`, "POST", { status }),
+  ddSummary: (deal: string) => call<DDSummary>(`/dd/summary?deal=${encodeURIComponent(deal)}`),
+  legalTerms: (docId: string, docType: string) => call<LegalOut>(`/documents/${docId}/legal-terms?doc_type=${docType}`),
   conflicts: () => call<Conflict[]>("/facts/conflicts"),
   evals: () => call<EvalRunRow[]>("/evals?limit=200"),
 };

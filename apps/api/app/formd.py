@@ -12,7 +12,7 @@ import io
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
 Fetch = Callable[[str], bytes]
@@ -44,7 +44,7 @@ def _amt(v: str) -> Decimal | None:
 
 def _date(v: str) -> str:
     try:
-        return datetime.strptime(v.strip().title(), "%d-%b-%Y").date().isoformat()
+        return datetime.strptime(v.strip().title(), "%d-%b-%Y").replace(tzinfo=UTC).date().isoformat()
     except ValueError:
         return v.strip()
 
