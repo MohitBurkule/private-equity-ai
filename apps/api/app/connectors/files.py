@@ -67,21 +67,38 @@ class Box(Connector):
     """opts: folder=<folder id> (default 0 = root)."""
     name, label = "box", "Box"
 
+    def _collaborators(self, kind: str, oid: str) -> set[str]:
+        """Who Box lets into this file or folder: a user's login, or "group:{id}" for a group. A share by link names
+        nobody, so it is left out and the item fails closed for everyone not named."""
+        rows = self._get_json(f"https://api.box.com/2.0/{kind}/{oid}/collaborations?fields=accessible_by").get("entries", [])
+        out = set()
+        for r in rows:
+            who = r.get("accessible_by") or {}
+            if who.get("type") == "user" and who.get("login"):
+                out.add(who["login"])
+            elif who.get("type") == "group" and who.get("id"):
+                out.add(f"group:{who['id']}")
+        return out
+
     def items(self, limit: int = 50):
-        stack, n = [(self.opts.get("folder", "0"), "")], 0
+        # Each entry carries the access granted on the folders above it. Box inherits folder collaborations down the
+        # tree, so a file is reachable by anyone shared on any ancestor folder as well as on the file itself.
+        stack, n = [(self.opts.get("folder", "0"), "", frozenset())], 0
         while stack and n < limit:
-            fid, prefix = stack.pop()
+            fid, prefix, inherited = stack.pop()
+            folder_acl = inherited | frozenset(self._collaborators("folders", fid)) if fid != "0" else inherited
             offset = 0
             while n < limit:
                 page = self._get_json(f"https://api.box.com/2.0/folders/{fid}/items?limit=100&offset={offset}&fields=id,name,type,modified_at,etag")
                 rows = page.get("entries", [])
                 for e in rows:
                     if e["type"] == "folder":
-                        stack.append((e["id"], f"{prefix}{e['name']}/"))
+                        stack.append((e["id"], f"{prefix}{e['name']}/", folder_acl))
                     elif e["type"] == "file" and n < limit:
                         data = self.http(f"https://api.box.com/2.0/files/{e['id']}/content", {"Authorization": f"Bearer {self.token}"})
+                        acl = folder_acl | frozenset(self._collaborators("files", e["id"]))
                         yield Item(e["id"], f"{prefix}{e['name']}", data, f"https://app.box.com/file/{e['id']}",
-                                   e.get("etag") or e.get("modified_at", ""))
+                                   e.get("etag") or e.get("modified_at", ""), acl=tuple(sorted(acl)))
                         n += 1
                 offset += len(rows)
                 if not rows or offset >= page.get("total_count", 0):

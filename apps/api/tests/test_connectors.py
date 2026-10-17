@@ -114,6 +114,7 @@ def test_box_and_dropbox_paths():
     from app.connectors.files import Box, Dropbox
     plain = eml("b", "x")
     box = fake({"https://api.box.com/2.0/folders/0/items": {"total_count": 1, "entries": [{"id": "9", "name": "a.eml", "type": "file", "etag": "3"}]},
+                "https://api.box.com/2.0/files/9/collaborations": {"entries": []},
                 "https://api.box.com/2.0/files/9/content": plain})
     it = list(Box("tok", box).items())
     assert it[0].url == "https://app.box.com/file/9" and it[0].version == "3"
