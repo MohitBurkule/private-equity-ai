@@ -106,6 +106,19 @@ export interface Connector {
   name: string; label: string; category: string; auth: string; status: "live" | "planned"; state: ConnectorState; detail: string;
   health?: ConnectorHealth; last_run?: string | null; last_status?: string | null;
 }
+/** A computed figure with every input's citation. Withheld (ok false) names what is missing; never a guess. */
+export interface QoeCalc {
+  name: string; entity: string; ok: boolean; value: string | null; unit: string | null; formula: string;
+  missing: string[]; problems: string[];
+  inputs: { role: string; sign: number; fact_id: number; metric: string; period: string; value: string; unit: string;
+    sources: { document_id: string; page: number; locator: string; quote: string }[] }[];
+  one_off_flags?: { fact_id: number; amount: string; quote: string; locator: string }[];
+}
+export type NwcPeg = QoeCalc & { per_period: Record<string, QoeCalc> };
+export interface TrendRow {
+  period: string; revenue: string | null; growth_pct: string | null; ebitda_margin_pct: string | null; missing: string[];
+}
+
 export interface CompsOut {
   target: string; period: string;
   peers: { entity: string; multiples: Record<string, string | null> }[];
@@ -182,6 +195,12 @@ export const api2 = {
   syncConnector: (name: string, token: string, deal: string) =>
     call<{ ingested: unknown[]; skipped?: unknown[] }>(`/connectors/${name}/sync`, "POST", { token, deal: deal || null, limit: 50 }),
   comps: (body: { target: string; peers: string[]; period: string; metrics: string[] }) => call<CompsOut>("/calc/comps", "POST", body),
+  qoeEbitda: (entity: string, period: string) =>
+    call<QoeCalc>(`/calc/normalized-ebitda?entity=${encodeURIComponent(entity)}&period=${encodeURIComponent(period)}`),
+  nwcPeg: (entity: string, periods: string) =>
+    call<NwcPeg>(`/calc/nwc-peg?entity=${encodeURIComponent(entity)}&periods=${encodeURIComponent(periods)}`),
+  revenueTrend: (entity: string, periods: string) =>
+    call<{ entity: string; rows: TrendRow[] }>(`/calc/revenue-trend?entity=${encodeURIComponent(entity)}&periods=${encodeURIComponent(periods)}`),
   agent: (goal: string) => call<AgentRunOut>("/agent/run", "POST", { goal }),
   workflows: () => call<WorkflowInfo[]>("/agent/workflows"),
   runWorkflow: (name: string, inputs: Record<string, string>) => call<AgentRunOut>(`/agent/workflows/${name}/run`, "POST", { inputs }),
