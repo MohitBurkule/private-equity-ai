@@ -61,6 +61,10 @@ def _combine(c: Calc, wanted: list[tuple[str, str, str, int]], db: Session, tena
         c.problems.append(f"inputs use different units: {sorted(units)}")
         return c
     c.unit = units.pop()
+    bases = {i.fact.basis for i in c.inputs}
+    if len(bases) != 1:  # reported and adjusted figures never add together
+        c.problems.append(f"inputs mix bases: {sorted(bases)}")
+        return c
     c.value = sum((i.sign * i.fact.value for i in c.inputs), Decimal(0))
     return c
 
@@ -166,6 +170,10 @@ def debt_like(db: Session, tenant: str, entity: str, period: str,
         c.problems.append(f"inputs use different units: {sorted(units)}")
         return c, not_found
     c.unit = units.pop()
+    bases = {i.fact.basis for i in c.inputs}
+    if len(bases) != 1:
+        c.problems.append(f"inputs mix bases: {sorted(bases)}")
+        return c, not_found
     c.value = sum((i.sign * i.fact.value for i in c.inputs), Decimal(0))
     return c, not_found
 
