@@ -10,6 +10,7 @@ import json
 import re
 
 from app import legal
+from app.llm import served_by
 
 # Words that make a sentence worth showing the model for each term. A term with no keyword hit is not asked about.
 KEYWORDS = {
@@ -32,6 +33,7 @@ KEYWORDS = {
     "severance": ("severance",),
 }
 MAX_SENTENCES = 12
+PROMPT_VERSION = "legal_reader.v1"  # bump when SYSTEM changes
 SYSTEM = ("You read one legal document excerpt. Copy one sentence, exactly as written, that states the term named. "
           'Reply as JSON only: {"quote": "<exact sentence>", "page": <number>} or {"quote": null}.')
 
@@ -71,7 +73,7 @@ def _ask(term: str, spec: dict, pages: list[tuple[int, str]], llm) -> tuple[dict
     if not m:
         return None, "quote does not state the term"
     return {"term": term, "value": next((g for g in m.groups() if g), None), "page": page, "quote": quote,
-            "source": "local model second reader"}, None
+            "source": "local model second reader", "prompt_version": PROMPT_VERSION, "model": served_by(llm)}, None
 
 
 def _same(a: str | None, b: str | None) -> bool:
