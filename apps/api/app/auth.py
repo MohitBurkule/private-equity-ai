@@ -64,6 +64,15 @@ def add_key(db: Session, tenant_id: str, role: str = "analyst",
     return key_id(h), key
 
 
+def list_keys(db: Session, tenant_id: str) -> list[dict]:
+    """Every key of a tenant with its deal wall, for the admin screen. Hashes never leave the server: a key is
+    named by its key_id, the same handle revoke_key takes."""
+    rows = db.query(ApiKey).filter_by(tenant_id=tenant_id).order_by(ApiKey.key_hash).all()
+    return [{"key_id": key_id(r.key_hash), "role": r.role, "revoked": bool(r.revoked),
+             "deals": None if (d := parse_deals(r.deals)) is None else sorted(d),
+             "deal_roles": dict(parse_deal_roles(r.deal_roles))} for r in rows]
+
+
 def revoke_key(db: Session, kid: str) -> bool:
     rows = [r for r in db.query(ApiKey).all() if key_id(r.key_hash) == kid]
     if len(rows) != 1:
