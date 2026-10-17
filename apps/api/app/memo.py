@@ -40,6 +40,7 @@ class Memo:
     rules: list[dict] = field(default_factory=list)  # accepted firm rules this draft applies, each quoted
     series: dict[str, list[tuple[str, Decimal, int]]] = field(default_factory=dict)  # metric -> (period, value, note)
     risks: list[str] = field(default_factory=list)  # only what cited figures show, each with its note numbers
+    comps: list[str] = field(default_factory=list)  # trading comps lines from comps.run, each cited
 
     @property
     def empty(self) -> bool:
@@ -132,9 +133,52 @@ def _rule_line(r: dict) -> str:
     return f'{r["label"]}: {r["value"]} [{r["source"]["document_id"][:8]} {where}: "{r["source"]["quote"].strip()}"]'
 
 
-def build_memo(db: Session, tenant_id: str, entity: str, scope: set[str] | None = None) -> str:
+def _cite_fact(db: Session, memo: Memo, f: Fact) -> int:
+    n = len(memo.notes) + 1
+    src = f.sources[0]
+    doc = db.get(Document, src.document_id)
+    memo.notes.append(f'[{n}] {doc.filename if doc else src.document_id[:8]}, {src.locator}: '
+                      f'"{src.quote.strip()}"')
+    return n
+
+
+def add_comps(db: Session, memo: Memo, res: dict) -> None:
+    """Trading comps from comps.run. Every peer EV and every multiple cites its fact; the EV line names the record
+    it came from (a market feed's file name, so a SYNTHETIC feed stays visible). Medians and the implied range are
+    computed in code from those cited figures. A peer with no EV is listed as such, never estimated."""
+    for p in res["peers"]:
+        ev = db.get(Fact, p["facts"]["enterprise_value"]) if p["facts"].get("enterprise_value") else None
+        if ev is None:
+            memo.comps.append(f"{p['entity']}: no enterprise value fact, no multiple")
+            continue
+        ev_doc = db.get(Document, ev.sources[0].document_id)
+        parts = [(f"EV {_gloss(ev.value)} {ev.unit} [{_cite_fact(db, memo, ev)}] "
+                  f"(EV source: {ev_doc.filename if ev_doc else 'unknown'})")]
+        for metric, mult in p["multiples"].items():
+            if mult is None:
+                parts.append(f"EV/{metric} not meaningful: {p['nm'].get(metric, 'no multiple')}")
+                continue
+            den = db.get(Fact, p["facts"][metric])
+            parts.append(f"EV/{metric} {mult}x [{_cite_fact(db, memo, den)}]")
+        memo.comps.append(f"{p['entity']} ({res['period']}): " + "; ".join(parts))
+    for metric, st in res["stats"].items():
+        if st.get("median") is not None:
+            memo.comps.append(f"Peer median EV/{metric}: {st['median']}x across {st['n']} peers (computed in code)")
+    for im in res["implied"]:
+        if im.get("low") is None:
+            memo.comps.append(f"Implied range for {im['metric']}: {im['note']}")
+            continue
+        tf = db.get(Fact, im["target_fact_id"])
+        memo.comps.append(f"Implied EV from {im['metric']} {im['target_value']} {im['unit']}: "
+                          f"{im['low']} to {im['high']}, median {im['mid']} [{_cite_fact(db, memo, tf)}]")
+
+
+def build_memo(db: Session, tenant_id: str, entity: str, scope: set[str] | None = None,
+               comps: dict | None = None) -> str:
     m = build_memo_data(db, tenant_id, entity, scope)
-    if m.empty and not m.rules:
+    if comps is not None:
+        add_comps(db, m, comps)
+    if m.empty and not m.rules and not m.comps:
         return f"# {entity}\n\nNo verified facts available. Nothing to report.\n"
     out = [f"# {entity}: financial summary (draft, analyst review required)", ""]
     out += [f"- {ln}" for ln in m.lines]
@@ -142,12 +186,17 @@ def build_memo(db: Session, tenant_id: str, entity: str, scope: set[str] | None 
         out += ["", "Derived (computed in code):", *[f"- {d}" for d in m.derived]]
     if m.rules:
         out += ["", "Firm rules applied (accepted, quoted):", *[f"- {_rule_line(r)}" for r in m.rules]]
+    if m.comps:
+        out += ["", "Trading comps (peers, each cited):", *[f"- {c}" for c in m.comps]]
     return "\n".join([*out, "", "Sources:", *m.notes]) + "\n"
 
 
-def build_memo_docx(db: Session, tenant_id: str, entity: str, scope: set[str] | None = None) -> bytes:
+def build_memo_docx(db: Session, tenant_id: str, entity: str, scope: set[str] | None = None,
+                    comps: dict | None = None) -> bytes:
     from docx import Document as Docx
     m = build_memo_data(db, tenant_id, entity, scope)
+    if comps is not None:
+        add_comps(db, m, comps)
     d = Docx()
     d.add_heading(f"{entity}: financial summary", level=1)
     d.add_paragraph("DRAFT. Analyst review required before use. Figures below are only those whose "
@@ -164,6 +213,10 @@ def build_memo_docx(db: Session, tenant_id: str, entity: str, scope: set[str] | 
         d.add_heading("Firm rules applied", level=2)
         for r in m.rules:
             d.add_paragraph(_rule_line(r), style="List Bullet")
+    if m.comps:
+        d.add_heading("Trading comps (peers, each cited)", level=2)
+        for c in m.comps:
+            d.add_paragraph(c, style="List Bullet")
     if m.notes:
         d.add_heading("Sources", level=2)
         for n in m.notes:
