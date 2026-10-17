@@ -47,3 +47,10 @@ def test_disputed_numbers_flagged(tmp_path, monkeypatch):
     monkeypatch.setattr(engines, "run", fake)
     rp = router.route_page(f, 1)
     assert "1577" in rp.disputed and not rp.verified
+
+
+def test_ocr_suspects_flag_known_faults():
+    lines = [engines.Line("Consideration E1,000,000 per share", None, "rapidocr"),
+             engines.Line("Amount 1000000'0", None, "rapidocr"),
+             engines.Line("Total 41,807,801 and GBP 1.00", None, "rapidocr")]
+    assert router.ocr_suspects(lines) == ["E1,000,000", "1000000'0"]
