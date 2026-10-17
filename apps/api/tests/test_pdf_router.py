@@ -41,7 +41,7 @@ def test_disputed_numbers_flagged(tmp_path, monkeypatch):
 
     def fake(engine, path, pages):
         r = real(engine, path, pages)
-        if engine != "pymupdf":
+        if engine == "pdftotext_layout":
             r[0].lines = [engines.Line(ln.text.replace("1,577", "1,517"), None, engine) for ln in r[0].lines]
         return r
     monkeypatch.setattr(engines, "run", fake)
