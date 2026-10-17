@@ -47,6 +47,7 @@ export function Targets() {
   const set = (k: keyof TargetFilter, v: string) => { setF({ ...f, [k]: v || undefined }); setSel(null); };
   const items = list.data?.items ?? [];
   const cur = items.find((t) => t.id === sel);
+  const bench = useLoad(() => (cur?.sector ? api2.targetBenchmark(cur.id, cur.sector) : Promise.resolve(null)), [cur?.id]);
   const selCls = "rounded-lg border border-line bg-bg px-2 py-1.5 text-sm";
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -79,6 +80,14 @@ export function Targets() {
                   <dt className="text-mut">Status</dt><dd><Badge>{cur.status}</Badge></dd>
                 </dl>
               ) : <p className="text-mut">Pick a dot or a row.</p>}
+              {cur && bench.data && (
+                <p className="mt-4 border-t border-line pt-3 text-mut">
+                  {bench.data.peers > 0 && bench.data.median
+                    ? <>Sector median revenue {fmtAmount(bench.data.median, cur.currency ?? "")} across {bench.data.peers} {bench.data.peers === 1 ? "target" : "targets"}{bench.data.target && bench.data.peers >= 3 ? <>; this one sits at the {bench.data.target.percentile}th percentile</> : bench.data.peers < 3 ? "; too few targets in this sector for a percentile" : ""}.</>
+                    : "No sector revenue to compare with yet."}
+                  {bench.data.excluded_no_revenue > 0 && <> {bench.data.excluded_no_revenue} without revenue are left out.</>}
+                </p>
+              )}
             </div>
           </Card>
           <Card className="lg:col-span-2">
