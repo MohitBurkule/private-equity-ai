@@ -18,6 +18,11 @@ ADMIN_TOKEN="${ADMIN_TOKEN:-demo-admin-token}"
 export ADMIN_TOKEN DATABASE_URL="sqlite:///$DEMO_DIR/demo.db"
 # Scanned pages (no text layer) are read by OCR only when this is on; the demo seeds a scanned page on purpose.
 export OCR_ENABLED=1
+# The scanned seed page needs OCR. Without tesseract and the ocr extra it is rejected, so say so up front.
+if ! command -v tesseract >/dev/null 2>&1 || ! python3 -c "import rapidocr_onnxruntime, pypdfium2" >/dev/null 2>&1; then
+  echo "OCR is not ready: the scanned seed page will be rejected. To fix, install tesseract (apt-get install -y tesseract-ocr)"
+  echo "and the OCR extra (cd apps/api && pip install '.[ocr]'), then run make demo again."
+fi
 
 # SEC rejects anonymous requests, so live EDGAR search needs a contact string. It is asked for here and never
 # written to the repo. Leave it empty to skip live search; the rest of the demo does not need it.
