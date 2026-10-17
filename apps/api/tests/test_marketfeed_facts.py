@@ -75,3 +75,20 @@ def test_peer_ev_respects_document_scope():
             assert _peer_ev(db, tenant, "SCOPED", set()) is None
     finally:
         app.dependency_overrides.clear()
+
+
+def test_unreadable_feed_is_422_not_500():
+    app.dependency_overrides[m.get_market_fetch] = lambda: _feed([])
+    try:
+        h = new_tenant(c, "tev-badurl")
+        body = {"entity": "Saia, Inc.", "period": "LTM", "source": "capiq",
+                "url": "https://capiq.synthetic.test/v2/tev?symbol=Saia, Inc.", "token": "tok"}
+        app.dependency_overrides[m.get_market_fetch] = lambda: _bad_url_fetch
+        r = c.post("/market/tev-sync", json=body, headers=h)
+        assert r.status_code == 422 and "could not be read" in r.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def _bad_url_fetch(url, headers):
+    raise ValueError("URL can't contain control characters")
