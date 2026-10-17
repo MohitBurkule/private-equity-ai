@@ -16,15 +16,16 @@ from app.facts import CitationError, add_verified_fact
 from app.ixbrl_full import Tagged
 
 BALANCE = {"total_assets"}  # instants, not durations
-# metric name -> us-gaap concepts, first match wins
+# metric name -> us-gaap concepts in preference order: the first concept the filing tags (for the period) is used.
+# Total D&A is DepreciationAndAmortization; DepreciationDepletionAndAmortization is often only the PP&E note's figure.
 CONCEPTS = {
     "revenue": ("Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax"),
     "operating_income": ("OperatingIncomeLoss",),
     "net_income": ("NetIncomeLoss",),
     "total_assets": ("Assets",),
     "operating_cash_flow": ("NetCashProvidedByUsedInOperatingActivities",),
-    "depreciation_amortization": ("DepreciationDepletionAndAmortization", "DepreciationAmortizationAndAccretionNet",
-                                  "DepreciationAndAmortization"),
+    "depreciation_amortization": ("DepreciationAndAmortization", "DepreciationAmortizationAndAccretionNet",
+                                  "DepreciationDepletionAndAmortization"),
 }
 
 
@@ -58,8 +59,13 @@ def extract(db: Session, tenant: str, doc_id: str, entity: str, tags: list[Tagge
     created, rejected = [], []
     for metric, concepts in CONCEPTS.items():
         want = balance if metric in BALANCE else period
-        cand = [t for t in tags if t.name.split(":")[-1] in concepts and t.period == want
-                and "Axis" not in t.context and "Member" not in t.context and t.row]
+        concept, cand = None, []
+        for name in concepts:
+            cand = [t for t in tags if t.name.split(":")[-1] == name and t.period == want
+                    and "Axis" not in t.context and "Member" not in t.context and t.row]
+            if cand:
+                concept = name
+                break
         if not cand:
             rejected.append({"metric": metric, "reason": f"no {concepts[0]} tag for {label}"})
             continue
@@ -74,7 +80,7 @@ def extract(db: Session, tenant: str, doc_id: str, entity: str, tags: list[Tagge
             f = add_verified_fact(db, tenant_id=tenant, entity=entity, metric=metric, period=label, value=value,
                                   unit="USD", document_id=doc_id, page=t.page, quote=t.row, scale=scale)
             created.append({"fact_id": f.id, "metric": metric, "period": label, "value": str(value),
-                            "page": t.page, "quote": t.row})
+                            "concept": concept, "page": t.page, "quote": t.row})
         except CitationError as e:
             rejected.append({"metric": metric, "reason": str(e)})
     return {"period": label, "period_end": period.split("/")[1], "created": created, "rejected": rejected}

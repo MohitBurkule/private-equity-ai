@@ -40,7 +40,15 @@ def exhibit_urls(lead_url: str, fetch: Fetch) -> list[str]:
     return [lead_url] + [u for u in urls if u != lead_url]
 
 
-FORMS = ("8-K", "DEFM14A", "424B3")  # merger 8-K, merger proxy, merger prospectus
+FORMS = ("8-K", "DEFM14A", "424B3")
+
+# A blank-check company (SPAC) announcing a business combination is not an operating-company deal: its "target"
+# is a private company and its terms are a trust and sponsor structure. Dropped by name, and reported as skipped.
+_BLANK_CHECK = re.compile(r"\bacquisition\s+corp\b|\bblank[- ]check\b|\bSPAC\b|\bacquisition\s+co\b", re.IGNORECASE)
+
+
+def is_blank_check(company: str) -> bool:
+    return bool(_BLANK_CHECK.search(company))  # merger 8-K, merger proxy, merger prospectus
 
 # Theme rules: each needs a sentence in the filing naming a financial sponsor as buyer and one naming a
 # software business as target. The sentence is kept with its filing URL, so the theme is cited, not inferred.
@@ -132,6 +140,9 @@ def build(
     deals, skipped = [], []
     for lead in leads:
         name = f"{lead.company} ({lead.filed})"
+        if is_blank_check(lead.company):
+            skipped.append({"name": name, "url": lead.url, "reason": "blank-check company (SPAC), not an operating deal"})
+            continue
         terms, cites, failed = _terms(exhibit_urls(lead.url, fetch), fetch, theme)
         source = lead.url
         if not _has_terms(terms):
