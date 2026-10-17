@@ -9,13 +9,13 @@ The API shape assumed here is SYNTHETIC until a real administrator's documentati
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 from urllib.parse import quote
 
 from openpyxl import Workbook
 
 from app.connectors.base import Connector, ConnectorError, Item
+from app.connectors.workbook import save_stable
 
 
 def render_workbook(calls: list[dict], nav: dict) -> bytes:
@@ -28,9 +28,7 @@ def render_workbook(calls: list[dict], nav: dict) -> bytes:
     n = wb.create_sheet("NAV")
     n["A1"], n["B1"] = "As of", "NAV (USD)"
     n["A2"], n["B2"] = nav["as_of"], nav["nav_usd"]
-    out = io.BytesIO()
-    wb.save(out)
-    return out.getvalue()
+    return save_stable(wb)
 
 
 class FundAdminApi(Connector):
