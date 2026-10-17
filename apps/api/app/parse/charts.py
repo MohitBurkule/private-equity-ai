@@ -52,18 +52,24 @@ def parse_number(text: str) -> float | None:
     return -v if neg else v
 
 
-def read_region(path: Path, page: int, box: tuple[float, float, float, float], scale: float = 3.0) -> list[ChartValue]:
-    """OCR one picture region and return numeric labels with absolute page bboxes."""
-    import numpy as np
+def render_region(path: Path, page: int, box: tuple[float, float, float, float], scale: float = 3.0):
+    """Render one picture region to a PIL image."""
     import pypdfium2 as pdfium
-    from rapidocr_onnxruntime import RapidOCR
-    global _ocr
-    _ocr = _ocr or RapidOCR()
     x0, y0, x1, y1 = box
     pg = pdfium.PdfDocument(str(path))[page - 1]
     w, h = pg.get_size()
     # pdfium crop is inward margins (left, bottom, right, top) in points, not a rectangle
-    img = pg.render(scale=scale, crop=(x0, h - y1, w - x1, y0)).to_pil()
+    return pg.render(scale=scale, crop=(x0, h - y1, w - x1, y0)).to_pil()
+
+
+def read_region(path: Path, page: int, box: tuple[float, float, float, float], scale: float = 3.0) -> list[ChartValue]:
+    """OCR one picture region and return numeric labels with absolute page bboxes."""
+    import numpy as np
+    from rapidocr_onnxruntime import RapidOCR
+    global _ocr
+    _ocr = _ocr or RapidOCR()
+    x0, y0 = box[0], box[1]
+    img = render_region(path, page, box, scale)
     res, _ = _ocr(np.array(img))
     out = []
     for pts, text, conf in res or []:
