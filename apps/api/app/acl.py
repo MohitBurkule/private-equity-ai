@@ -29,8 +29,10 @@ CAPABILITIES: dict[str, frozenset[str]] = {
     "write": frozenset({"admin", "partner", "vp", "associate", "analyst"}),
     # Add documents to a deal. IR is here and nowhere else in "write".
     "upload": frozenset({"admin", "partner", "vp", "associate", "analyst", "ir"}),
-    # Legal hold, MNPI flag, deal delete, retention purges.
+    # Legal hold, MNPI flag, retention purges.
     "govern": frozenset({"admin", "partner", "vp", "compliance"}),
+    # Deleting a deal for good: admin only, and only after a request is on file (see the deletion routes).
+    "purge": frozenset({"admin"}),
 }
 
 

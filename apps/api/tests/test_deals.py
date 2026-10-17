@@ -34,8 +34,10 @@ def test_legal_hold_blocks_delete_until_lifted():
     h = new_tenant(c, "dl4")
     c.post("/deals", headers=h, json={"name": "Held"})
     assert c.patch("/deals/Held", headers=h, json={"legal_hold": True}).json()["legal_hold"] is True
+    assert c.post("/deals/Held/deletion-request", headers=h).status_code == 409
     assert c.delete("/deals/Held", headers=h).status_code == 409
     c.patch("/deals/Held", headers=h, json={"legal_hold": False})
+    assert c.post("/deals/Held/deletion-request", headers=h).status_code == 201
     assert c.delete("/deals/Held", headers=h).json()["deleted"] == "Held"
     assert c.get("/deals", headers=h).json() == []
 
@@ -44,6 +46,8 @@ def test_delete_removes_dd_items():
     h = new_tenant(c, "dl5")
     c.post("/deals", headers=h, json={"name": "Gone"})
     c.post("/dd/requests/seed", headers=h, json={"deal": "Gone", "categories": ["legal"]})
+    assert c.delete("/deals/Gone", headers=h).status_code == 409  # no request on file
+    assert c.post("/deals/Gone/deletion-request", headers=h).status_code == 201
     r = c.delete("/deals/Gone", headers=h)
     assert r.status_code == 200 and r.json()["dd_requests_removed"] > 0
     assert c.delete("/deals/Gone", headers=h).status_code == 404
@@ -59,6 +63,7 @@ def test_delete_refuses_while_documents_linked_and_is_tenant_isolated():
     wb.save(buf)
     assert c.post("/documents", files={"file": ("l.xlsx", buf.getvalue(), "x")}, data={"deal": "Linked"},
                   headers=a).status_code in (200, 201)
+    assert c.post("/deals/Linked/deletion-request", headers=a).status_code == 409
     assert c.delete("/deals/Linked", headers=a).status_code == 409
 
 
@@ -161,3 +166,19 @@ def test_deal_checklist_crud_and_walled_deal_hidden():
     assert c.get("/deals/Chk/checklist", headers=h).json() == []
     assert c.get("/deals/nope/checklist", headers=h).status_code == 404
     assert c.post("/deals/Chk/checklist", headers=h, json={"title": ""}).status_code == 422
+
+
+def test_deletion_needs_admin_then_a_request_then_the_confirm():
+    t = c.post("/admin/tenants", json={"name": "purge1"}, headers={"X-Admin-Token": "test-admin"}).json()
+    admin = {"Authorization": f"Bearer {t['api_key']}"}
+    c.post("/deals", headers=admin, json={"name": "Purge"})
+    partner = c.post(f"/admin/tenants/{t['tenant_id']}/keys", json={"role": "partner"}, headers={"X-Admin-Token": "test-admin"}).json()
+    ph = {"Authorization": f"Bearer {partner['api_key']}"}
+    assert c.post("/deals/Purge/deletion-request", headers=ph).status_code == 403
+    assert c.delete("/deals/Purge", headers=ph).status_code == 403
+    assert c.post("/deals/Purge/deletion-request", headers=admin).status_code == 201
+    assert c.post("/deals/Purge/deletion-request", headers=admin).status_code == 409
+    assert c.delete("/deals/Purge", headers=ph).status_code == 403
+    assert c.delete("/deals/Purge", headers=admin).json()["deleted"] == "Purge"
+    log = c.get("/audit", params={"action": "deal.delete"}, headers=admin).json()
+    assert log["items"][0]["payload"]["requested_by"]
