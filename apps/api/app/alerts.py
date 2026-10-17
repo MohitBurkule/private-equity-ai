@@ -118,7 +118,7 @@ def rate_move_watch(db: Session, tenant_id: str) -> list[AlertDraft]:
         floating = _find(db, tenant_id, company.name, "floating_rate_debt", intr.period, None)
         if earnings is None or floating is None or len({intr.unit, earnings[2], floating.unit}) != 1:
             continue
-        ebitda_ids, ebitda_value, ebitda_unit = earnings
+        ebitda_ids, ebitda_value, _ = earnings
         now = ebitda_value / intr.value
         stressed = ebitda_value / (intr.value + floating.value * Decimal(shock) / 10000)
         if now >= thr.value > stressed:
