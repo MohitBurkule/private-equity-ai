@@ -11,17 +11,20 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
 from app import firm_knowledge as fk
-from app.models import Alert, DDRequest, Deal
+from app import secfeed
+from app.models import Alert, DDRequest, Deal, Target
 from app.portfolio import (
     Covenant,
     PortfolioCompany,
     current_kpis,
     evaluate_covenant,
 )
+from app.targets import Criteria, evaluate
 
 SEVERITIES = ("info", "warning", "critical")
 STATUSES = ("new", "read", "dismissed")
@@ -216,3 +219,56 @@ def set_status(db: Session, tenant_id: str, alert_id: int, status: str) -> Alert
         a.status = status
         db.commit()
     return a
+
+
+# Injected in tests; a failed fetch (network, rate limit, bad XML) skips that company for this scan only.
+sec_fetch = secfeed.default_fetch
+
+
+@register_watcher("sec_filings")
+def sec_filings(db: Session, tenant_id: str) -> list[AlertDraft]:
+    """New 10-K, 10-Q, 8-K and similar filings for targets marked `watching`, from each company's EDGAR feed.
+    Keyed by accession number, so a filing alerts once and links to its archive index."""
+    out = []
+    for t in db.query(Target).filter_by(tenant_id=tenant_id, status="watching", source="sec"):
+        try:
+            entries = secfeed.parse_atom(sec_fetch(secfeed.feed_url(t.source_ref)).decode())
+        except (OSError, ValueError):
+            continue
+        for e in entries:
+            out.append(AlertDraft("filing", "info", f"{t.name}: new {e.form} filed {e.filed}",
+                                  f"Filing index: {e.url}", f"filing:{e.accession}"))
+    return out
+
+
+_MIN_REVENUE = re.compile(r"min(?:imum)?\s+revenue\D{0,20}?(\d[\d,]*(?:\.\d+)?)", re.IGNORECASE)
+_SECTORS = re.compile(r"sectors?\s*:\s*([^.;\n]+)", re.IGNORECASE)
+
+
+def screening_criteria(text: str) -> Criteria:
+    """Read the criteria a firm rule states in plain words: "sectors: software, fintech" and
+    "minimum revenue 20000000". Anything the rule does not state stays unset and is not screened."""
+    m = _MIN_REVENUE.search(text)
+    s = _SECTORS.search(text)
+    return Criteria(sectors=[x.strip() for x in s.group(1).split(",") if x.strip()] if s else [],
+                    min_revenue=Decimal(m.group(1).replace(",", "")) if m else None)
+
+
+@register_watcher("new_target_screen")
+def new_target_screen(db: Session, tenant_id: str) -> list[AlertDraft]:
+    """New targets that pass every criterion in the accepted deal_screening_criteria rule.
+    Targets with unknown revenue are not alerted: the screen reports them as review, not match."""
+    rule = fk.newest_accepted(db, tenant_id, "deal_screening_criteria")
+    if rule is None:
+        return []
+    criteria = screening_criteria(rule.value)
+    if not criteria.sectors and criteria.min_revenue is None:
+        return []
+    out = []
+    for t in db.query(Target).filter_by(tenant_id=tenant_id, status="new"):
+        if evaluate(t, criteria)["verdict"] != "match":
+            continue
+        out.append(AlertDraft("screening", "info", f"{t.name} matches the screening criteria",
+                              f"Firm rule (document {rule.document_id}, page {rule.page}): \"{rule.quote}\". "
+                              f"Source: {t.source_url or t.source_ref}", f"screen:{t.id}"))
+    return out
