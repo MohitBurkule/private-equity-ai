@@ -9,6 +9,8 @@ import { Button, Card, CardHead, Empty, ErrorLine, Input } from "./ui";
 export function Documents() {
   const docs = useLoad<DocumentInfo[]>(api.documents);
   const [libQ, setLibQ] = useState("");
+  const [left, setLeft] = useState("");
+  const [right, setRight] = useState("");
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [entity, setEntity] = useState("");
@@ -42,6 +44,32 @@ export function Documents() {
           ))}
         </ul>
       </Card>
+      {docs.data && docs.data.length > 1 && (
+        <Card>
+          <CardHead title="Compare" hint="Two documents side by side, each opening at its first page" />
+          <div className="grid gap-3 p-4 sm:grid-cols-2">
+            {[{ label: "Left", value: left, set: setLeft }, { label: "Right", value: right, set: setRight }].map((side) => {
+              const doc = docs.data?.find((d) => d.id === side.value);
+              return (
+                <div key={side.label} className="min-w-0 space-y-2">
+                  <select aria-label={`${side.label} document`} value={side.value} onChange={(e) => side.set(e.target.value)}
+                    className="w-full rounded-lg border border-line bg-sunk px-2 py-1.5 text-sm">
+                    <option value="">Choose a document</option>
+                    {docs.data?.map((d) => <option key={d.id} value={d.id}>{d.filename}</option>)}
+                  </select>
+                  {doc && (
+                    <div className="text-sm">
+                      <div className="truncate font-medium">{doc.filename}</div>
+                      <div className="tnum text-mut">{doc.n_pages} pages</div>
+                      <SourceChip docId={doc.id} page={1} quote="" label="Open first page" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
       <Card>
         <CardHead title="Search" hint="Ranked pages across every document" />
         <form className="flex gap-2 p-4" onSubmit={(e) => { e.preventDefault(); void run(async () => setHits(await api.search(q))); }}>
