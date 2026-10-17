@@ -13,6 +13,8 @@ from app.calendar_events import record_events
 from app.connectors.base import Connector
 from app.connectors.calendar import CalendarConnector
 from app.dataroom_check import check_room, parse_required
+from app.email_links import EMAIL_CONNECTORS
+from app.email_routing import route_emails
 from app.ingest import finalize_upload, ingest_any
 from app.models import Alert, DocumentSource, SyncRun
 
@@ -53,6 +55,8 @@ def _pull(db: Session, who, conn: Connector, deal: str | None, limit: int, run_i
         res = ingest_any(db, who.tenant, it.data, it.name)
         kept, skipped = finalize_upload(db, who, res, deal)
         out["skipped"] += skipped
+        if deal is None and conn.name in EMAIL_CONNECTORS:
+            route_emails(db, who.tenant, kept)  # attaches the email to its one matching deal, else the review queue
         for d in kept:
             db.add(DocumentSource(tenant_id=who.tenant, document_id=d.id, connector=conn.name,
                                   external_id=it.external_id, version=it.version, url=it.url, sync_run_id=run_id,
