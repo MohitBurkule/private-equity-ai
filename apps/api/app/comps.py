@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -20,6 +21,8 @@ from app.models import Fact
 
 MIN_PEERS = 3
 EV_METRIC = "enterprise_value"
+# a market figure older than this is flagged stale: comps on last month's EV would read as current
+MAX_AS_OF_AGE_DAYS = 7
 
 
 @dataclass
@@ -128,8 +131,21 @@ def build_rows(db: Session, tenant: str, entities: list[str], period: str, metri
                 r.nm.pop(m)
         if ev is not None and ev.period != period:
             r.stale.append("ev")
+        if ev is not None and is_stale_as_of(ev.as_of):
+            r.stale.append("ev_as_of")
         rows.append(r)
     return rows
+
+
+def is_stale_as_of(as_of: str | None, today: date | None = None) -> bool:
+    """True when the figure is dated older than MAX_AS_OF_AGE_DAYS. Undated figures are not flagged: no date, no claim."""
+    if not as_of:
+        return False
+    try:
+        d = date.fromisoformat(as_of)
+    except ValueError:
+        return True  # a date we cannot read is not one we can call fresh
+    return ((today or date.today()) - d).days > MAX_AS_OF_AGE_DAYS
 
 
 def _cell(db: Session, f: Fact) -> dict:
