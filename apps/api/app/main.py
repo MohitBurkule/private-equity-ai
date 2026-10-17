@@ -2390,6 +2390,14 @@ class CapitalCallIn(BaseModel):
     lp: str | None = Field(default=None, max_length=256)
 
 
+def _outbound(db: Session, who: Principal, kind: str, data: bytes) -> bytes:
+    """A file about to leave the system (download or attachment): identifiers stripped when the tenant's PII
+    flag is on. `kind` is the file type: docx, pptx or xlsx."""
+    if not outbound.pii_on(db, who.tenant):
+        return data
+    return {"docx": outbound.docx, "pptx": outbound.pptx, "xlsx": outbound.xlsx}[kind](data)
+
+
 def _lp_output(model: lp_mod.Model, fmt: str, name: str, style: dict | None = None, pii: bool = False):
     if fmt == "json":
         return {**model.to_dict(), **({"style": style} if style is not None else {})}
@@ -2574,7 +2582,7 @@ def memo_docx(entity: str, db: Db, who: Who, peers: str = "", period: str = "", 
     log_event(db, who.tenant, actor(who), "memo.export", {"entity": entity, "format": "docx"})
     comps = _memo_comps(db, who, entity, peers, period)
     legal = _memo_legal(db, who, legal_doc)
-    return Response(build_memo_docx(db, who.tenant, entity, visible_doc_ids(db, who), comps, legal), headers={
+    return Response(_outbound(db, who, "docx", build_memo_docx(db, who.tenant, entity, visible_doc_ids(db, who), comps, legal)), headers={
         "Content-Disposition": 'attachment; filename="memo.docx"'},
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
@@ -2673,7 +2681,7 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
 @app.get("/memo.pptx")
 def memo_pptx(entity: str, db: Db, who: Who, legal_doc: str = ""):
     log_event(db, who.tenant, actor(who), "memo.export", {"entity": entity, "format": "pptx"})
-    return Response(build_memo_pptx(db, who.tenant, entity, visible_doc_ids(db, who), _memo_legal(db, who, legal_doc)), headers={
+    return Response(_outbound(db, who, "pptx", build_memo_pptx(db, who.tenant, entity, visible_doc_ids(db, who), _memo_legal(db, who, legal_doc))), headers={
         "Content-Disposition": 'attachment; filename="memo.pptx"'},
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
@@ -3217,7 +3225,7 @@ def calc_comps_docx(body: CompsIn, db: Db, who: Who):
     res = comps_mod.run(db, who.tenant, body.target, body.peers, body.period, body.metrics,
                         visible_doc_ids(db, who), body.target_period, body.ev_period)
     log_event(db, who.tenant, actor(who), "comps.export", {"format": "docx", "target": body.target})
-    return Response(comps_mod.to_docx(db, res), headers={"Content-Disposition": 'attachment; filename="comps.docx"'},
+    return Response(_outbound(db, who, "docx", comps_mod.to_docx(db, res)), headers={"Content-Disposition": 'attachment; filename="comps.docx"'},
                     media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
 
@@ -3227,7 +3235,7 @@ def calc_comps_pptx(body: CompsIn, db: Db, who: Who):
     res = comps_mod.run(db, who.tenant, body.target, body.peers, body.period, body.metrics,
                         visible_doc_ids(db, who), body.target_period, body.ev_period)
     log_event(db, who.tenant, actor(who), "comps.export", {"format": "pptx", "target": body.target})
-    return Response(comps_mod.to_pptx(db, res), headers={"Content-Disposition": 'attachment; filename="comps.pptx"'},
+    return Response(_outbound(db, who, "pptx", comps_mod.to_pptx(db, res)), headers={"Content-Disposition": 'attachment; filename="comps.pptx"'},
                     media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
 
@@ -3540,9 +3548,9 @@ def targets_outreach_send(body: OutreachSend, db: Db, who: Writer):
         raise HTTPException(409, "outreach blocked: this target matches a deal under MNPI restriction")
     scope = deal_scope(db, who)
     name = f"research-{t.id}.docx"
-    files = [(name, research_mod.build_docx(db, who.tenant, t, scope), DOCX_MIME)]
+    files = [(name, _outbound(db, who, "docx", research_mod.build_docx(db, who.tenant, t, scope)), DOCX_MIME)]
     if body.memo_entity:
-        files.append(("memo.pptx", build_memo_pptx(db, who.tenant, body.memo_entity, visible_doc_ids(db, who)), PPTX_MIME))
+        files.append(("memo.pptx", _outbound(db, who, "pptx", build_memo_pptx(db, who.tenant, body.memo_entity, visible_doc_ids(db, who))), PPTX_MIME))
     try:
         notify_mod.send_email(to, msg["subject"], msg["body"], files)
     except notify_mod.MailNotConfigured as e:
@@ -3695,7 +3703,7 @@ def outreach_queue_send(item_id: int, body: OutreachQueueSend, db: Db, who: Writ
     scope = deal_scope(db, who)
     files = [(f"research-{t.id}.docx", research_mod.build_docx(db, who.tenant, t, scope), DOCX_MIME)]
     if body.memo_entity:
-        files.append(("memo.pptx", build_memo_pptx(db, who.tenant, body.memo_entity, visible_doc_ids(db, who)), PPTX_MIME))
+        files.append(("memo.pptx", _outbound(db, who, "pptx", build_memo_pptx(db, who.tenant, body.memo_entity, visible_doc_ids(db, who))), PPTX_MIME))
     try:
         notify_mod.send_email(to, it.subject, it.body, files)
     except notify_mod.MailNotConfigured as e:
@@ -3943,7 +3951,7 @@ def portfolio_report(db: Db, who: Who):
 @app.get("/portfolio/report.docx")
 def portfolio_report_docx(db: Db, who: Who):
     log_event(db, who.tenant, actor(who), "report.export", {"format": "docx"})
-    return Response(build_report_docx(db, who.tenant, visible_doc_ids(db, who)), headers={
+    return Response(_outbound(db, who, "docx", build_report_docx(db, who.tenant, visible_doc_ids(db, who))), headers={
         "Content-Disposition": 'attachment; filename="portfolio-report.docx"'},
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
