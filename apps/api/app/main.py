@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from app import (
     add_on,
+    audit_archive,
     chfeed,
     enrich,
     notify,
@@ -514,7 +515,10 @@ def _own_doc(db: Session, who: Principal, doc_id: str) -> Document:
     if doc.deal and doc.deal in visible_mnpi_deal_names(db, who):
         log_event(db, who.tenant, actor(who), "document.mnpi_access", {"doc_id": doc.id, "deal": doc.deal})
     # Every route that opens a document goes through here, so every read leaves a line in the trail.
-    log_event(db, who.tenant, actor(who), "document.read", {"doc_id": doc.id, "deal": doc.deal})
+    # With AUDIT_READ_DEDUPE on, a repeat read by the same person in the same hour adds no line.
+    if not audit_archive.read_dedupe_on() or not audit_archive.read_logged_this_hour(
+            db, who.tenant, actor(who), doc.id):
+        log_event(db, who.tenant, actor(who), "document.read", {"doc_id": doc.id, "deal": doc.deal})
     db.commit()
     return doc
 
@@ -3961,6 +3965,25 @@ def change(company_id: int, metric: str, new: str, old: str, db: Db, tenant: Ten
     v = qoq_change(db, tenant, company_id, metric, new, old)
     return {"metric": metric, "new": new, "old": old,
             "pct_change": None if v is None else str(v.quantize(Decimal("0.01")))}
+
+
+@app.post("/audit/archive")
+def audit_archive_run(db: Db, who: Who):
+    """Archive audit rows older than AUDIT_RETENTION_YEARS to AUDIT_ARCHIVE_DIR. Admin only; whole-tenant keys.
+    Archives are copies with chain anchors. Nothing is deleted from the live trail."""
+    if who.restricted:
+        raise HTTPException(403, "archiving covers the whole tenant; use an unrestricted key")
+    _require(who, "purge", "archive the audit trail")
+    out_dir = os.environ.get("AUDIT_ARCHIVE_DIR")
+    if not out_dir:
+        raise HTTPException(409, "set AUDIT_ARCHIVE_DIR on the server before archiving")
+    try:
+        result = audit_archive.archive(db, who.tenant, out_dir)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    log_event(db, who.tenant, actor(who), "audit.archive", {"archived": result["archived"]})
+    db.commit()
+    return result
 
 
 @app.get("/compliance/access-report")
