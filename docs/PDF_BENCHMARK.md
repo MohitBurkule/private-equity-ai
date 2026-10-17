@@ -193,3 +193,4 @@ Labels: 13 more rows (Lands' End FY totals, Adjusted EBITDA and net loss from th
 - Chart waterfall with OCR fallback when the VLM returns no labels: 9/9 landed with bbox (ocr_unverified). The VLM still returned nothing on that crop; OCR did the work.
 
 Still open: the larger text-only tables in the other decks are not labelled; the PGT release is not in the set.
+
