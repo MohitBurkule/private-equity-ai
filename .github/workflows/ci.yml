@@ -38,10 +38,20 @@ jobs:
       mailpit:
         image: axllent/mailpit:v1.21.8
         ports: ["1025:1025", "8025:8025"]
+      greenmail:
+        image: greenmail/standalone:2.1.2
+        env:
+          GREENMAIL_OPTS: >-
+            -Dgreenmail.setup.test.imap -Dgreenmail.setup.test.smtp -Dgreenmail.hostname=0.0.0.0
+            -Dgreenmail.users=ic@firm.test:app-pass
+        ports: ["3025:3025", "3143:3143"]
     defaults: {run: {working-directory: apps/api}}
     env:
       PGPASSWORD: pg
       MAILPIT_API_URL: http://localhost:8025
+      GREENMAIL_HOST: localhost
+      GREENMAIL_IMAP_PORT: "3143"
+      GREENMAIL_SMTP_PORT: "3025"
       SMTP_HOST: localhost
       SMTP_PORT: "1025"
       DATABASE_URL: postgresql+psycopg://pe_app:a@localhost:5432/pe_ci

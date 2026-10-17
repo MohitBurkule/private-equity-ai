@@ -38,6 +38,15 @@ services:
     # Dev-only fake mail server: SMTP on 1025, web UI and API on 8025. Nothing leaves the stack.
     image: axllent/mailpit:v1.21.8
     ports: ["8025:8025"]
+  greenmail:
+    # Dev-only mock mail server (open source, github.com/greenmail-mail-test/greenmail): SMTP 3025, IMAP 3143.
+    # Used by tests/test_greenmail_e2e.py to exercise the generic IMAP connector against a real IMAP server.
+    image: greenmail/standalone:2.1.2
+    environment:
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.imap -Dgreenmail.setup.test.smtp -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.users=ic@firm.test:app-pass
+    ports: ["3025:3025", "3143:3143"]
 volumes:
   pgdata:
   spool:
