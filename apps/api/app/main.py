@@ -76,6 +76,7 @@ from app.acl import (
     deal_scope,
     doc_visible,
     fact_visible,
+    format_groups,
     hidden_deal_names,
     mnpi_name_conflict,
     visible_doc_ids,
@@ -138,6 +139,7 @@ from app.models import (
     STAGES,
     AgentRun,
     Alert,
+    ApiKey,
     Connection,
     DDQuestion,
     DDRequest,
@@ -293,6 +295,31 @@ class KeyIn(BaseModel):
     deal_roles: dict[str, str] | None = None  # per-deal role overrides, e.g. {"atlas": "partner"}
     identity: str | None = Field(default=None, max_length=256)  # the person's external id, e.g. their email
     groups: list[str] | None = None  # external group ids the person is in, e.g. Azure AD group object ids
+
+
+class GroupSyncIn(BaseModel):
+    token: str = Field(min_length=1, max_length=4096)  # a Graph token with directory read; used once, never stored
+
+
+@app.post("/admin/tenants/{tenant_id}/keys/{kid}/groups/sync")
+def admin_sync_key_groups(tenant_id: str, kid: str, body: GroupSyncIn, db: Db,
+                          x_admin_token: Annotated[str | None, Header()] = None):
+    """Set a key's groups from its person's directory memberships, so group grants apply without manual upkeep."""
+    if not admin_token_ok(x_admin_token):
+        raise HTTPException(403, "admin token required")
+    row = next((k for k in db.query(ApiKey).filter_by(tenant_id=tenant_id) if key_id(k.key_hash) == kid), None)
+    if row is None or row.revoked:
+        raise HTTPException(404, "key not found")
+    if not row.identity:
+        raise HTTPException(422, "key has no identity to look up in the directory")
+    from app.connectors.graph import DirectoryGroups
+    try:
+        groups = DirectoryGroups(body.token, CONNECTOR_HTTP).member_of(row.identity)
+    except ConnectorError as e:
+        raise HTTPException(502, str(e)) from e
+    row.groups = format_groups(list(groups))
+    db.commit()
+    return {"key_id": kid, "groups": list(groups)}
 
 
 @app.post("/admin/tenants/{tenant_id}/keys", status_code=201)
