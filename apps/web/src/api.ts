@@ -59,7 +59,8 @@ export interface DealRow { name: string; stage: string; note: string | null; doc
 export interface DDRow { id: number; deal: string; category: string; title: string; status: string; document_id: string | null }
 export interface DDQuestionRow {
   id: number; deal: string; request_id: number | null; question: string; status: "open" | "answered";
-  answer: string | null; document_id: string | null; asked_at: string; answered_at: string | null;
+  answer: string | null; document_id: string | null; page: number | null; quote: string | null;
+  asked_at: string; answered_at: string | null;
 }
 export interface EvalRunRow { id: number; suite: string; ran_at: string; note: string | null; metrics: Record<string, unknown> }
 /** Cited input: a verified fact id, as /lbo/returns requires. Multiples are inputs too, so they must be cited. */
@@ -195,8 +196,8 @@ export const api2 = {
   ddStatus: (id: number, status: string) => call<DDRow>(`/dd/requests/${id}`, "PATCH", { status }),
   ddQuestions: (deal: string) => call<DDQuestionRow[]>(`/dd/questions?deal=${encodeURIComponent(deal)}`),
   ddQuestionAdd: (deal: string, question: string) => call<DDQuestionRow>("/dd/questions", "POST", { deal, question }),
-  ddQuestionAnswer: (id: number, answer: string, documentId: string | null) =>
-    call<DDQuestionRow>(`/dd/questions/${id}`, "PATCH", { answer, document_id: documentId }),
+  ddQuestionAnswer: (id: number, cite: { answer: string; document_id: string; page: number; quote: string }) =>
+    call<DDQuestionRow>(`/dd/questions/${id}`, "PATCH", cite),
   report: () => call<Report>("/portfolio/report"),
   brief: (since: string) => call<AlertBrief>(`/alerts/brief?since=${encodeURIComponent(since)}`),
   connectors: () => call<Connector[]>("/connectors"),

@@ -92,6 +92,7 @@ from app.auth import (
 )
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
 from app.chat_alerts import chat_poster
+from app.citations import quote_in_page
 from app.comps import EV_METRIC
 from app.connectors import oauth, vault
 from app.connectors.base import ConnectorError, default_http
@@ -109,7 +110,7 @@ from app.email_links import links_for
 from app.envelope_stage import advance, deal_for_subject, parse_connect
 from app.expert_calls import flags, parse
 from app.extract.rows import _ROWS as ROW_SCHEMAS
-from app.extract.rows import extract_rows
+from app.extract.rows import _blocks, extract_rows
 from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
@@ -983,11 +984,14 @@ class DDQuestionIn(BaseModel):
 class DDQuestionUpdate(BaseModel):
     answer: str | None = None
     document_id: str | None = None
+    page: int | None = None
+    quote: str | None = None
 
 
 def _dd_question_out(q: DDQuestion) -> dict:
     return {"id": q.id, "deal": q.deal, "request_id": q.request_id, "question": q.question, "status": q.status,
-            "answer": q.answer, "document_id": q.document_id, "asked_at": q.asked_at, "answered_at": q.answered_at}
+            "answer": q.answer, "document_id": q.document_id, "page": q.page, "quote": q.quote,
+            "asked_at": q.asked_at, "answered_at": q.answered_at}
 
 
 @app.post("/dd/questions", status_code=201)
@@ -1016,24 +1020,36 @@ def dd_question_list(db: Db, who: Who, deal: str | None = None, status: str | No
 
 @app.patch("/dd/questions/{qid}")
 def dd_question_update(qid: int, body: DDQuestionUpdate, db: Db, who: Writer):
+    """Records an answer. An answer must cite a document the key can see, a page or block in it, and a quote that is
+    printed there: the same gate a fact passes. A cited quote that is not on the page is refused, so an answer
+    cannot point at a source that does not say it."""
     q = db.query(DDQuestion).filter_by(tenant_id=who.tenant, id=qid).first()
     if q is None or not _dd_scope_ok(who, q.deal):
         raise HTTPException(404, "question not found")
-    if body.document_id is not None:
+    if body.answer is not None:
+        if not body.answer.strip():
+            raise HTTPException(422, "answer is empty")
+        if body.document_id is None or body.page is None or not body.quote:
+            raise HTTPException(422, "an answer needs a document, a page and the quote it came from")
         scope = visible_doc_ids(db, who)  # None = unrestricted key
         doc = db.query(Document).filter_by(tenant_id=who.tenant, id=body.document_id).first()
         if doc is None or (scope is not None and doc.id not in scope):
             raise HTTPException(422, "document is not visible to this key")
-    if body.answer is not None:
+        blocks = _blocks(db, doc)
+        if body.page not in blocks:
+            raise HTTPException(422, "page not found in the document")
+        if not quote_in_page(body.quote, blocks[body.page]):
+            raise HTTPException(422, "quote not found on the cited page")
         q.answer = body.answer
         q.status = "answered"
         q.answered_at = _now_iso()
-    if body.document_id is not None:
-        q.document_id = body.document_id
+        q.document_id = doc.id
+        q.page = body.page
+        q.quote = body.quote
+    elif body.document_id is not None:
+        raise HTTPException(422, "a document can only be set together with an answer")
     db.commit()
     return _dd_question_out(q)
-
-
 class ExpertCallIn(BaseModel):
     transcript: str
 
