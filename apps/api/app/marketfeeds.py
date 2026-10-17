@@ -111,4 +111,13 @@ def from_env(fetch: Fetch = default_fetch) -> list:
     out = [YahooProvider(fetch)]
     if os.environ.get("FACTSET_USERNAME_SERIAL") and os.environ.get("FACTSET_API_KEY"):
         out.append(FactSetProvider(fetch=fetch))
+    from app.marketvendors import (  # licensed; only when configured
+        CapIQProvider,
+        PitchBookProvider,
+    )
+    for cls in (CapIQProvider, PitchBookProvider):
+        try:
+            out.append(cls(fetch=fetch))
+        except RuntimeError:
+            pass
     return out
