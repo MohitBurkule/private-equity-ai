@@ -27,6 +27,20 @@ def test_pages_split_on_breaks_and_hidden_figures_dropped():
 
 def test_figure_carries_its_table_row_and_page():
     _, tags = read_filing(FILING)
-    (fig,) = figures(tags, "us-gaap:Revenues", "2019-01-01", "2019-12-31")
+    (fig,) = figures(tags, "us-gaap:Revenues", "2019-01-01/2019-12-31")
     assert fig.page == 2
     assert fig.row == "Net sales $ 32,136 300"
+
+
+def test_opaque_context_ids_take_period_from_definition():
+    html = """<ix:resources>
+<xbrli:context id="c-7"><xbrli:entity/><xbrli:period><xbrli:startDate>2025-01-01</xbrli:startDate><xbrli:endDate>2025-12-31</xbrli:endDate></xbrli:period></xbrli:context>
+<xbrli:context id="c-8"><xbrli:entity/><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>
+<xbrli:context id="c-9"><xbrli:entity><xbrli:segment><xbrldi:explicitMember dimension="x">y</xbrldi:explicitMember></xbrli:segment></xbrli:entity><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>
+</ix:resources>
+<div><table><tr><td>Total assets</td><td><ix:nonFraction name="us-gaap:Assets" contextRef="c-8" scale="6">22,311</ix:nonFraction></td></tr></table></div>
+<div><table><tr><td>Revenues</td><td><ix:nonFraction name="us-gaap:Revenues" contextRef="c-7" scale="6">8,504</ix:nonFraction></td></tr></table></div>"""
+    _, tags = read_filing(html)
+    (assets,) = figures(tags, "us-gaap:Assets", "@2025-12-31")
+    assert assets.row == "Total assets 22,311"
+    assert [t.text for t in figures(tags, "us-gaap:Revenues", "2025-01-01/2025-12-31")] == ["8,504"]
