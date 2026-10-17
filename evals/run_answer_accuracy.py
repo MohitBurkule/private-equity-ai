@@ -69,8 +69,8 @@ def run(data: Path, n: int, chunk: int, checkpoint: Path) -> dict:
     done = _read(checkpoint)
     todo = [g for g in items if g["financebench_id"] not in done][:chunk]
     if todo:
-        db = _db(data, items, checkpoint.with_suffix(".pages"))
-        llm = LlamaCppLLM(max_tokens=160, n_ctx=4096)  # short answers; prompt is the top-k pages only
+        db = _db(data, todo, checkpoint.with_suffix(".pages"))  # only this chunk's filings
+        llm = LlamaCppLLM(max_tokens=256, n_ctx=4096)  # short answers; prompt is the top-k pages only
         with checkpoint.open("a") as out:
             for g in todo:
                 want = float(g["answer"].replace("$", "").replace(",", ""))
@@ -100,7 +100,7 @@ if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("data", type=Path)
-    ap.add_argument("--n", type=int, default=20)
+    ap.add_argument("--n", type=int, default=30)
     ap.add_argument("--chunk", type=int, default=10)
     ap.add_argument("--checkpoint", type=Path, default=Path("answer_accuracy.checkpoint.jsonl"))
     a = ap.parse_args()
