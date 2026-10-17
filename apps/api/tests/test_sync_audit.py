@@ -60,3 +60,20 @@ def test_runs_are_tenant_scoped_and_unknown_run_is_404(monkeypatch):
     assert c.get("/sync-runs", headers=other).json() == []
     assert c.get(f"/sync-runs/{run_id}", headers=other).status_code == 404
     assert c.get("/sync-runs/999999", headers=mine).status_code == 404
+
+
+
+def test_restricted_key_sees_only_runs_on_its_deals(monkeypatch):
+    monkeypatch.setattr(m, "CONNECTOR_HTTP", fake(gmail_routes()))
+    made = c.post("/admin/tenants", json={"name": "audit-scope"}, headers={"X-Admin-Token": "test-admin"}).json()
+    tid, admin = made["tenant_id"], {"Authorization": f"Bearer {made['api_key']}"}
+    scoped = c.post(f"/admin/tenants/{tid}/keys", json={"role": "analyst", "deals": ["atlas"]},
+                    headers={"X-Admin-Token": "test-admin"}).json()["api_key"]
+    limited = {"Authorization": f"Bearer {scoped}"}
+    assert _sync(admin, "atlas").status_code == 200
+    assert _sync(admin, "beta").status_code == 200
+    runs = {r["deal"]: r["id"] for r in c.get("/sync-runs", headers=admin).json()}
+    assert set(runs) == {"atlas", "beta"}
+    assert [r["deal"] for r in c.get("/sync-runs", headers=limited).json()] == ["atlas"]
+    assert c.get(f"/sync-runs/{runs['atlas']}", headers=limited).status_code == 200
+    assert c.get(f"/sync-runs/{runs['beta']}", headers=limited).status_code == 404
