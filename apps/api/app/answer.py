@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.citations import numbers_in, paragraphs_for, quote_in_page
 from app.hybrid import default_index
-from app.llm import LLM
+from app.llm import LLM, served_by
 from app.models import Document, PageRow
 from app.search import PageIndex, expand_query, tokenize
 
@@ -54,6 +54,7 @@ class Answer:
     rejected: list[Claim] = field(default_factory=list)
     detail: str = ""
     prompt_version: str = PROMPT_VERSION
+    model: str = ""  # provider and model that wrote the claims; empty when no model was called
 
 
 def _numbers_supported(claim_text: str, quote: str) -> bool:
@@ -113,14 +114,16 @@ def answer_question(db: Session, tenant_id: str, llm: LLM, question: str,
                     f"</document>" for h in hits)
     try:
         raw = llm.complete(SYSTEM, f"Question: {question}\n\n{ctx}")
+        model = served_by(llm)
         data = json.loads(raw[raw.index("{"): raw.rindex("}") + 1])
         claims = [Claim(_URL.sub("", str(c["text"])), str(c["doc_id"]), int(c["page"]), str(c["quote"]))
                   for c in data.get("claims", [])]
     except (ValueError, KeyError, TypeError) as e:
-        return Answer("error", detail=f"model returned unusable output: {e}")
+        return Answer("error", detail=f"model returned unusable output: {e}", model=served_by(llm))
+    # Fallback claims go through the same gate as primary claims: every quote must be on the cited page.
     checked = [verify_claim(db, tenant_id, c, scope, question) for c in claims]
     good = [c for c in checked if c.verified]
     bad = [c for c in checked if not c.verified]
     if not good:
-        return Answer("not_found", rejected=bad, detail="no claim could be verified against the sources")
-    return Answer("answered", claims=good, rejected=bad)
+        return Answer("not_found", rejected=bad, detail="no claim could be verified against the sources", model=model)
+    return Answer("answered", claims=good, rejected=bad, model=model)
