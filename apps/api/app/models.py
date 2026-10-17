@@ -229,6 +229,11 @@ class Deal(Base):
     mnpi: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Same SIC code as portfolio companies, so precedents compare like with like.
     sic: Mapped[str | None] = mapped_column(String(8), default=None)
+    # Other names the target trades or is filed under, comma-separated; the firm's own list, not a registry feed.
+    aliases: Mapped[str | None] = mapped_column(Text, default=None)
+    # Registry identifiers, so a filing or a CRM record matches the deal exactly rather than by name.
+    cik: Mapped[str | None] = mapped_column(String(10), default=None, index=True)
+    lei: Mapped[str | None] = mapped_column(String(20), default=None, index=True)
     # Key id that flagged the deal MNPI; that key keeps access so its creator is not locked out.
     created_by: Mapped[str | None] = mapped_column(String(64), default=None)
     updated_at: Mapped[str] = mapped_column(String(40), default="")

@@ -1209,6 +1209,37 @@ class DealIn(BaseModel):
     note: str | None = None
     mnpi: bool = False
     sic: str | None = None
+    aliases: list[str] | None = None
+    cik: str | None = None
+    lei: str | None = None
+
+
+def _aliases_text(names: list[str] | None) -> str | None:
+    clean = [n.strip() for n in (names or []) if n and n.strip()]
+    return ", ".join(dict.fromkeys(clean)) or None  # dedupe, keep the order given
+
+
+def _aliases_list(raw: str | None) -> list[str]:
+    return [n.strip() for n in raw.split(",") if n.strip()] if raw else []
+
+
+def _cik(raw: str | None) -> str | None:
+    """SEC CIKs are numeric; stored without leading zeros so 0001234 and 1234 are the same registrant."""
+    v = (raw or "").strip()
+    if not v:
+        return None
+    if not v.isdigit() or len(v) > 10:
+        raise HTTPException(422, "cik must be up to 10 digits")
+    return v.lstrip("0") or "0"
+
+
+def _lei(raw: str | None) -> str | None:
+    v = (raw or "").strip().upper()
+    if not v:
+        return None
+    if len(v) != 20 or not v.isalnum():
+        raise HTTPException(422, "lei must be 20 letters or digits")
+    return v
 
 
 class DealUpdate(BaseModel):
@@ -1217,13 +1248,17 @@ class DealUpdate(BaseModel):
     legal_hold: bool | None = None
     mnpi: bool | None = None
     sic: str | None = None
+    aliases: list[str] | None = None
+    cik: str | None = None
+    lei: str | None = None
 
 
 def _deal_out(db: Session, who: Principal, d: Deal) -> dict:
     dd = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=d.name).all()
     docs = db.query(Document).filter_by(tenant_id=who.tenant, deal=d.name).count()
     closed = sum(r.status != "open" for r in dd)
-    return {"name": d.name, "stage": d.stage, "sic": d.sic, "note": d.note, "legal_hold": d.legal_hold, "mnpi": d.mnpi, "updated_at": d.updated_at,
+    return {"name": d.name, "stage": d.stage, "sic": d.sic, "aliases": _aliases_list(d.aliases), "cik": d.cik,
+            "lei": d.lei, "note": d.note, "legal_hold": d.legal_hold, "mnpi": d.mnpi, "updated_at": d.updated_at,
             "documents": docs, "dd_total": len(dd), "dd_open": len(dd) - closed}
 
 
@@ -1241,7 +1276,8 @@ def deal_create(body: DealIn, db: Db, who: Writer):
     if db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first():
         raise HTTPException(409, "deal already exists")
     d = Deal(tenant_id=who.tenant, name=name, stage=body.stage, note=body.note, mnpi=body.mnpi,
-             sic=(body.sic or "").strip() or None,
+             sic=(body.sic or "").strip() or None, aliases=_aliases_text(body.aliases), cik=_cik(body.cik),
+             lei=_lei(body.lei),
              created_by=who.key_id if body.mnpi else None, updated_at=_now_iso())
     db.add(d)
     db.commit()
@@ -1370,6 +1406,14 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
     if body.sic is not None:
         _require(who, "write", "edit deal sector", deal=name)
         d.sic = body.sic.strip() or None
+    if body.aliases is not None or body.cik is not None or body.lei is not None:
+        _require(who, "write", "edit deal identifiers", deal=name)
+        if body.aliases is not None:
+            d.aliases = _aliases_text(body.aliases)
+        if body.cik is not None:
+            d.cik = _cik(body.cik)
+        if body.lei is not None:
+            d.lei = _lei(body.lei)
     if body.stage is not None:
         if body.stage not in STAGES:
             raise HTTPException(422, f"stage must be one of {STAGES}")
