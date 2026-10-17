@@ -15,6 +15,13 @@ from app.parse.office import RawPage
 _DURATION = re.compile(r"Duration_(\d{1,2})_(\d{1,2})_(\d{4})_To_(\d{1,2})_(\d{1,2})_(\d{4})")
 _BREAK = re.compile(r"page-break-(after|before)\s*:\s*always", re.IGNORECASE)
 _HIDDEN = re.compile(r"display\s*:\s*none", re.IGNORECASE)
+# Contexts live in ix:resources (hidden). Newer filings use opaque ids like c-12, so the period is
+# read from the definition, not from the id. Dimensional contexts (a segment or member) are dropped.
+_CONTEXT = re.compile(r'<xbrli:context\s+id="([^"]+)"\s*>(.*?)</xbrli:context>', re.DOTALL | re.IGNORECASE)
+_START = re.compile(r"<xbrli:startDate>\s*([\d-]+)\s*<", re.IGNORECASE)
+_END = re.compile(r"<xbrli:endDate>\s*([\d-]+)\s*<", re.IGNORECASE)
+_INSTANT = re.compile(r"<xbrli:instant>\s*([\d-]+)\s*<", re.IGNORECASE)
+_DIMENSION = re.compile(r"<xbrldi:(explicitMember|typedMember)", re.IGNORECASE)
 
 
 @dataclass
@@ -25,6 +32,7 @@ class Tagged:
     text: str           # the number as printed
     page: int           # 1-based, matches the page list
     row: str            # visible text of the table row the figure sits in
+    period: str | None  # period_key(): "start/end" for a duration, "@date" for an instant
 
 
 def period_of(context: str) -> tuple[str, str] | None:
@@ -39,9 +47,41 @@ def period_of(context: str) -> tuple[str, str] | None:
     return f"{y1:04d}-{m1:02d}-{d1:02d}", f"{y2:04d}-{m2:02d}-{d2:02d}"
 
 
+def _legacy_key(context: str) -> str | None:
+    """Ids that spell the dates out (Duration_1_1_2019_To_12_31_2019_...) when no definition is parsed."""
+    span = period_of(context)
+    return period_key(span[0], span[1], None) if span else None
+
+
+def period_key(start: str | None, end: str | None, instant: str | None) -> str | None:
+    if instant:
+        return f"@{instant}"
+    if start and end:
+        return f"{start}/{end}"
+    return None
+
+
+def _first(rx: re.Pattern, text: str) -> str | None:
+    m = rx.search(text)
+    return m.group(1) if m else None
+
+
+def contexts(html: str) -> dict[str, str]:
+    """Context id -> period_key, for undimensioned contexts only."""
+    out = {}
+    for cid, body in _CONTEXT.findall(html):
+        if _DIMENSION.search(body):
+            continue
+        key = period_key(*(_first(rx, body) for rx in (_START, _END, _INSTANT)))
+        if key:
+            out[cid] = key
+    return out
+
+
 class _Parser(HTMLParser):
-    def __init__(self) -> None:
+    def __init__(self, ctx: dict[str, str]) -> None:
         super().__init__(convert_charrefs=True)
+        self._ctx = ctx
         self.pages: list[list[str]] = [[]]
         self.tags: list[Tagged] = []
         self._stack: list[dict] = []     # open elements: name, breaks, hidden, row
@@ -78,7 +118,8 @@ class _Parser(HTMLParser):
                 f = el["fig"]
                 text = " ".join("".join(f["chunks"]).split())
                 if text and f["name"]:
-                    t = Tagged(f["name"], f["context"], f["scale"], text, len(self.pages), "")
+                    period = self._ctx.get(f["context"]) or _legacy_key(f["context"])
+                    t = Tagged(f["name"], f["context"], f["scale"], text, len(self.pages), "", period)
                     self.tags.append(t)
                     if f["row"] is not None:
                         self._row_refs.append((t, f["row"]))
@@ -111,7 +152,7 @@ class _Parser(HTMLParser):
 
 
 def read_filing(html: str) -> tuple[list[RawPage], list[Tagged]]:
-    p = _Parser()
+    p = _Parser(contexts(html))
     p.feed(html)
     p.close()
     pages = [RawPage(text=" ".join(" ".join(chunks).split()), label=f"p. {i}")
@@ -119,12 +160,6 @@ def read_filing(html: str) -> tuple[list[RawPage], list[Tagged]]:
     return pages, p.tags
 
 
-def figures(tags: list[Tagged], concept: str, start: str, end: str) -> list[Tagged]:
-    """Plain (not dimensional) figures for one concept over one duration."""
-    out = []
-    for t in tags:
-        if t.name != concept or not t.row:
-            continue
-        if period_of(t.context) == (start, end):
-            out.append(t)
-    return out
+def figures(tags: list[Tagged], concept: str, period: str) -> list[Tagged]:
+    """Plain (not dimensional) figures for one concept at one period_key()."""
+    return [t for t in tags if t.name == concept and t.row and t.period == period]
