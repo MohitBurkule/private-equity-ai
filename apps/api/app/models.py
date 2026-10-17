@@ -351,6 +351,18 @@ class MemoComment(Base):
     created_at: Mapped[str] = mapped_column(String(40), default="")
 
 
+class SavedScreen(Base):
+    """A named strategy screen the team reruns: its criteria as entered, so a rerun applies the same tests."""
+    __tablename__ = "saved_screen"
+    __table_args__ = (UniqueConstraint("tenant_id", "name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    criteria: Mapped[str] = mapped_column(Text)  # JSON: sectors, countries, min_revenue, max_revenue
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 class TargetContact(Base):
     """A person at a target who may receive outreach. Only addresses a senior person added are ever mailed."""
     __tablename__ = "target_contact"
