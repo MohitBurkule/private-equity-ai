@@ -712,6 +712,53 @@ def deal_delete(name: str, db: Db, who: Writer):
     return {"deleted": name, "dd_requests_removed": removed}
 
 
+RETENTION_STAGES = ("closed", "passed")
+
+
+def _retention_candidates(db: Session, who: Principal, older_than_days: int) -> list[Deal]:
+    """Closed or passed deals untouched for longer than the cutoff. A deal with no recorded
+    update time is never a candidate: unknown age fails closed."""
+    cutoff = datetime.now(UTC) - timedelta(days=older_than_days)
+    out = []
+    for d in db.query(Deal).filter_by(tenant_id=who.tenant).order_by(Deal.id).all():
+        if d.stage not in RETENTION_STAGES or d.legal_hold or not d.updated_at:
+            continue
+        if not _dd_scope_ok(who, d.name) or deal_hidden(d, who):
+            continue
+        updated = datetime.fromisoformat(d.updated_at)
+        if updated.tzinfo is None:  # rows written before timestamps carried a zone are read as UTC
+            updated = updated.replace(tzinfo=UTC)
+        if updated < cutoff:
+            out.append(d)
+    return out
+
+
+class RetentionIn(BaseModel):
+    older_than_days: int = Field(ge=1)
+    dry_run: bool = True
+
+
+@app.post("/retention/deals")
+def retention_deals(body: RetentionIn, db: Db, who: Writer):
+    """Dry run lists what would go. A real run deletes candidates that have no linked documents
+    and records each deletion in the audit chain. Holds and linked documents are always skipped."""
+    cands = _retention_candidates(db, who, body.older_than_days)
+    if body.dry_run:
+        return {"dry_run": True, "candidates": [d.name for d in cands]}
+    deleted, skipped = [], []
+    for d in cands:
+        if db.query(Document).filter_by(tenant_id=who.tenant, deal=d.name).first():
+            skipped.append({"name": d.name, "reason": "documents still linked"})
+            continue
+        removed = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=d.name).delete()
+        db.delete(d)
+        deleted.append(d.name)
+        log_event(db, who.tenant, actor(who), "deal.retention_delete",
+                  {"name": d.name, "older_than_days": body.older_than_days, "dd_requests_removed": removed})
+    db.commit()
+    return {"dry_run": False, "deleted": deleted, "skipped": skipped}
+
+
 @app.get("/memo")
 def memo(entity: str, db: Db, who: Who):
     return {"entity": entity, "markdown": build_memo(db, who.tenant, entity, visible_doc_ids(db, who))}

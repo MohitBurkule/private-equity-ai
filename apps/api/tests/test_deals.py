@@ -79,3 +79,28 @@ def test_mnpi_deal_hidden_from_other_unscoped_keys_and_visible_to_scoped_and_cre
     sh = {"Authorization": f"Bearer {scoped['api_key']}"}
     assert [d["name"] for d in c.get("/deals", headers=sh).json()] == ["Quiet"]
     assert c.patch("/deals/Quiet", headers=sh, json={"mnpi": False}).json()["mnpi"] is False
+
+
+def test_retention_dry_run_then_purge_skips_held_and_is_audited():
+    from datetime import UTC, datetime, timedelta
+
+    from app.main import SessionLocal
+    from app.models import Deal
+    from app.rls import bind_tenant
+
+    t = c.post("/admin/tenants", json={"name": "ret1"}, headers={"X-Admin-Token": "test-admin"}).json()
+    h = {"Authorization": f"Bearer {t['api_key']}"}
+    for name, stage in [("Old", "passed"), ("Held", "passed"), ("Live", "dd")]:
+        c.post("/deals", headers=h, json={"name": name, "stage": stage})
+    c.patch("/deals/Held", headers=h, json={"legal_hold": True})
+    old = (datetime.now(UTC) - timedelta(days=400)).isoformat()
+    with SessionLocal() as db:
+        bind_tenant(db, t["tenant_id"])
+        for row in db.query(Deal).all():
+            row.updated_at = old
+        db.commit()
+    assert c.post("/retention/deals", headers=h, json={"older_than_days": 365}).json() == {
+        "dry_run": True, "candidates": ["Old"]}
+    real = c.post("/retention/deals", headers=h, json={"older_than_days": 365, "dry_run": False}).json()
+    assert real["deleted"] == ["Old"] and real["skipped"] == []
+    assert sorted(d["name"] for d in c.get("/deals", headers=h).json()) == ["Held", "Live"]
