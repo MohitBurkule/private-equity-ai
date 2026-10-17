@@ -1223,7 +1223,7 @@ def market_quote(symbol: str, provider: str, who: Who, fetch: Annotated[Callable
             p = EcbFxProvider(fetch)
         elif provider == "fred":
             from app.macrodata import FredProvider
-            p = FredProvider(os.environ.get("FRED_API_KEY", ""), fetch=fetch)
+            p = FredProvider(os.environ.get("FRED_API_KEY", ""), fetch=fetch)  # keyless CSV when unset
         else:
             raise HTTPException(422, "provider must be yahoo, stooq, factset, ecb or fred")
         q = p.quote(symbol.strip())

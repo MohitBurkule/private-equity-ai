@@ -6,6 +6,8 @@ Test fixtures: the ECB snapshot is a real saved response (tests/fixtures/macro);
 because no key was available to the build. Re-save the FRED fixture from a real call before trusting it."""
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import urllib.parse
@@ -17,6 +19,7 @@ from app.marketfeeds import Fetch, default_fetch
 
 ECB_URL = "https://data-api.ecb.europa.eu/service/data/EXR/D.{ccy}.EUR.SP00.A?lastNObservations=5"
 FRED_URL = "https://api.stlouisfed.org/fred/series/observations?"
+FRED_CSV_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?"  # public download, no key
 
 
 def _dec(v: str, what: str) -> Decimal:
@@ -52,28 +55,32 @@ class EcbFxProvider:
 
 
 class FredProvider:
-    """FRED series, e.g. 'DGS10' (10-year Treasury, percent). Newest non-missing observation. FRED reports
-    missing days as '.', which is skipped, not treated as zero. Currency is the unit the caller names."""
+    """FRED series, e.g. 'DGS10' (10-year Treasury, percent) or 'SOFR'. Newest non-missing observation. FRED
+    reports missing days as '.', which is skipped, not treated as zero. Currency is the unit the caller names.
+    With an api_key the JSON API is used; without one, the public CSV download is used (no key needed)."""
     name = "fred"
 
-    def __init__(self, api_key: str, unit: str = "PCT", fetch: Fetch = default_fetch):
-        if not api_key:
-            raise NoData("fred: FRED_API_KEY is required")
+    def __init__(self, api_key: str = "", unit: str = "PCT", fetch: Fetch = default_fetch):
         self._key, self.unit, self._fetch = api_key, unit, fetch
 
     def quote(self, series: str) -> Quote:
-        q = urllib.parse.urlencode({"series_id": series.upper(), "api_key": self._key, "file_type": "json",
-                                    "sort_order": "desc", "limit": 10})
-        doc = json.loads(self._fetch(FRED_URL + q, {}))
-        for o in doc.get("observations", []):
-            if o.get("value") not in (None, "", "."):
-                return Quote(series.upper(), _dec(o["value"], f"fred {series}"), self.unit, o["date"], self.name)
-        raise NoData(f"fred: no recent observation for {series}")
+        sid = series.upper()
+        if self._key:
+            q = urllib.parse.urlencode({"series_id": sid, "api_key": self._key, "file_type": "json",
+                                        "sort_order": "desc", "limit": 10})
+            doc = json.loads(self._fetch(FRED_URL + q, {}))
+            rows = [(o.get("date"), o.get("value")) for o in doc.get("observations", [])]
+        else:
+            raw = self._fetch(FRED_CSV_URL + urllib.parse.urlencode({"id": sid}), {})
+            reader = csv.reader(io.StringIO(raw.decode("utf-8", "replace")))
+            next(reader, None)  # header: observation_date,<ID>
+            rows = [(r[0], r[1]) for r in reader if len(r) == 2]
+        for day, value in sorted(rows, reverse=True):
+            if value not in (None, "", "."):
+                return Quote(sid, _dec(value, f"fred {sid}"), self.unit, day, self.name)
+        raise NoData(f"fred: no recent observation for {sid}")
 
 
 def registered(fetch: Fetch = default_fetch) -> list:
-    """ECB is always listed. FRED is listed only when FRED_API_KEY is set."""
-    out: list = [EcbFxProvider(fetch)]
-    if os.environ.get("FRED_API_KEY"):
-        out.append(FredProvider(os.environ["FRED_API_KEY"], fetch=fetch))
-    return out
+    """ECB and FRED are both listed. FRED uses the key when FRED_API_KEY is set, else the public CSV."""
+    return [EcbFxProvider(fetch), FredProvider(os.environ.get("FRED_API_KEY", ""), fetch=fetch)]
