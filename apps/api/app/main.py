@@ -148,6 +148,7 @@ from app.models import (
     FactSource,
     Holding,
     HtmlUnit,
+    ICDecision,
     IngestJob,
     LboRun,
     MemoComment,
@@ -1061,6 +1062,44 @@ async def lbo_workbook_ties(file: Annotated[UploadFile, File()], db: Db, who: Wh
 async def model_audit(file: Annotated[UploadFile, File()], who: Who):
     """Hardcodes in formula rows, #REF! references and external links in an Excel model. Stores nothing."""
     return {"findings": audit(await file.read())}
+
+
+OUTCOMES = {"proceed", "pass", "hold", "more_diligence"}
+
+
+class ICDecisionIn(BaseModel):
+    deal: str
+    outcome: str
+    rationale: str = Field(min_length=1)
+    dissent: str | None = None
+    dissenter: str | None = None
+
+
+def _decision_out(d: ICDecision) -> dict:
+    return {"id": d.id, "deal": d.deal, "outcome": d.outcome, "rationale": d.rationale, "dissent": d.dissent,
+            "dissenter": d.dissenter, "recorded_at": d.recorded_at}
+
+
+@app.post("/ic/decisions", status_code=201)
+def ic_decision_add(body: ICDecisionIn, db: Db, who: Writer):
+    """Appends a decision. There is no edit or delete: a changed view is a new entry."""
+    if not _dd_scope_ok(who, body.deal):
+        raise HTTPException(403, "deal is outside this key's scope")
+    if body.outcome not in OUTCOMES:
+        raise HTTPException(422, f"outcome must be one of {sorted(OUTCOMES)}")
+    d = ICDecision(tenant_id=who.tenant, deal=body.deal, outcome=body.outcome, rationale=body.rationale,
+                   dissent=body.dissent, dissenter=body.dissenter, recorded_at=_now_iso())
+    db.add(d)
+    db.commit()
+    return _decision_out(d)
+
+
+@app.get("/ic/decisions")
+def ic_decision_list(deal: str, db: Db, who: Who):
+    if not _dd_scope_ok(who, deal):
+        raise HTTPException(403, "deal is outside this key's scope")
+    rows = db.query(ICDecision).filter_by(tenant_id=who.tenant, deal=deal).order_by(ICDecision.id).all()
+    return [_decision_out(d) for d in rows]
 
 
 @app.get("/dd/summary")
