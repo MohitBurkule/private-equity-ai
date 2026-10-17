@@ -92,6 +92,7 @@ from app.auth import (
 )
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
 from app.chat_alerts import chat_poster
+from app.comps import EV_METRIC
 from app.connectors import oauth, vault
 from app.connectors.base import ConnectorError, default_http
 from app.connectors.docusign import DocuSign
@@ -1918,6 +1919,12 @@ class FlagshipIn(BaseModel):
     precedents: dict | None = None  # {"since": "YYYY-MM-DD", "until": "YYYY-MM-DD", "limit": 5}
 
 
+def _peer_ev(db: Session, tenant_id: str, name: str) -> Fact | None:
+    """The latest verified enterprise_value fact for a peer, from a market-data feed or a filing."""
+    return (db.query(Fact).filter_by(tenant_id=tenant_id, entity=name, metric=EV_METRIC, status="verified")
+            .order_by(Fact.id.desc()).first())
+
+
 @app.post("/flagship/run")
 def flagship_run(body: FlagshipIn, who: Who, db: Db):
     """One run over an uploaded document. Steps: intake, extraction (the filing's own tags, cited), comps (SIC peers by
@@ -1939,7 +1946,8 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
     revenue = rev_fact.value if rev_fact else None
     exclude = {body.cik.zfill(10)} if body.cik else set()
     try:
-        steps.append(flagship_mod.comps_step(revenue, body.sic, exclude, body.peers_pages, peers_mod.discover))
+        steps.append(flagship_mod.comps_step(revenue, body.sic, exclude, body.peers_pages, peers_mod.discover,
+                                             ev_lookup=lambda name: _peer_ev(db, who.tenant, name)))
     except (OSError, ValueError, RuntimeError) as e:
         steps.append(flagship_mod.Step("comps", "failed", f"{type(e).__name__}: {e}"))
     try:
