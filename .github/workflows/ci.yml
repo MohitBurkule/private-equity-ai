@@ -135,3 +135,19 @@ jobs:
         working-directory: apps/api
         env: {CHART_VLM: "0"}
         run: pytest tests/test_chart_vlm.py -q
+  charts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults: {run: {working-directory: apps/api}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Install CPU-only torch (docling needs it; CUDA wheels fill the runner disk)
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+        working-directory: .
+      - run: pip install -e '.[dev,pdf,ocr,charts]'
+      - name: Chart tests must run, not skip
+        run: |
+          pytest tests/test_charts.py -v -rs | tee charts.txt
+          ! grep -q SKIPPED charts.txt
