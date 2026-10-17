@@ -74,7 +74,7 @@ def read(pages: list[tuple[int, str]], doc_type: str, absent: list[str], llm) ->
         if page not in page_text or quote not in page_text[page]:
             dropped.append({"term": term, "reason": "quote is not on the cited page"})
             continue
-        m = re.search(spec["re"], quote, re.IGNORECASE if term != "governing_law" else 0)
+        m = re.search(spec["re"], quote, re.IGNORECASE)  # the rules match governing law case-sensitively; the gate must not
         if not m:
             dropped.append({"term": term, "reason": "quote does not state the term"})
             continue

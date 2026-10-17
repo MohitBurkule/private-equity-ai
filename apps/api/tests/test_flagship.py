@@ -1,9 +1,9 @@
 from decimal import Decimal
 
-from fastapi.testclient import TestClient
-
 from app.flagship import lbo_inputs, lbo_step
 from app.main import app
+from fastapi.testclient import TestClient
+
 from tests.helpers import new_tenant
 
 c = TestClient(app)
@@ -119,3 +119,30 @@ def test_flagship_reads_an_html_exhibit_stored_as_blocks():
     assert steps["intake"]["result"]["pages"] >= 1
     assert steps["legal"]["status"] == "ok"
     assert "gov_law_absent" not in [f["rule"] for f in steps["legal"]["result"]["red_flags"]]
+
+
+def test_legal_model_reader_positive_case_from_a_real_merger_exhibit():
+    """VerifyMe EX-2.1 (2026-08-12): governing law is written 'shall be governed by, and construed in accordance with,
+    the Laws of the State of Delaware'. The rules miss it (capital L, and the case-sensitive pattern); the reader keeps
+    the real quote and rejects a quote the page does not contain."""
+    from app import legal, legal_reader
+
+    class Local:
+        def __init__(self, replies):
+            self.replies = list(replies)
+
+        def complete(self, system, prompt):
+            return self.replies.pop(0)
+    sentence = ("This Amendment, and all claims or causes of action based upon, arising out of, or related to the Agreement "
+                "or the transactions contemplated hereby, shall be governed by, and construed in accordance with, the Laws "
+                "of the State of Delaware, without giving effect to principles or rules of conflict of laws.")
+    pages = [(1, "5. Governing Law. " + sentence)]
+    out = legal.extract(pages, "spa")
+    assert "governing_law" in out["absent"]
+    real = legal_reader.read(pages, "spa", ["governing_law"], Local(
+        ['{"quote": "' + sentence + '", "page": 1}']))
+    assert [f["term"] for f in real["findings"]] == ["governing_law"]
+    assert real["findings"][0]["value"] == "State of Delaware"
+    fake = legal_reader.read(pages, "spa", ["governing_law"], Local(
+        ['{"quote": "This Agreement is governed by the laws of the State of New York.", "page": 1}']))
+    assert fake["findings"] == [] and fake["dropped"][0]["reason"] == "quote is not on the cited page"
