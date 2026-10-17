@@ -1578,12 +1578,13 @@ def precedents_summary(db: Db, who: Who, document_ids: str):
 
 
 @app.get("/precedents/scan")
-def precedents_scan(who: Who, since: str, until: str, limit: int = 25, form: str = "8-K"):
-    """Merger 8-Ks filed in a date range, each read from its filing with stated EV and multiples cited to the URL."""
+def precedents_scan(who: Who, since: str, until: str, limit: int = 25, form: str = "8-K", theme: str | None = None):
+    """Merger 8-Ks filed in a date range, each read from its filing with stated EV and multiples cited to the URL.
+    theme=vertical_saas_take_private keeps only deals whose filing names a sponsor buyer and a software target."""
     if not 1 <= limit <= 100:
         raise HTTPException(422, "limit must be 1 to 100")
     try:
-        return pfetch_mod.build(since, until, limit=limit, form=form)
+        return pfetch_mod.build(since, until, limit=limit, form=form, theme=theme)
     except RuntimeError as e:  # SEC_USER_AGENT not set
         raise HTTPException(503, str(e)) from e
     except ValueError as e:
