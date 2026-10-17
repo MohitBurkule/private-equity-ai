@@ -18,10 +18,11 @@ test-postgres:  ## Full API suite on a throwaway Postgres 18 (embedded-postgres,
 
 .PHONY: test-postgres
 
-ci:  ## Local merge gate (Actions is blocked): ruff, alembic heads, pytest on SQLite and Postgres, web tsc + vitest
+ci:  ## Local merge gate (Actions is blocked): ruff, alembic heads, pytest on SQLite and Postgres, web tsc + vitest, Rust fmt/clippy/test
 	cd apps/api && python3 -m ruff check . && python3 -m pytest -q tests/test_alembic_heads.py && python3 -m pytest -q
 	bash scripts/test_postgres.sh
 	cd apps/web && npm ci --no-audit --no-fund && npx tsc --noEmit && npx vitest run
+	cd apps/api-rs && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 
 .PHONY: ci
 
