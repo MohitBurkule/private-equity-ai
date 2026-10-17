@@ -123,3 +123,8 @@ def test_termination_notice_is_always_flagged_for_review_and_reads_days_after_no
     out = extract([(7, "Any such termination shall be effective thirty (30) days after the giving of such notice by the Employee.")], "employment")
     fs = [f for f in out["findings"] if f["term"] == "termination_notice_days"]
     assert [f["value"] for f in fs] == ["30"] and all(f["needs_review"] for f in fs)
+
+
+def test_non_solicit_anniversary_before_the_covenant_verb_is_24_months():
+    out = extract([(8, "Seller shall not, and shall cause its Affiliates not to, solicit or induce any Transferred Employees until the second (2nd) anniversary of the Closing Date (the “Restricted Period”), Seller shall not solicit employees.")], "spa")
+    assert [f["value"] for f in out["findings"] if f["term"] == "non_solicit_months"] == ["24"]
