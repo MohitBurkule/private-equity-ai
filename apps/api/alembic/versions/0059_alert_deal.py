@@ -1,14 +1,14 @@
 """alert deal column; existing deal and dd alerts take the deal name from their title
 
-Revision ID: 20261017_1648_alert_deal
-Revises: 0057
+Revision ID: 0059
+Revises: 0058
 """
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = '20261017_1648_alert_deal'
-down_revision = '0057'
+revision = '0059'
+down_revision = '0058'
 branch_labels = None
 depends_on = None
 
