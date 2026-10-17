@@ -632,6 +632,14 @@ def lbo_returns(body: dict, db: Db, who: Who, xlsx: bool = False):
             src = {"document_id": f.sources[0].document_id, "filename": names.get(f.sources[0].document_id),
                    "page": f.sources[0].page, "quote": f.sources[0].quote}
             cited[name] = lbo_mod.Cited(f.value, src)
+        elif "assumption" in spec:
+            # An assumption is a judgement, not a fact: it names who set it, when and why, and never passes the
+            # citation gate. Outputs list every assumption so it cannot pass as sourced.
+            a = spec["assumption"] or {}
+            if not a.get("set_by") or not a.get("set_on") or not a.get("reason"):
+                raise HTTPException(422, f"{name}: assumption needs set_by, set_on and reason")
+            src = {"assumption": True, "set_by": a["set_by"], "set_on": a["set_on"], "reason": a["reason"]}
+            cited[name] = lbo_mod.Cited(Decimal(str(spec["value"])), src)
         else:
             src = spec.get("source") or {}
             if not src.get("document_id") or not src.get("quote") or not src.get("page"):
@@ -658,7 +666,10 @@ def lbo_returns(body: dict, db: Db, who: Who, xlsx: bool = False):
             "equity": str(res.equity), "exit_ev": str(res.exit_ev), "exit_net_debt": str(res.exit_net_debt),
             "exit_equity": str(res.exit_equity), "moic": str(res.moic.quantize(Decimal("0.01"))),
             "irr": None if res.irr is None else str(res.irr.quantize(Decimal("0.0001"))),
-            "dividends": str(res.dividends), "schedule": res.schedule, "sensitivity": grid}
+            "dividends": str(res.dividends), "schedule": res.schedule, "sensitivity": grid,
+            "assumptions": [{"input": k, "value": str(c.value), "set_by": c.source["set_by"],
+                             "set_on": c.source["set_on"], "reason": c.source["reason"]}
+                            for k, c in cited.items() if c.source.get("assumption")]}
 
 
 @app.get("/calc/ltm")

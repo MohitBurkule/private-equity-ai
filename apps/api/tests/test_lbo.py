@@ -96,3 +96,23 @@ def test_sensitivity_grid_rows_and_xlsx_sheet():
     assert load_workbook(io.BytesIO(x.content)).sheetnames == ["Inputs", "Model", "Sensitivity"]
     bad = c.post("/lbo/returns", headers=h, json={"inputs": {**inputs, "junk": {"value": "1", "source": SRC}}})
     assert bad.status_code == 422
+
+
+def test_assumption_needs_who_when_why_and_is_listed_not_sourced():
+    h = new_tenant(c, "lbo-assume")
+    inputs = {k: {"value": v, "source": SRC} for k, v in BASE.items()}
+    exit_ass = {"value": "11", "assumption": {"set_by": "deal team", "set_on": "2026-10-01",
+                                              "reason": "in line with peer exits"}}
+    body = {"inputs": {**inputs, "exit_multiple": exit_ass}}
+    js = c.post("/lbo/returns", headers=h, json=body)
+    assert js.status_code == 200
+    out = js.json()
+    assert out["assumptions"] == [{"input": "exit_multiple", "value": "11", "set_by": "deal team",
+                                   "set_on": "2026-10-01", "reason": "in line with peer exits"}]
+    # An assumption with no owner, date or reason is refused, the same as an uncited input.
+    for missing_field in ("set_by", "set_on", "reason"):
+        a = {k: v for k, v in exit_ass["assumption"].items() if k != missing_field}
+        bad = {**inputs, "exit_multiple": {"value": "11", "assumption": a}}
+        assert c.post("/lbo/returns", headers=h, json={"inputs": bad}).status_code == 422
+    # A sourced run lists no assumptions.
+    assert c.post("/lbo/returns", headers=h, json={"inputs": inputs}).json()["assumptions"] == []
