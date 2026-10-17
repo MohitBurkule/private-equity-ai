@@ -1,7 +1,7 @@
 """HTML filings (EDGAR .htm exhibits) split into text blocks that citations can point at.
 
 HTML has no page numbers, so a citation names where the text sits instead: the section number and heading
-it falls under, the element id when the filing has one, and the character offset in the normalised text
+it falls under, the element id when the filing has one, and the character offset of the block in the raw filing
 otherwise. Nothing here assigns page numbers. Blocks are paragraphs, table rows and headings.
 """
 
@@ -36,13 +36,24 @@ class Unit:
 
 
 class _Blocks(HTMLParser):
-    def __init__(self) -> None:
+    """Offsets are taken from the parser's (line, column) position, mapped into the raw filing, so they index
+    the same string the filing viewer highlights."""
+
+    def __init__(self, raw: str) -> None:
         super().__init__(convert_charrefs=True)
-        self.blocks: list[tuple[str, str | None]] = []  # (text, anchor)
+        self.blocks: list[tuple[str, str | None, int]] = []  # (text, anchor, offset of its opening tag)
         self._buf: list[str] = []
         self._anchor: str | None = None
-        self._pending: str | None = None  # id seen on an empty element, e.g. <a id="x"></a>
+        self._block_at = 0
         self._skip = 0
+        self._line_starts = [0]
+        for i, ch in enumerate(raw):
+            if ch == "\n":
+                self._line_starts.append(i + 1)
+
+    def _abs(self) -> int:
+        line, col = self.getpos()
+        return self._line_starts[line - 1] + col
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in _SKIP:
@@ -53,6 +64,7 @@ class _Blocks(HTMLParser):
             self._anchor = found
         if tag in _BLOCK:
             self._flush()
+            self._block_at = self._abs()
         if tag == "td":
             self._buf.append(" ")
 
@@ -70,25 +82,24 @@ class _Blocks(HTMLParser):
         text = _SPACE.sub(" ", _NBSP.sub(" ", "".join(self._buf))).strip()
         self._buf = []
         if text:
-            self.blocks.append((text, self._anchor))
+            self.blocks.append((text, self._anchor, self._block_at))
             self._anchor = None
 
 
 def parse_units(data: bytes) -> list[Unit]:
     """Text blocks in document order. Section and heading are inherited by the blocks that follow a
     numbered heading, so a clause knows which section it sits in."""
-    p = _Blocks()
-    p.feed(data.decode("utf-8", errors="replace"))
+    raw = data.decode("utf-8", errors="replace")
+    p = _Blocks(raw)
+    p.feed(raw)
     p._flush()
     units: list[Unit] = []
     section = heading = None
-    offset = 0
-    for i, (text, anchor) in enumerate(p.blocks):
+    for i, (text, anchor, offset) in enumerate(p.blocks):
         m = _SECTION.match(text)
         if m and len(text) <= 120:
             section, heading = m.group(1), m.group(2)
         units.append(Unit(idx=i, section=section, heading=heading, anchor=anchor, offset=offset, text=text))
-        offset += len(text) + 1
     return units
 
 

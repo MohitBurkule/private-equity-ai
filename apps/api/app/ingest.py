@@ -184,6 +184,8 @@ def ingest_html_doc(db: Session, tenant_id: str, data: bytes, filename: str) -> 
     db.add_all(HtmlUnit(tenant_id=tenant_id, document_id=doc_id, idx=u.idx, section=u.section, heading=u.heading,
                         anchor=u.anchor, offset=u.offset, text=u.text) for u in units)
     db.commit()
+    # Kept as filed so the citation viewer can highlight the block at its offset.
+    _keep_original(db, tenant_id, doc_id, data, media_type="text/html")
     return doc
 
 

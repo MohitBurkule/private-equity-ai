@@ -39,7 +39,9 @@ def test_blocks_carry_section_heading_offset_and_anchor():
     cov = next(u for u in units if "Consolidated Total Net Leverage" in u.text)
     assert cov.section == "7.12" and cov.heading == "Financial Covenants"
     assert cov.anchor == "ccr"
-    assert units[0].offset == 0 and units[1].offset > units[0].offset
+    # Offsets index the raw filing, so a viewer highlights the block by slicing the same string.
+    assert HTML[units[0].offset:].startswith("<p>INDEX")
+    assert HTML[cov.offset:].startswith('<p id="ccr">')
     assert all(u.text == u.text.strip() and " " not in u.text for u in units)
 
 
