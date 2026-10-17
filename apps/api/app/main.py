@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import tempfile
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from datetime import date as DateT
@@ -99,6 +100,16 @@ from app.auth import (
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
 from app.calendar_events import retag_deals
 from app.chat_alerts import chat_poster
+from app.chat_inbound import (
+    HELP,
+    format_answer,
+    slack_question,
+    slack_reply,
+    teams_question,
+    teams_reply,
+    verify_slack,
+    verify_teams,
+)
 from app.citations import quote_in_page
 from app.comps import EV_METRIC
 from app.connectors import oauth, vault
@@ -3756,6 +3767,44 @@ def ask(body: AskIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_dependenc
     cite = lambda c: {"text": c.text, "document_id": c.doc_id, "page": c.page, "quote": c.quote}
     return {"status": a.status, "detail": a.detail, "claims": [cite(c) for c in a.claims],
             "rejected": [{**cite(c), "reason": c.reason} for c in a.rejected]}
+
+
+@app.post("/chat/{kind}/inbound")
+async def chat_inbound(kind: str, request: Request, db: Db):
+    """A Slack slash command or Teams outgoing webhook asks a question. The request must carry the chat app's
+    signature; the question runs as that app's configured key, so its scope and MNPI walls apply."""
+    if kind not in ("slack", "teams"):
+        raise HTTPException(404, "unknown chat app")
+    body = await request.body()
+    if kind == "slack":
+        secret, token = os.environ.get("SLACK_SIGNING_SECRET"), os.environ.get("SLACK_INBOUND_API_KEY")
+    else:
+        secret, token = os.environ.get("TEAMS_SECURITY_TOKEN"), os.environ.get("TEAMS_INBOUND_API_KEY")
+    if not secret or not token:
+        raise HTTPException(503, f"{kind} inbound is not configured")
+    if kind == "slack":
+        ok = verify_slack(secret, request.headers.get("X-Slack-Request-Timestamp", ""),
+                          request.headers.get("X-Slack-Signature", ""), body, int(time.time()))
+        question = slack_question(body)
+    else:
+        ok = verify_teams(secret, request.headers.get("Authorization"), body)
+        question = teams_question(body)
+    if not ok:
+        raise HTTPException(401, "bad signature")
+    reply = slack_reply if kind == "slack" else teams_reply
+    if not question:
+        return reply(HELP)
+    who = principal_for_key(db, token)
+    if who is None:
+        raise HTTPException(503, f"{kind} inbound key is not valid")
+    bind_tenant(db, who.tenant)
+    a = answer_question(db, who.tenant, llm_dependency(), question, scope=visible_doc_ids(db, who))
+    filenames = {d.id: d.filename for d in db.query(Document).filter(
+        Document.tenant_id == who.tenant, Document.id.in_([c.doc_id for c in a.claims] or [""]))}
+    log_event(db, who.tenant, f"chat:{kind}", "chat.ask", {"question": question, "status": a.status,
+                                                          "claims": len(a.claims), "rejected": len(a.rejected)})
+    db.commit()
+    return reply(format_answer(a, filenames))
 
 
 class FKExtractIn(BaseModel):
