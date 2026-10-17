@@ -29,6 +29,8 @@ class Row:
     nm: dict[str, str] = field(default_factory=dict)  # metric -> reason not meaningful
     facts: dict[str, int] = field(default_factory=dict)  # role -> fact id
     fx: dict[str, dict] = field(default_factory=dict)  # metric -> cited rate when the denominator was converted
+    cells: dict[str, dict] = field(default_factory=dict)  # "ev" / metric -> as-of period and cited source of that input
+    stale: list[str] = field(default_factory=list)  # inputs whose period differs from the comparison period
 
 
 @dataclass
@@ -100,6 +102,7 @@ def build_rows(db: Session, tenant: str, entities: list[str], period: str, metri
         ev = _find(db, tenant, ent, EV_METRIC, ev_period or period, scope)
         if ev is not None:
             r.facts["enterprise_value"] = ev.id
+            r.cells["ev"] = _cell(db, ev)
         for m in metrics:
             d = _find(db, tenant, ent, m, period, scope)
             if ev is None or d is None:
@@ -107,6 +110,7 @@ def build_rows(db: Session, tenant: str, entities: list[str], period: str, metri
                                                  else f"no {m} fact for {period}")
                 continue
             r.facts[m] = d.id
+            r.cells[m] = _cell(db, d)
             denom = d.value
             if ev.unit != d.unit:
                 if fx is None:
@@ -122,8 +126,15 @@ def build_rows(db: Session, tenant: str, entities: list[str], period: str, metri
             r.multiples[m], r.nm[m] = multiple(ev.value, denom)
             if r.multiples[m] is not None:
                 r.nm.pop(m)
+        if ev is not None and ev.period != period:
+            r.stale.append("ev")
         rows.append(r)
     return rows
+
+
+def _cell(db: Session, f: Fact) -> dict:
+    # the period is the as-of the figure is stated for; the citation is the document locator it came from
+    return {"fact_id": f.id, "period": f.period, "unit": f.unit, "source": _cite(db, f.id)}
 
 
 def run(db: Session, tenant: str, target: str, entities: list[str], period: str, metrics: list[str],
@@ -146,6 +157,7 @@ def run(db: Session, tenant: str, target: str, entities: list[str], period: str,
                                   for k in ("low", "mid", "high")}})
     for r in rows:
         out["peers"].append({"entity": r.entity, "facts": r.facts, "nm": r.nm, "fx": r.fx,
+                             "cells": r.cells, "stale": r.stale,
                              "multiples": {k: None if v is None else str(v.quantize(Decimal("0.01")))
                                            for k, v in r.multiples.items()}})
     return out
