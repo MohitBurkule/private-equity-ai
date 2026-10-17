@@ -49,7 +49,7 @@ TERMS: dict[str, dict] = {
     },
     "non_solicit_months": {
         "doc": ("nda", "spa"),
-        "re": r"(?:non-?solicit\w*|not (?:to )?solicit)[^.]{0,120}?(\d{1,3}|\w+)\s*(?:\(\d+\)\s*)?(?:months?|years?)|(\d{1,3}|\w+)\s*(?:\(\d+\)\s*)?(?:months?|years?)[^.]{0,160}?\bsolicit\b|(?:non-?solicit\w*|not (?:to )?solicit)[^.]{0,120}?((?:first|second|third|fourth|fifth)\s*(?:\(\d+(?:st|nd|rd|th)\)\s*)?anniversary)",
+        "re": r"(?:non-?solicit\w*|not (?:to )?solicit)[^.]{0,120}?(\d{1,3}|\w+)\s*(?:\(\d+\)\s*)?(?:months?|years?)|(\d{1,3}|\w+)\s*(?:\(\d+\)\s*)?(?:months?|years?)[^.]{0,160}?\bsolicit\b|(?:non-?solicit\w*|not (?:to )?solicit)[^.]{0,120}?((?:first|second|third|fourth|fifth)\s*(?:\(\d+(?:st|nd|rd|th)\)\s*)?anniversary)|((?:first|second|third|fourth|fifth)\s*(?:\(\d+(?:st|nd|rd|th)\)\s*)?anniversary)[^.]{0,200}?\bsolicit\w*",
     },
     "non_compete_months": {
         "doc": ("spa", "employment"),
