@@ -20,6 +20,12 @@ KEYWORDS = {
     "min_interest_coverage": ("interest coverage",),
     "margin": ("margin", "applicable rate"),
     "maturity": ("maturity", "matures"),
+    "non_solicit_months": ("solicit",),
+    "non_compete_months": ("non-compet", "noncompet", "non compet"),
+    "purchase_price": ("purchase price",),
+    "escrow": ("escrow",),
+    "indemnity_cap": ("cap", "indemnif"),
+    "basket": ("basket", "deductible"),
 }
 MAX_SENTENCES = 12
 SYSTEM = ("You read one legal document excerpt. Copy one sentence, exactly as written, that states the term named. "
@@ -45,7 +51,10 @@ def read(pages: list[tuple[int, str]], doc_type: str, absent: list[str], llm) ->
     page_text = {num: _flat(text) for num, text in pages}
     for term in absent:
         spec = legal.TERMS.get(term)
-        if spec is None or doc_type not in spec["doc"] or term not in KEYWORDS:
+        if spec is None or doc_type not in spec["doc"]:
+            continue
+        if term not in KEYWORDS:
+            dropped.append({"term": term, "reason": "no keywords defined for this term, so the model was not asked"})
             continue
         cands = candidates(term, pages)
         if not cands:
