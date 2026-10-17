@@ -3393,15 +3393,14 @@ def put_my_digest(body: DigestPrefBody, db: Db, who: Who):
 
 @app.post("/me/digest/send")
 def send_my_digest(db: Db, who: Who):
-    """Email this person the new alerts at their severity or above. Only their own watermark moves."""
+    """Email this person the new alerts at their severity or above, within their deal scope. Only their own watermark moves."""
     subject = _signed_in_subject(who)
-    if who.restricted:
-        raise HTTPException(403, "alerts cover the whole tenant; use an unrestricted sign-in")
     row = db.query(DigestPref).filter_by(tenant_id=who.tenant, subject=subject).one_or_none()
     if row is None:
         raise HTTPException(404, "set your digest first with PUT /me/digest")
     try:
-        n = notify.send_personal_digest(db, who.tenant, row)
+        # A deal-scoped sign-in gets only the deal alerts for its own deals; a whole-tenant sign-in gets all.
+        n = notify.send_personal_digest(db, who.tenant, row, None if who.deals is None else set(who.deals))
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     except notify.MailNotConfigured as e:
