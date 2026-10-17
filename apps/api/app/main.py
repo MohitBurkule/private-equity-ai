@@ -96,6 +96,8 @@ from app.db import make_engine, make_session_factory
 from app.dd import STATUSES, TEMPLATE
 from app.edgar import fetch_companyfacts
 from app.email_links import links_for
+from app.extract.rows import _ROWS as ROW_SCHEMAS
+from app.extract.rows import extract_rows
 from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
@@ -2544,6 +2546,28 @@ def extract(doc_id: str, body: ExtractIn, db: Db, who: Writer, llm: Annotated[LL
             "fields": [{"metric": r.metric, "status": r.status, "value": None if r.value is None else str(r.value),
                         "page": r.page, "quote": r.quote, "reason": r.reason, "fact_id": r.fact_id}
                        for r in res.results]}
+
+
+class RowExtractIn(BaseModel):
+    schema_name: str
+    period: str
+
+
+@app.post("/documents/{doc_id}/extract-rows")
+def extract_row_table(doc_id: str, body: RowExtractIn, db: Db, who: Writer,
+                      llm: Annotated[LLM, Depends(llm_dependency)]):
+    """Row tables (cap table, contract terms). Each row is cited by page and quote and stays `auto` until reviewed."""
+    doc = _own_doc(db, who, doc_id)
+    if body.schema_name not in ROW_SCHEMAS:
+        raise HTTPException(422, f"schema must be one of {sorted(ROW_SCHEMAS)}")
+    text = {r.number: r.text for r in db.query(PageRow).filter_by(document_id=doc.id).all()}
+    results, detail = extract_rows(db, who.tenant, llm, doc, body.schema_name, body.period, text)
+    log_event(db, who.tenant, actor(who), "extract_rows",
+              {"document_id": doc.id, "schema": body.schema_name,
+               "accepted": sum(r.status == "accepted" for r in results)})
+    return {"schema": body.schema_name, "detail": detail,
+            "rows": [{"status": r.status, "page": r.page, "reason": r.reason, "fact_ids": r.fact_ids}
+                     for r in results]}
 
 
 class DDQIn(BaseModel):
