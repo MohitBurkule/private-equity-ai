@@ -1387,6 +1387,9 @@ class ChNumbersImport(BaseModel):
     numbers: list[str] = Field(min_length=1, max_length=200)
 
 
+SCREEN_PROFILE_KEYS = ("deal_screening_criteria", "target_ev_range", "target_ebitda_range")
+
+
 class Screen(BaseModel):
     sectors: list[str] = []
     countries: list[str] = []
@@ -1513,9 +1516,15 @@ def targets_screen(body: Screen, db: Db, who: Who):
     for t in db.query(Target).filter_by(tenant_id=who.tenant).order_by(Target.id).all():
         e = tg_mod.evaluate(t, c)
         if e["verdict"] != "fail":
-            out.append({**tg_mod.to_dict(t), **e})
+            d = tg_mod.to_dict(t)
+            sources = [{"label": lbl, "url": u} for lbl, u in
+                       (("company record", d["source_url"]), ("revenue", d["revenue_url"])) if u]
+            out.append({**d, **e, "sources": sources})
     out.sort(key=lambda r: r["verdict"] != "match")
+    profile = [fk.row_dict(r) for r in (fk.newest_accepted(db, who.tenant, k)
+                                        for k in SCREEN_PROFILE_KEYS) if r is not None]
     return {"matches": sum(r["verdict"] == "match" for r in out), "review": sum(r["verdict"] == "review" for r in out),
+            "criteria_profile": profile,
             "items": out[:min(max(body.limit, 1), 1000)]}
 
 
