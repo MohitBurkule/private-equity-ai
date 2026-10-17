@@ -10,8 +10,10 @@ import json
 from app.ddq import Question
 from app.firm_knowledge import BY_KEY
 from app.hybrid import default_index
+from app.llm import served_by
 
 TOP = 3
+PROMPT_VERSION = "ddq.v1"  # bump when SYSTEM changes
 SYSTEM = (
     "You choose which numbered firm rule answers a due diligence question. Reply with JSON only: "
     '{"choice": 1, "reason": "short"} or {"choice": null, "reason": "short"}. '
@@ -60,5 +62,6 @@ def answer(questions: list[Question], accepted: dict[str, list[dict]], llm) -> l
             out.append({**base, "status": "unanswered", "reason": "chosen rule has no quote"})
             continue
         out.append({**base, "status": "answered", "answer": row["value"], "rule": key, "source": row["source"],
-                    "method": "retrieval top 3 and local model choice"})
+                    "method": "retrieval top 3 and local model choice", "prompt_version": PROMPT_VERSION,
+                    "model": served_by(llm)})
     return out

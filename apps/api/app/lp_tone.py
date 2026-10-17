@@ -11,7 +11,10 @@ import json
 import re
 from dataclasses import dataclass
 
+from app.llm import served_by
 from app.lp_docs import Model
+
+PROMPT_VERSION = "lp_tone.v1"  # bump when SYSTEM changes
 
 NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?(?:%|x)?")
 TOKEN = re.compile(r"\[\[(\d+)\]\]")
@@ -26,6 +29,8 @@ SYSTEM = (
 class Style:
     status: str  # applied | rejected | not_requested
     reason: str = ""
+    prompt_version: str = ""  # set when the model wrote the rewrite
+    model: str = ""
 
 
 def mask(text: str) -> tuple[str, list[str]]:
@@ -78,4 +83,4 @@ def rewrite(model: Model, tone: str, llm) -> tuple[Model, Style]:
         i = int(pid)
         new[i] = [(unmask(got[pid], values), new[i][0][1])]
     out_model = Model(model.title, [list(p) for p in new], model.sources)
-    return out_model, Style("applied")
+    return out_model, Style("applied", prompt_version=PROMPT_VERSION, model=served_by(llm))
