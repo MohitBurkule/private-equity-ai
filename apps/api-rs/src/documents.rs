@@ -12,7 +12,7 @@ use axum::{
 };
 use serde_json::{json, Value};
 
-/// Same rule as Python list_documents: the deal wall applies, the source ACL does not (kept as the app does it).
+/// Python list_documents: the deal wall and the source ACL both apply, so hidden filenames are not listed.
 pub async fn list_documents(
     State(s): State<AppState>,
     headers: HeaderMap,
@@ -26,7 +26,8 @@ pub async fn list_documents(
     tx.commit().await?;
     let out: Vec<Value> = rows
         .into_iter()
-        .filter(|(_, _, _, deal)| vis.deal_allows(deal.as_deref()))
+        // Same test as get_page: a listed name must also open, so ACL-restricted filenames stay hidden.
+        .filter(|(id, _, _, deal)| vis.deal_allows(deal.as_deref()) && vis.acl_allows(id))
         .map(|(id, filename, n_pages, deal)| json!({ "id": id, "filename": filename, "n_pages": n_pages, "deal": deal }))
         .collect();
     Ok(Json(Value::Array(out)))
