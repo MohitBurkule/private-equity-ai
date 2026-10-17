@@ -100,7 +100,8 @@ def _run_job(session_factory: sessionmaker, job_id: str, tenant: str) -> None:
                     return
                 job.stage = "parsing"
                 db.commit()
-                res = ingest_any(db, job.tenant_id, path.read_bytes(), job.filename)
+                res = ingest_any(db, job.tenant_id, path.read_bytes(), job.filename,
+                                 progress=_progress(db, job))
                 job.stage = "tagging"
                 db.commit()
                 kept, skipped = finalize_upload(db, who, res, job.deal)
@@ -111,6 +112,7 @@ def _run_job(session_factory: sessionmaker, job_id: str, tenant: str) -> None:
                     "documents": [{"id": d.id, "filename": d.filename, "n_pages": d.n_pages, "kind": d.kind}
                                   for d in kept], "skipped": skipped})
                 job.status, job.stage, job.error, job.updated_at = "done", "done", None, _now()
+                job.files_done, job.current_file = job.files_total, None
                 db.commit()
                 path.unlink(missing_ok=True)
                 return
@@ -120,6 +122,14 @@ def _run_job(session_factory: sessionmaker, job_id: str, tenant: str) -> None:
                 job.error, job.updated_at = f"attempt {attempt}: {e}", _now()
                 db.commit()
         _fail(db, job, job.error or "failed")
+
+
+def _progress(db: Session, job: IngestJob):
+    """Writes the archive position after each member, so a poller sees files move, not just "parsing"."""
+    def update_progress(done: int, total: int, name: str) -> None:
+        job.files_done, job.files_total, job.current_file, job.updated_at = done, total, name, _now()
+        db.commit()
+    return update_progress
 
 
 def _fail(db: Session, job: IngestJob, reason: str) -> None:
