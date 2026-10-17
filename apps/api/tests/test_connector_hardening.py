@@ -92,6 +92,7 @@ class _Row:
 
 def test_health_states():
     assert connection_health(_Row())["health"] == "never_run"
+    assert connection_health(_Row())["last_status"] is None
     assert connection_health(_Row("2026-10-17T10:00:00Z", "ok: 3 new, 1 unchanged"))["health"] == "ok"
     e = connection_health(_Row("2026-10-17T10:00:00Z", "error: token refresh failed"))
-    assert e["health"] == "error" and e["detail"] == "error: token refresh failed"
+    assert e["health"] == "error" and e["last_status"] == "error: token refresh failed"

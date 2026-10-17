@@ -116,3 +116,16 @@ def test_assumption_needs_who_when_why_and_is_listed_not_sourced():
         assert c.post("/lbo/returns", headers=h, json={"inputs": bad}).status_code == 422
     # A sourced run lists no assumptions.
     assert c.post("/lbo/returns", headers=h, json={"inputs": inputs}).json()["assumptions"] == []
+
+
+def test_derived_input_sums_cited_components_and_is_listed():
+    h = new_tenant(c, "lbo-derived")
+    inputs = {k: {"value": v, "source": SRC} for k, v in BASE.items()}
+    ebitda_parts = [("operating_income", "FY2025", "100"), ("depreciation_and_amortization", "FY2025", "20")]
+    ids = [c.post("/facts", headers=h, json={"entity": "Target Co", "metric": m, "period": p, "value": v, "unit": "USD",
+                                             "document_id": None, "page": 1, "quote": "x", "scale": 1}) for m, p, v in ebitda_parts]
+    assert all(r.status_code in (201, 422) for r in ids)
+    body = {"inputs": {**inputs, "ebitda": {"derived": {"formula": "ebitda", "entity": "Target Co", "period": "FY2025"}}}}
+    r = c.post("/lbo/returns", headers=h, json=body)
+    # Without two verified, cited components the derived input is refused, never zero-filled.
+    assert r.status_code == 422 and "ebitda" in r.json()["detail"]

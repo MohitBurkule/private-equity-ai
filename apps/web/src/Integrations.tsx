@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api2, type ConnectorState } from "./api";
 import { useLoad } from "./hooks";
 import { Badge, Button, Card, CardHead, ErrorLine, Input } from "./ui";
+import { healthView } from "./integrationHealth";
 
 const STATE: Record<ConnectorState, { label: string; tone: "ok" | "warn" | "mut" }> = {
   connected: { label: "Connected", tone: "ok" },
@@ -43,6 +44,16 @@ export function Integrations() {
                   {c.status === "live" && <Button onClick={() => { setOpen(open === c.name ? "" : c.name); setMsg(""); setErr(""); }}>Import</Button>}
                 </div>
                 <p className="mt-1 text-xs text-mut">{c.detail}</p>
+                {healthView(c) && (() => {
+                  const h = healthView(c)!;
+                  return (
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                      <Badge tone={h.tone}>{h.label}</Badge>
+                      <span className={h.tone === "warn" ? "text-bad" : "text-mut"}>{h.message}</span>
+                      {h.reconnect && <Button onClick={() => { setOpen(c.name); setMsg(""); setErr(""); }}>Reconnect</Button>}
+                    </div>
+                  );
+                })()}
                 {open === c.name && (
                   <form className="mt-3 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); sync(c.name); }}>
                     <Input className="min-w-64 flex-1" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Access token" aria-label={`${c.label} access token`} />

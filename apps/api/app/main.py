@@ -38,6 +38,7 @@ from app import comps as comps_mod
 from app import covenant_parse as covparse_mod
 from app import ddq as ddq_mod
 from app import debt_parse as debt_parse_mod
+from app import derived as derived_mod
 from app import firm_knowledge as fk
 from app import html_doc as html_doc_mod
 from app import jobs as jobs_mod
@@ -45,6 +46,7 @@ from app import lbo as lbo_mod
 from app import legal as legal_mod
 from app import lp_docs as lp_mod
 from app import lp_tone as lp_tone_mod
+from app import lp_waterfall as wf_lp_mod
 from app import notify as notify_mod
 from app import outreach as outreach_mod
 from app import peers as peers_mod
@@ -606,6 +608,18 @@ def _calc_out(c: Calc) -> dict:
                        for i in c.inputs]}
 
 
+@app.get("/facts/derived")
+def fact_derived(db: Db, who: Who, formula: str, entity: str, period: str):
+    """A derived value with every component's citation. Recomputed on each call; never stored."""
+    try:
+        d = derived_mod.derive(db, who.tenant, visible_doc_ids(db, who), formula, entity, period)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"formula": d.formula, "entity": d.entity, "period": d.period, "unit": d.unit, "value": str(d.value),
+            "components": [{"fact_id": c.fact_id, "metric": c.metric, "value": str(c.value), "sources": c.sources}
+                           for c in d.components]}
+
+
 @app.get("/facts/conflicts")
 def fact_conflicts(db: Db, who: Who, entity: str | None = None, cross_document_only: bool = False):
     """Same entity, metric, period and basis with different values across facts. Reports only."""
@@ -634,6 +648,17 @@ def lbo_returns(body: dict, db: Db, who: Who, xlsx: bool = False):
             src = {"document_id": f.sources[0].document_id, "filename": names.get(f.sources[0].document_id),
                    "page": f.sources[0].page, "quote": f.sources[0].quote}
             cited[name] = lbo_mod.Cited(f.value, src)
+        elif "derived" in spec:
+            # A derived input is computed from its components, each of which carries its own citation.
+            d = spec["derived"] or {}
+            try:
+                dv = derived_mod.derive(db, who.tenant, scope, d.get("formula", ""), d.get("entity", ""), d.get("period", ""))
+            except ValueError as e:
+                raise HTTPException(422, f"{name}: {e}") from e
+            first = dv.components[0].sources[0]
+            src = {"derived": True, "formula": dv.formula, "document_id": first["document_id"], "page": first["page"],
+                   "quote": first["quote"], "components": [c.fact_id for c in dv.components]}
+            cited[name] = lbo_mod.Cited(dv.value, src)
         elif "assumption" in spec:
             # An assumption is a judgement, not a fact: it names who set it, when and why, and never passes the
             # citation gate. Outputs list every assumption so it cannot pass as sourced.
@@ -669,6 +694,8 @@ def lbo_returns(body: dict, db: Db, who: Who, xlsx: bool = False):
             "exit_equity": str(res.exit_equity), "moic": str(res.moic.quantize(Decimal("0.01"))),
             "irr": None if res.irr is None else str(res.irr.quantize(Decimal("0.0001"))),
             "dividends": str(res.dividends), "schedule": res.schedule, "sensitivity": grid,
+            "derived": [{"input": k, "formula": c.source["formula"], "components": c.source["components"]}
+                        for k, c in cited.items() if c.source.get("derived")],
             "assumptions": [{"input": k, "value": str(c.value), "set_by": c.source["set_by"],
                              "set_on": c.source["set_on"], "reason": c.source["reason"]}
                             for k, c in cited.items() if c.source.get("assumption")]}
@@ -1329,6 +1356,75 @@ def ddq_answer(body: DdqIn, who: Who, db: Db):
               "answered": sum(1 for r in out if r["status"] == "answered")})
     return {"answers": out, "answered": sum(1 for r in out if r["status"] == "answered"),
             "unanswered": sum(1 for r in out if r["status"] == "unanswered")}
+class TermsIn(BaseModel):
+    hurdle: Decimal = Field(ge=0, lt=1)
+    carry: Decimal = Field(ge=0, lt=1)
+    catchup: Decimal = Field(ge=0, le=1)
+    source: str = Field(min_length=1, max_length=512)
+
+
+class WfFlowIn(BaseModel):
+    on: DateT
+    amount: Decimal = Field(gt=0)
+    source: str = Field(min_length=1, max_length=512)
+
+
+class WfDealIn(BaseModel):
+    name: str = Field(min_length=1, max_length=256)
+    contributions: list[WfFlowIn] = Field(default_factory=list, max_length=500)
+    distributions: list[WfFlowIn] = Field(default_factory=list, max_length=500)
+
+
+class WaterfallIn(BaseModel):
+    mode: str = Field(default="european", pattern="^(european|american)$")
+    terms: TermsIn
+    contributions: list[WfFlowIn] = Field(default_factory=list, max_length=500)
+    distributions: list[WfFlowIn] = Field(default_factory=list, max_length=500)
+    deals: list[WfDealIn] = Field(default_factory=list, max_length=200)
+    commitments: dict[str, CiteIn] = Field(default_factory=dict, max_length=500)
+
+
+def _wf_flows(items: list[WfFlowIn]) -> list[wf_lp_mod.Flow]:
+    return [wf_lp_mod.Flow(i.on, i.amount, i.source) for i in items]
+
+
+def _tiers_dict(t: wf_lp_mod.Tiers) -> dict[str, str]:
+    return {k: str(getattr(t, k)) for k in t.__dataclass_fields__}
+
+
+@app.post("/waterfall/lp")
+def waterfall_lp(body: WaterfallIn, who: Writer, db: Db):
+    """Distribution waterfall: return of capital, preferred return, GP catch-up, carry. European runs the whole
+    fund; american runs each deal on its own (no clawback). Terms and each flow carry their source."""
+    try:
+        terms = wf_lp_mod.Terms(body.terms.hurdle, body.terms.carry, body.terms.catchup, body.terms.source)
+        if body.mode == "european":
+            if not body.distributions:
+                raise ValueError("at least one distribution is needed")
+            r = wf_lp_mod.run(_wf_flows(body.contributions), _wf_flows(body.distributions), terms)
+            res = {"mode": "european", "totals": _tiers_dict(r.totals),
+                   "steps": [{"on": s.on.isoformat(), "amount": str(s.amount), "source": s.source,
+                              "tiers": _tiers_dict(s.tiers)} for s in r.steps]}
+            lp_totals = r.totals
+        else:
+            if not body.deals:
+                raise ValueError("american needs deals")
+            deals = {d.name: (_wf_flows(d.contributions), _wf_flows(d.distributions)) for d in body.deals}
+            results = wf_lp_mod.american(deals, terms)
+            lp_totals = wf_lp_mod.Tiers()
+            for r in results.values():
+                lp_totals.add(r.totals)
+            res = {"mode": "american", "totals": _tiers_dict(lp_totals),
+                   "deals": {n: {"totals": _tiers_dict(r.totals)} for n, r in results.items()}}
+        if body.commitments:
+            amounts = {k: Decimal(v.value.replace(",", "")) for k, v in body.commitments.items()}
+            shares = wf_lp_mod.per_lp(lp_totals, amounts)
+            res["per_lp"] = {k: {"lp_proceeds": str(v), "commitment": body.commitments[k].value,
+                                 "source": body.commitments[k].source} for k, v in shares.items()}
+    except (ValueError, ArithmeticError) as e:
+        raise HTTPException(422, str(e)) from e
+    log_event(db, who.tenant, actor(who), "waterfall.lp", {"mode": body.mode})
+    return res
 
 
 @app.post("/lp/letter")
