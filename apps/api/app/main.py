@@ -202,8 +202,10 @@ from app.parse import chart_vlm
 from app.parse.sh01 import parse_capital_form
 from app.portfolio import (
     Covenant,
+    KpiObservation,
     PortfolioCompany,
     add_covenant,
+    budget_variance,
     current_kpis,
     evaluate_covenant,
     qoq_change,
@@ -2636,16 +2638,17 @@ def create_company(body: CompanyIn, db: Db, who: Writer):
 
 
 @app.post("/portfolio/companies/{company_id}/observations", status_code=201)
-def add_observation(company_id: int, fact_id: int, db: Db, who: Writer):
+def add_observation(company_id: int, fact_id: int, db: Db, who: Writer,
+                    kind: Literal["actual", "budget"] = "actual"):
     tenant = who.tenant
     f = db.get(Fact, fact_id)
     if f is not None and f.tenant_id == tenant and not fact_visible(f, visible_doc_ids(db, who)):
         raise HTTPException(422, "observation requires a verified, cited fact")
     try:
-        o = record_observation(db, tenant, company_id, fact_id)
+        o = record_observation(db, tenant, company_id, fact_id, kind)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
-    log_event(db, tenant, actor(who), "kpi.record", {"observation_id": o.id, "fact_id": fact_id})
+    log_event(db, tenant, actor(who), "kpi.record", {"observation_id": o.id, "fact_id": fact_id, "kind": kind})
     return {"id": o.id, "metric": o.metric, "period": o.period, "value": str(o.value)}
 
 
@@ -2655,6 +2658,36 @@ def kpis(company_id: int, db: Db, who: Who):
     return [{"metric": o.metric, "period": o.period, "value": str(o.value), "unit": o.unit,
              "fact_id": o.fact_id} for o in current_kpis(db, who.tenant, company_id)
             if fact_visible(db.get(Fact, o.fact_id), scope)]
+
+
+@app.get("/portfolio/companies/{company_id}/budget-vs-actual")
+def budget_vs_actual(company_id: int, period: str, db: Db, who: Who):
+    """Each metric with an actual or a budget figure for the period, side by side. Both figures are cited. A metric
+    where either side cites a document the caller may not see is left out, so no hidden figure shows through the
+    other side or the variance."""
+    scope = visible_doc_ids(db, who)
+    sides: dict[str, dict[str, KpiObservation]] = {}
+    for o in current_kpis(db, who.tenant, company_id) + current_kpis(db, who.tenant, company_id, "budget"):
+        if o.period == period:
+            sides.setdefault(o.metric, {})[o.kind] = o
+    rows = []
+    for metric in sorted(sides):
+        pair = sides[metric]
+        act, bud = pair.get("actual"), pair.get("budget")
+        if any(not fact_visible(db.get(Fact, o.fact_id), scope) for o in (act, bud) if o is not None):
+            continue
+        row = {"metric": metric, "unit": (act or bud).unit, "actual": None, "budget": None,
+               "variance": None, "variance_pct": None}
+        if act is not None:
+            row["actual"] = {"value": str(act.value), "fact_id": act.fact_id}
+        if bud is not None:
+            row["budget"] = {"value": str(bud.value), "fact_id": bud.fact_id}
+        if act is not None and bud is not None:
+            diff, pct = budget_variance(act.value, bud.value)
+            row["variance"] = str(diff)
+            row["variance_pct"] = None if pct is None else str(round(pct, 2))
+        rows.append(row)
+    return {"period": period, "metrics": rows}
 
 
 @app.get("/portfolio/submissions")
