@@ -1,0 +1,143 @@
+{
+  "_about": "Held-out gold for evals/legal_benchmark.py. Labelled from the filed text BEFORE rules were run on this set; no rule or regex changes were made after scoring. Value null = not stated in the exhibit's own text.",
+  "102752_0001193125-26-028344": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "1364885_0001104659-24-120232": {
+    "governing_law": "Delaware",
+    "termination_fee": "35000000",
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "1521036_0001193125-25-013841": {
+    "governing_law": "Delaware",
+    "termination_fee": "10000000",
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "1597033_0001193125-25-100450": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": 24,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "1599489_0001104659-22-035365": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "1660280_0001660280-23-000127": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "1702744_0001104659-24-054943": {
+    "governing_law": "Delaware",
+    "termination_fee": "8400000",
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "1705012_0001493152-23-033624": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "1758009_0001213900-26-070872": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "1828852_0001828852-23-000133": {
+    "governing_law": "Texas",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "1840780_0001193125-22-075423": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": 12,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "1868726_0001193125-25-188088": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": false
+  },
+  "2035149_0001193125-26-032740": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "74046_0000074046-24-000029": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "785956_0001437749-22-013230": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": 60,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "799233_0000799233-22-000042": {
+    "governing_law": "New York",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "876167_0000876167-23-000004": {
+    "governing_law": "Delaware",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "877212_0001104659-25-073878": {
+    "governing_law": "Delaware",
+    "termination_fee": "75000000",
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  },
+  "924717_0001193125-24-148609": {
+    "governing_law": "Minnesota",
+    "termination_fee": "20380000",
+    "non_solicit_months": null,
+    "escrow": false,
+    "material_adverse_effect": true
+  },
+  "948320_0001493152-22-001058": {
+    "governing_law": "New York",
+    "termination_fee": null,
+    "non_solicit_months": null,
+    "escrow": true,
+    "material_adverse_effect": true
+  }
+}
