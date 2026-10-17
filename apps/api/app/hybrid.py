@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 from collections import Counter, OrderedDict
+from pathlib import Path
 from typing import Protocol
 
 from app.search import Hit, PageIndex, expand_query
@@ -116,6 +118,32 @@ def _embedder(model: str):
     return _EMBEDDERS[model]
 
 
+def _load_or_embed(model, model_name: str, pages, np):
+    """Page vectors, read from DENSE_CACHE_DIR when a file for these exact pages and model exists.
+
+    Embedding a 10-K's pages takes minutes on CPU, and the first question about a document paid that
+    cost. Unset DENSE_CACHE_DIR means no disk cache. A corrupt or unreadable cache file is ignored.
+    """
+    cache_dir = os.environ.get("DENSE_CACHE_DIR")
+    f = None
+    if cache_dir:
+        key = hashlib.sha256((model_name + repr(pages)).encode()).hexdigest()
+        f = Path(cache_dir) / f"{key}.npy"
+        try:
+            return np.load(f)
+        except (OSError, ValueError):
+            pass
+    # batch_size: the default (256) peaks near 3.4 GB on 160 real pages; 16 peaks near 0.8 GB.
+    vecs = np.array(list(model.embed([t[:4000] for _, _, t in pages], batch_size=16)), dtype="float32")
+    if f is not None:
+        try:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            np.save(f, vecs)
+        except OSError:
+            pass
+    return vecs
+
+
 class DenseRanker:
     """Dense retrieval with a small open ONNX embedding model (fastembed, no torch, no API key).
 
@@ -128,8 +156,7 @@ class DenseRanker:
         self.np = np
         self.model = _embedder(model)
         self.keys = [(d, p) for d, p, _ in pages]
-        # batch_size: the default (256) peaks near 3.4 GB on 160 real pages; 16 peaks near 0.8 GB.
-        self.vecs = np.array(list(self.model.embed([t[:4000] for _, _, t in pages], batch_size=16)), dtype="float32")
+        self.vecs = _load_or_embed(self.model, model, pages, np)
 
     def search(self, query: str, k: int, doc_ids: set[str] | None) -> list[Hit]:
         q = next(iter(self.model.query_embed(query)))
