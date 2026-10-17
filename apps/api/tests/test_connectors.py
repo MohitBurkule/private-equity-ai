@@ -96,6 +96,8 @@ def test_gdrive_exports_native_sheets_and_recurses(monkeypatch):
     plain = eml("drv", "hello")
     routes = {
         f"{D}/s1/export": plain, f"{D}/p1?alt=media": plain,
+        f"{D}/p1/permissions": {"permissions": [{"type": "user", "emailAddress": "ana@firm.test"}]},
+        f"{D}/s1/permissions": {"permissions": [{"type": "user", "emailAddress": "ana@firm.test"}]},
         D + "?q=%27sub%27": {"files": [{"id": "p1", "name": "n.eml", "mimeType": "message/rfc822", "webViewLink": "https://d/p1", "modifiedTime": "t1"}]},
         D + "?q=%27root%27": {"files": [
             {"id": "sub", "name": "Legal", "mimeType": "application/vnd.google-apps.folder"},

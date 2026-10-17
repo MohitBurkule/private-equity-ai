@@ -43,6 +43,7 @@ class Principal:
     # (deal, role) pairs that replace the key role on that one deal, e.g. a viewer key that is partner on Atlas.
     deal_roles: tuple[tuple[str, str], ...] = ()
     identity: str | None = None  # the person's external id, matched against a synced source's access list
+    groups: tuple[str, ...] = ()  # external group ids the person is in, matched as "group:{id}" grants
 
     def role_on(self, deal: str | None) -> str:
         for d, r in self.deal_roles:
@@ -116,10 +117,29 @@ def acl_hidden_doc_ids(db: Session, p: Principal) -> set[str]:
     identity is on none of them, so restricted documents fail closed. A document with several sources is hidden when
     any one of them denies it."""
     hidden: set[str] = set()
+    grants = principal_grants(p)
     for src in db.query(DocumentSource).filter(DocumentSource.tenant_id == p.tenant, DocumentSource.acl.isnot(None)):
-        if p.identity is None or p.identity.lower() not in json.loads(src.acl):
+        if not grants & set(json.loads(src.acl)):
             hidden.add(src.document_id)
     return hidden
+
+
+def principal_grants(p: Principal) -> set[str]:
+    """What this principal matches in a source's access list: their identity, and each group as "group:{id}"."""
+    out = {f"group:{g.lower()}" for g in p.groups}
+    if p.identity:
+        out.add(p.identity.lower())
+    return out
+
+
+def parse_groups(raw: str | None) -> tuple[str, ...]:
+    return tuple(sorted({g.strip().lower() for g in (raw or "").split(",") if g.strip()}))
+
+
+def format_groups(groups: list[str] | None) -> str | None:
+    if not groups:
+        return None
+    return ",".join(parse_groups(",".join(groups))) or None
 
 
 def _deal_visible_doc_ids(db: Session, p: Principal) -> set[str] | None:

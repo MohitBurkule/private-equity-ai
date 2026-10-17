@@ -50,15 +50,19 @@ class OneDriveSharePoint(Connector):
 
 
 def _grantees(perms: list) -> tuple[str, ...]:
-    """Emails of the people a SharePoint item's permissions name. Group grants and sharing links carry no person
-    email, so they are left out: a document is then visible only to the named people. That fails closed."""
+    """The people and groups a SharePoint item's permissions name: an email for a person, "group:{id}" for an Azure AD
+    group. Sharing links name neither, so they are left out and fail closed."""
     emails = []
     for perm in perms:
         grants = [perm.get("grantedToV2"), perm.get("grantedTo"), *perm.get("grantedToIdentitiesV2", []),
                   *perm.get("grantedToIdentities", [])]
         for grant in grants:
-            user = (grant or {}).get("user") or {}
+            grant = grant or {}
+            user = grant.get("user") or {}
             email = user.get("email") or user.get("userPrincipalName")
+            group_id = (grant.get("group") or {}).get("id")
             if email:
                 emails.append(email)
+            elif group_id:  # an Azure AD group: matched against a key's groups, not a person
+                emails.append(f"group:{group_id}")
     return tuple(emails)

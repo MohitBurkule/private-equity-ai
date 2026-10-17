@@ -15,6 +15,8 @@ ROUTES = {
     f"{BASE}/v1/folders/F-77/documents": json.dumps({"items": [
         {"id": "IM-9001", "name": "Acme CIM.csv", "version": 3}]}).encode(),
     f"{BASE}/v1/documents/IM-9001/content": b"metric,value\nSYNTHETIC revenue,1\n",
+    f"{BASE}/v1/documents/IM-9001/acl": json.dumps({"acl": [
+        {"type": "user", "id": "ana@firm.test"}, {"type": "group", "id": "IC-GROUP"}]}).encode(),
 }
 
 
