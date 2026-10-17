@@ -12,5 +12,6 @@ def test_single_alembic_head_and_unique_revisions():
     script = ScriptDirectory.from_config(cfg)
     heads = script.get_heads()
     assert len(heads) == 1, f"multiple Alembic heads {heads}: renumber the newest migration so it follows the current head"
-    files = sorted(p.name[:4] for p in (root / "alembic" / "versions").glob("[0-9]*.py"))
-    assert len(files) == len(set(files)), f"two migration files share a number: {files}"
+    revisions = [r.revision for r in script.walk_revisions()]
+    files = list((root / "alembic" / "versions").glob("[0-9]*.py"))
+    assert len(revisions) == len(set(revisions)) == len(files), f"revision ids clash or files missing: {sorted(revisions)}"
