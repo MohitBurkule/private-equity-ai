@@ -17,11 +17,21 @@ HEADERS = ["Entity", "Metric", "Period", "Value", "Unit", "Basis", "Status", "Re
 MAX_COMMENT = 800  # Excel comments get unreadable beyond this; full quotes stay in the app
 
 
-def build_facts_xlsx(db: Session, tenant_id: str, entity: str | None, scope: set[str] | None) -> bytes:
+def visible_facts(db: Session, tenant_id: str, entity: str | None, scope: set[str] | None) -> list[Fact]:
     q = db.query(Fact).filter_by(tenant_id=tenant_id)
     if entity:
         q = q.filter_by(entity=entity)
-    facts = [f for f in q.order_by(Fact.entity, Fact.metric, Fact.period, Fact.id).all() if fact_visible(f, scope)]
+    return [f for f in q.order_by(Fact.entity, Fact.metric, Fact.period, Fact.id).all() if fact_visible(f, scope)]
+
+
+def fact_rows(db: Session, tenant_id: str, entity: str | None, scope: set[str] | None) -> list[list]:
+    """HEADERS then one row per visible fact, values as plain cells (for the Google Sheets push)."""
+    return [HEADERS] + [[f.entity, f.metric, f.period, float(f.value), f.unit, f.basis, f.status, f.reviewed_by or ""]
+                        for f in visible_facts(db, tenant_id, entity, scope)]
+
+
+def build_facts_xlsx(db: Session, tenant_id: str, entity: str | None, scope: set[str] | None) -> bytes:
+    facts = visible_facts(db, tenant_id, entity, scope)
     names = {d.id: d.filename for d in db.query(Document).filter(Document.tenant_id == tenant_id)}
 
     wb = Workbook()

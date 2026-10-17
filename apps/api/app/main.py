@@ -63,6 +63,7 @@ from app.auth import (
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
 from app.connectors import oauth, vault
 from app.connectors.base import ConnectorError, default_http
+from app.connectors.gsheets import GoogleSheets
 from app.connectors.linkedin import LinkedInExport
 from app.connectors.oauth import OAuthError
 from app.connectors.registry import IMPLEMENTED, catalog
@@ -74,7 +75,7 @@ from app.extract.run import extract_schema
 from app.extract.schemas import SCHEMAS
 from app.extract.tieout import tie_out
 from app.facts import CitationError, add_verified_fact, review_fact
-from app.factsxlsx import build_facts_xlsx
+from app.factsxlsx import build_facts_xlsx, fact_rows
 from app.fundmetrics import fund_metrics
 from app.holdings import parse_holdings
 from app.hybrid import default_index
@@ -2085,6 +2086,28 @@ class OAuthStartBody(BaseModel):
     deal: str | None = None
     interval_minutes: int | None = None
     options: dict[str, str] = {}
+
+
+class GSheetsPushBody(BaseModel):
+    token: str  # per-call OAuth access token; never stored
+    spreadsheet: str
+    range: str = "Sheet1"
+    entity: str | None = None
+
+
+@app.post("/connectors/gsheets/push")
+def gsheets_push(body: GSheetsPushBody, db: Db, who: Writer):
+    """Write the facts this key can see into a sheet tab. Same visibility gate as /facts.xlsx."""
+    conn = GoogleSheets(body.token, CONNECTOR_HTTP, spreadsheet=body.spreadsheet, range=body.range)
+    try:
+        n = conn.push(fact_rows(db, who.tenant, body.entity, visible_doc_ids(db, who)))
+    except ConnectorError as e:
+        raise HTTPException(422, str(e)) from e
+    except OSError as e:
+        raise HTTPException(502, f"connector failed: {e}") from e
+    log_event(db, who.tenant, actor(who), "connector.push",
+              {"connector": "gsheets", "entity": body.entity, "cells": n})
+    return {"updated_cells": n}
 
 
 @app.post("/oauth/{name}/start")
