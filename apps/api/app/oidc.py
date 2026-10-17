@@ -67,4 +67,6 @@ def oidc_principal(db: Session, token: str) -> Principal | None:
         role = role_from_groups(claims.get("groups"))
     deals = claims.get("deals")
     scope = frozenset(str(d) for d in deals) if isinstance(deals, list) else None
-    return Principal(tenant, role, scope, key_id=f"oidc:{claims['sub']}"[:32])
+    email = claims.get("email")
+    return Principal(tenant, role, scope, key_id=f"oidc:{claims['sub']}"[:32],
+                     identity=email.lower() if isinstance(email, str) else None)

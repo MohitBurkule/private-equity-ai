@@ -35,6 +35,7 @@ demo-mocks:  ## Run the firm-system mock flows: compose mocks when Docker runs, 
 		apps/api/tests/test_docusign_stage.py apps/api/tests/test_docusign_wiremock.py \
 		apps/api/tests/test_docusign_connect.py apps/api/tests/test_monthly_covenant.py \
 		apps/api/tests/test_imanage_wiremock.py \
-		apps/api/tests/test_netdocuments_flow.py apps/api/tests/test_netdocuments_wiremock.py
+		apps/api/tests/test_netdocuments_flow.py apps/api/tests/test_netdocuments_wiremock.py \
+		apps/api/tests/test_permission_sync_wiremock.py
 
 .PHONY: demo-mocks

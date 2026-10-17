@@ -35,6 +35,7 @@ class ApiKey(Base):
     role: Mapped[str] = mapped_column(String(16), default="analyst", server_default="analyst")
     deals: Mapped[str | None] = mapped_column(Text, default=None)  # comma list; None = unrestricted
     deal_roles: Mapped[str | None] = mapped_column(Text, default=None)  # "deal:role,deal:role" overrides
+    identity: Mapped[str | None] = mapped_column(String(256), default=None)  # the person's external id, e.g. email
 
 
 class Document(Base):
@@ -309,6 +310,8 @@ class DocumentSource(Base):
     version: Mapped[str] = mapped_column(String(128))
     url: Mapped[str] = mapped_column(Text)
     sync_run_id: Mapped[int | None] = mapped_column(ForeignKey("sync_run.id"), default=None, index=True)
+    # JSON list of lowercase external ids the source grants access to. NULL = the source sets no access list.
+    acl: Mapped[str | None] = mapped_column(Text, default=None)
 
 
 class SyncRun(Base):
