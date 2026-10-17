@@ -192,6 +192,7 @@ from app.models import (
     SyncRun,
     Target,
     TargetContact,
+    TargetNote,
     WorkflowSchedule,
 )
 from app.models import Tenant as TenantRow
@@ -1569,6 +1570,58 @@ def deal_note_edit(name: str, nid: int, body: DealNoteIn, db: Db, who: Writer):
     db.commit()
     log_event(db, who.tenant, actor(who), "deal.note_edit", {"deal": name, "id": nid, "before": old, "after": n.body})
     return _note_out(n)
+
+
+class TargetNoteIn(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+def _target_or_404(db: Session, who: Principal, tid: int) -> Target:
+    """A target the key may see: same tenant, and not the same company as an MNPI deal the key may not see."""
+    t = db.get(Target, tid)
+    if t is None or t.tenant_id != who.tenant or mnpi_name_conflict(db, who, t.name):
+        raise HTTPException(404, "target not found")
+    return t
+
+
+def _target_note_out(n: TargetNote) -> dict:
+    return {"id": n.id, "target_id": n.target_id, "author": n.author, "body": n.body,
+            "created_at": n.created_at, "edited_at": n.edited_at or None}
+
+
+@app.get("/targets/{tid}/notes")
+def target_notes_list(tid: int, db: Db, who: Who):
+    _target_or_404(db, who, tid)
+    rows = db.query(TargetNote).filter_by(tenant_id=who.tenant, target_id=tid).order_by(TargetNote.id).all()
+    return [_target_note_out(r) for r in rows]
+
+
+@app.post("/targets/{tid}/notes", status_code=201)
+def target_notes_add(tid: int, body: TargetNoteIn, db: Db, who: Writer):
+    _target_or_404(db, who, tid)
+    n = TargetNote(tenant_id=who.tenant, target_id=tid, author=actor(who), body=body.body.strip(),
+                   created_at=_now_iso(), edited_at="")
+    db.add(n)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "target.note", {"target": tid, "id": n.id})
+    return _target_note_out(n)
+
+
+@app.patch("/targets/{tid}/notes/{nid}")
+def target_note_edit(tid: int, nid: int, body: TargetNoteIn, db: Db, who: Writer):
+    """Same rule as deal notes: the author edits their own; a whole-tenant key may edit any. Old text is audited."""
+    _target_or_404(db, who, tid)
+    n = db.get(TargetNote, nid)
+    if n is None or n.tenant_id != who.tenant or n.target_id != tid:
+        raise HTTPException(404, "note not found")
+    if n.author != actor(who) and who.restricted:
+        raise HTTPException(403, "only the note's author or a whole-tenant key can edit it")
+    old = n.body
+    n.body = body.body.strip()
+    n.edited_at = _now_iso()
+    db.commit()
+    log_event(db, who.tenant, actor(who), "target.note_edit", {"target": tid, "id": nid, "before": old, "after": n.body})
+    return _target_note_out(n)
 
 
 @app.get("/deals/{name}/checklist")

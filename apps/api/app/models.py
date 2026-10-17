@@ -448,6 +448,19 @@ class SavedScreen(Base):
     created_at: Mapped[str] = mapped_column(String(40), default="")
 
 
+class TargetNote(Base):
+    """A shared note on a target. Visible to everyone who can see the target, except when the target is the
+    same company as an MNPI deal the key may not see (then the target is hidden, so its notes are too)."""
+    __tablename__ = "target_note"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    target_id: Mapped[int] = mapped_column(Integer, index=True)
+    author: Mapped[str] = mapped_column(String(64))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(String(40), default="")
+    edited_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 class PeerSet(Base):
     """A saved comps peer set for one deal: the SEC peers picked for a target, kept with their sources and
     refreshed on schedule (workflow kind `peer_refresh`). A peer that loses its revenue is dropped, never guessed."""
