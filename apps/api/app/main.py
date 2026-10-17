@@ -1129,6 +1129,29 @@ def ic_decision_list(deal: str, db: Db, who: Who):
     return [_decision_out(d) for d in rows]
 
 
+@app.get("/ic/review")
+def ic_review(deal: str, db: Db, who: Who):
+    """The IC pack's record view: the latest decision, the dissents on file, and the documents filed since that
+    decision. Documents are filtered as the document list is, so a walled file never shows up as a change."""
+    if not _dd_scope_ok(who, deal):
+        raise HTTPException(403, "deal is outside this key's scope")
+    rows = db.query(ICDecision).filter_by(tenant_id=who.tenant, deal=deal).order_by(ICDecision.id).all()
+    latest = rows[-1] if rows else None
+    hidden = hidden_deal_names(db, who)
+    docs = [d for d in db.query(Document).filter_by(tenant_id=who.tenant, deal=deal).all()
+            if doc_visible(d, who, hidden)]
+    since = []
+    if latest is not None:
+        # Compare instants, not strings: the two timestamps are written by different code paths.
+        cut = datetime.fromisoformat(latest.recorded_at)
+        since = [{"document_id": d.id, "filename": d.filename, "created_at": d.created_at}
+                 for d in sorted(docs, key=lambda d: d.created_at or "")
+                 if d.created_at and datetime.fromisoformat(d.created_at) > cut]
+    return {"deal": deal, "latest": _decision_out(latest) if latest else None,
+            "dissents": [_decision_out(d) for d in rows if d.dissent],
+            "changed_since_ic": since, "ic_recorded": latest is not None}
+
+
 @app.get("/dd/summary")
 def dd_summary(deal: str, db: Db, who: Who):
     """Counts per category and the list of items still open: the missing-document tracker."""
