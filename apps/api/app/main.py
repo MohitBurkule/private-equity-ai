@@ -47,6 +47,7 @@ from app.auth import (
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
 from app.connectors import vault
 from app.connectors.base import ConnectorError, default_http
+from app.connectors.linkedin import LinkedInExport
 from app.connectors.registry import IMPLEMENTED, catalog
 from app.connectors.sync import sync as connector_sync
 from app.db import make_engine, make_session_factory
@@ -1783,3 +1784,22 @@ def run_due_connections(db: Db, who: Writer):
         _run_connection(db, who, r)
         ran.append({"id": r.id, "status": r.last_status})
     return {"ran": ran}
+
+
+@app.post("/connectors/linkedin/import")
+async def import_linkedin(file: Annotated[UploadFile, File()], db: Db, who: Writer,
+                          deal: Annotated[str | None, Form()] = None):
+    """Upload the zip from LinkedIn's data export. Same deal wall and source records as token syncs."""
+    deal = (deal or "").strip() or None
+    if who.restricted and deal not in who.deals:
+        raise HTTPException(403, "deal is required and must be within this key's scope")
+    data = await file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
+    try:
+        out = connector_sync(db, who, LinkedInExport(data), deal)
+    except ConnectorError as e:
+        raise HTTPException(422, str(e)) from e
+    log_event(db, who.tenant, actor(who), "connector.sync",
+              {"connector": "linkedin", "deal": deal, "ingested": len(out["ingested"])})
+    return out
