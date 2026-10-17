@@ -1673,6 +1673,8 @@ def flagship_run(body: FlagshipIn, who: Who, db: Db):
     ok, skipped or failed with its reason; the memo is downloaded from /memo.pptx?entity=..."""
     doc = _own_doc(db, who, body.document_id)
     pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc.id).order_by(PageRow.number)]
+    if not pages:  # an HTML exhibit is stored as text blocks, not pages; each block numbers as one page
+        pages = [(u.idx + 1, u.text) for u in db.query(HtmlUnit).filter_by(document_id=doc.id).order_by(HtmlUnit.idx)]
     steps = [flagship_mod.Step("intake", "ok", result={"document": doc.filename, "pages": len(pages)})]
     if body.extract:
         blob = db.get(DocumentFile, doc.id)
