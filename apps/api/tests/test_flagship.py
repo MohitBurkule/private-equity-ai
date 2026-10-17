@@ -1,9 +1,9 @@
 from decimal import Decimal
 
-from fastapi.testclient import TestClient
-
 from app.flagship import lbo_inputs, lbo_step
 from app.main import app
+from fastapi.testclient import TestClient
+
 from tests.helpers import new_tenant
 
 c = TestClient(app)
@@ -65,3 +65,45 @@ def test_crosscheck_flags_a_figure_that_differs_from_companyfacts():
     assert st.status == "failed" and st.result["conflicts"][0]["companyfacts"] == "999"
     assert st.result["matched"][0]["metric"] == "total_assets"
     assert crosscheck_step(ext, None, None).status == "skipped"
+
+
+def test_comps_band_widens_only_when_fewer_than_five_peers():
+    from app.flagship import comps_step
+    from app.peers import Peer
+    calls = []
+
+    def discover(revenue, sic, exclude, pages, low, high, want=10):
+        calls.append((low, high, want))
+        return [Peer(f"{len(calls)}{i:09d}", Decimal(1), "FY2025", "u", "r", f"P{i}") for i in range(2)]
+
+    st = comps_step(Decimal(1000), "4213", set(), 1, discover)
+    assert [(lo, hi) for lo, hi, _ in calls] == [(Decimal("0.5"), Decimal(2)), (Decimal("0.33"), Decimal(3))]
+    assert calls[1][2] == 8 and len(st.result["peers"]) == 4
+
+    calls.clear()
+    def enough(revenue, sic, exclude, pages, low, high, want=10):
+        calls.append((low, high))
+        return [Peer(f"9{i:09d}", Decimal(1), "FY2025", "u", "r", f"Q{i}") for i in range(5)]
+    comps_step(Decimal(1000), "4213", set(), 1, enough)
+    assert calls == [(Decimal("0.5"), Decimal(2))]
+
+
+def test_legal_model_reader_keeps_only_quoted_sentences_on_the_page():
+    from app import legal, legal_reader
+
+    class Local:
+        def __init__(self, replies):
+            self.replies = list(replies)
+
+        def complete(self, system, prompt):
+            return self.replies.pop(0)
+    pages = [(1, "This Agreement is governed by the laws of the State of New York. A change of control needs consent.")]
+    absent = ["governing_law", "change_of_control"]
+    # 1: quote on the page and states the term -> kept. 2: quote not on the page -> dropped, not shown.
+    llm = Local(['{"quote": "This Agreement is governed by the laws of the State of New York.", "page": 1}',
+                 '{"quote": "A change of control is an event.", "page": 1}'])
+    out = legal_reader.read(pages, "credit", absent, llm)
+    assert [f["term"] for f in out["findings"]] == ["governing_law"]
+    assert out["findings"][0]["value"] == "State of New York" and out["findings"][0]["page"] == 1
+    assert out["dropped"] == [{"term": "change_of_control", "reason": "quote is not on the cited page"}]
+    assert legal.TERMS["governing_law"]["doc"]

@@ -52,7 +52,7 @@ def discover(target_revenue: Decimal, sic: str, exclude: set[str], pages: int = 
     for cik in sic_companies(sic, pages, get or edgar._default_get):
         if len(peers) >= want:
             break
-        if cik in exclude:
+        if cik.zfill(10) in {e.zfill(10) for e in exclude}:
             continue
         try:
             facts = edgar.fetch_companyfacts(cik, facts_get)
