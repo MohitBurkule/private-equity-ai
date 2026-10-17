@@ -43,7 +43,8 @@ export interface DDRow { id: number; deal: string; category: string; title: stri
 export interface EvalRunRow { id: number; suite: string; ran_at: string; note: string | null; metrics: Record<string, unknown> }
 export interface Breach { company: string; kpi_metric: string; period: string; status: string; value: string; threshold: string; unit?: string }
 export interface Conflict { entity: string; metric: string; period: string; spread_pct: string; likely_rounding: boolean }
-export interface Connector { name: string; label: string; category: string; auth: string; status: "live" | "planned" }
+export type ConnectorState = "connected" | "needs_key" | "stubbed";
+export interface Connector { name: string; label: string; category: string; auth: string; status: "live" | "planned"; state: ConnectorState; detail: string }
 export interface CompsOut {
   target: string; period: string;
   peers: { entity: string; multiples: Record<string, string | null> }[];

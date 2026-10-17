@@ -67,7 +67,7 @@ from app.connectors.base import ConnectorError, default_http
 from app.connectors.gsheets import GoogleSheets
 from app.connectors.linkedin import LinkedInExport
 from app.connectors.oauth import OAuthError
-from app.connectors.registry import IMPLEMENTED, catalog
+from app.connectors.registry import IMPLEMENTED, status
 from app.connectors.sync import sync as connector_sync
 from app.db import make_engine, make_session_factory
 from app.dd import STATUSES, TEMPLATE
@@ -1912,8 +1912,9 @@ class SyncBody(BaseModel):
 
 
 @app.get("/connectors")
-def list_connectors(who: Who):
-    return catalog()
+def list_connectors(who: Who, db: Db):
+    connected = {r.connector for r in db.query(Connection).filter_by(tenant_id=who.tenant)}
+    return status(connected)
 
 
 @app.post("/connectors/{name}/sync")
