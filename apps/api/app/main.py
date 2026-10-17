@@ -23,13 +23,14 @@ from app import agent as ag
 from app import alerts as al
 from app import companies_house as ch_mod
 from app import comps as comps_mod
-from app import firm_knowledge as fk
-from app import jobs as jobs_mod
-from app import legal as legal_mod
 from app import (
+    enrich,
     notify,
     opendata_tools,  # noqa: F401  (registers open-data agent tools)
 )
+from app import firm_knowledge as fk
+from app import jobs as jobs_mod
+from app import legal as legal_mod
 from app import outreach as outreach_mod
 from app import precedent_fetch as pfetch_mod
 from app import precedents as prec_mod
@@ -1482,6 +1483,26 @@ def targets_outreach(body: OutreachIn, db: Db, who: Writer):
 class TargetStatus(BaseModel):
     status: str
     notes: str | None = None
+
+
+class EnrichBody(BaseModel):
+    url: str
+
+
+@app.post("/targets/{tid}/enrich/website")
+def targets_enrich_website(tid: int, body: EnrichBody, db: Db, who: Writer):
+    """Reads the company's own homepage (https only) and stores its title and description with the URL."""
+    t = db.get(Target, tid)
+    if t is None or t.tenant_id != who.tenant:
+        raise HTTPException(404, "target not found")
+    try:
+        fields = enrich.enrich_website(db, who.tenant, t, body.url, CONNECTOR_HTTP)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    except OSError as e:
+        raise HTTPException(502, f"could not fetch the homepage: {e}") from e
+    log_event(db, who.tenant, actor(who), "target.enrich_website", {"id": tid, "website": t.website})
+    return dict(tg_mod.to_dict(t), fetched=fields)
 
 
 @app.patch("/targets/{tid}")
