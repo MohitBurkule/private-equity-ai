@@ -1,10 +1,12 @@
 import json
 import os
+import tempfile
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from datetime import date as DateT
 from decimal import Decimal
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import (
@@ -80,6 +82,7 @@ from app.connectors.linkedin import LinkedInExport
 from app.connectors.oauth import OAuthError
 from app.connectors.registry import IMPLEMENTED, status
 from app.connectors.sync import sync as connector_sync
+from app.crunchbase import read_funding_rounds_numbered
 from app.db import make_engine, make_session_factory
 from app.dd import STATUSES, TEMPLATE
 from app.edgar import fetch_companyfacts
@@ -90,6 +93,7 @@ from app.extract.tieout import tie_out
 from app.facts import CitationError, add_html_fact, add_verified_fact, review_fact
 from app.factsxlsx import build_facts_xlsx, fact_rows
 from app.filing_view import filing_page_html
+from app.funding_import import funding_for_target
 from app.fundmetrics import fund_metrics
 from app.holdings import parse_holdings
 from app.hybrid import default_index
@@ -2323,6 +2327,27 @@ async def upload_kpi_pack(company_id: int, file: Annotated[UploadFile, File()], 
     log_event(db, who.tenant, actor(who), "portfolio.kpi_pack",
               {"company_id": company_id, "observations": len(out.observations), "skipped": len(out.skipped)})
     return {"observations": out.observations, "skipped": out.skipped, "unchanged": out.unchanged}
+
+
+@app.post("/targets/{tid}/funding-import")
+async def target_funding_import(tid: int, file: Annotated[UploadFile, File()], db: Db, who: Writer):
+    """Funding history for a target from a Crunchbase legacy funding_rounds CSV. Each round cites its row."""
+    target = db.query(Target).filter_by(tenant_id=who.tenant, id=tid).first()
+    if target is None:
+        raise HTTPException(404, "target not found")
+    data = await file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "funding_rounds.csv"
+        path.write_bytes(data)
+        try:
+            rows = read_funding_rounds_numbered(path)
+        except (ValueError, KeyError, UnicodeDecodeError) as e:
+            raise HTTPException(422, f"not a Crunchbase funding_rounds export: {e}") from e
+    source = file.filename or "funding_rounds.csv"
+    return {"target": target.name, "rows_read": len(rows),
+            "rounds": funding_for_target(rows, target.name, source)}
 
 
 @app.get("/documents/{doc_id}/source")

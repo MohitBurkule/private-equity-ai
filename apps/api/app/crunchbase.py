@@ -63,16 +63,21 @@ def _date(value: str | None) -> date | None:
     return None if text is None else date.fromisoformat(text)
 
 
-def read_funding_rounds(path: Path) -> list[FundingRound]:
+def read_funding_rounds_numbered(path: Path) -> list[tuple[int, FundingRound]]:
+    """Each round with its data row number (1-based, header excluded), so a citation can name the row."""
     with open(path, encoding="utf-8", newline="") as handle:
         return [
-            FundingRound(
+            (n, FundingRound(
                 company=_blank(row.get(COLUMNS["company"])),
                 round_type=_blank(row.get(COLUMNS["round_type"])),
                 announced=_date(row.get(COLUMNS["announced"])),
                 raised_usd=_decimal(row.get(COLUMNS["raised_usd"])),
                 post_money_usd=_decimal(row.get(COLUMNS["post_money_usd"])),
                 investors=_int(row.get(COLUMNS["investors"])),
-            )
-            for row in csv.DictReader(handle)
+            ))
+            for n, row in enumerate(csv.DictReader(handle), 1)
         ]
+
+
+def read_funding_rounds(path: Path) -> list[FundingRound]:
+    return [r for _, r in read_funding_rounds_numbered(path)]
