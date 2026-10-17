@@ -2293,8 +2293,8 @@ def _wf_out(w) -> dict:
 
 @app.post("/workflows", status_code=201)
 def workflow_create(body: WorkflowIn, db: Db, who: Writer):
-    if body.kind == "alert_digest" and who.restricted:
-        raise HTTPException(403, "alert digests cover the whole tenant; use an unrestricted key")
+    if body.kind in ("alert_digest", "universe_refresh") and who.restricted:
+        raise HTTPException(403, f"{body.kind} covers the whole tenant; use an unrestricted key")
     try:
         w = wf_mod.create(db, who.tenant, body.name, body.kind, body.every_days, body.params, body.recipients)
     except ValueError as e:
@@ -2421,17 +2421,10 @@ def targets_import_sec(body: SecImport, db: Db, who: Writer):
     return {"new": new, "updated": upd, "revenue_found": t.revenue is not None}
 
 
-def _sec_fetch(cik: str) -> tuple[dict, dict]:
-    """Live SEC submissions and company facts for one CIK, as the SEC import expects them."""
-    from app.secfeed import default_fetch
-    subs = json.loads(default_fetch(f"https://data.sec.gov/submissions/CIK{cik.zfill(10)}.json"))
-    return subs, fetch_companyfacts(cik)
-
-
 @app.post("/targets/refresh")
 def targets_refresh(db: Db, who: Writer, limit: int = Query(200, ge=1, le=1000)):
     """Re-pull stored SEC and Companies House targets from their sources. Each row keeps its source link."""
-    return tg_mod.refresh_universe(db, who.tenant, _sec_fetch, ch_mod.fetch_company, limit=limit)
+    return tg_mod.refresh_universe(db, who.tenant, tg_mod.live_sec_fetch, ch_mod.fetch_company, limit=limit)
 
 
 @app.post("/targets/import/companies-house", status_code=201)
