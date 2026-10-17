@@ -149,3 +149,59 @@ Built by `evals/synthetic_deck_eval.py`. Every page is labelled `SYNTHETIC:`. Tr
 Chart notes: the model also reads axis ticks on p2 (0, 50, 100, 200, 250, 300). These are printed numbers, not segment values, so they land as `ocr_unverified` too. The eval field is renamed `other_numbers_read` to say that. The model reads no wrong segment values. Chart numbers still never auto-verify.
 
 Gaps: one bar chart and one line chart, clean vector render, no real layout. CIM charts are not scored, and there are no multi-series charts with a legend, log axes, or scanned charts. These numbers do not show real-deck accuracy.
+
+## Real investor decks, hand-labelled (5 decks, 26 labelled items)
+
+Source: EDGAR 8-K exhibit PDFs (search via efts, filtered to PDF exhibits). Files copied to `data/real_decks/`. Labels in `evals/golden/golden_real_decks_v1.jsonl` were read off rendered page images (110 dpi), not the text layer. Scored by `evals/real_deck_eval.py`.
+
+Decks used: MIMEDX Oct 2025 investor deck p12; Ampco-Pittsburgh Aug 2023 investor deck p29; Daseke Feb 2023 p18, May 2023 p23, Nov 2023 p7 (earnings presentations).
+
+| Path | Labelled | Result |
+|---|---|---|
+| Router, table rows (25 rows, 105 values) | 105 values | 17/105 values on the labelled row line; 3/25 whole rows |
+| Router, chart waterfall (Daseke p7, 9 values) | 9 values | 0 landed with bbox; the VLM returned no labels for the crop |
+| OCR only on the same crop | 9 values | all 9 labels read with bbox (chart path uses OCR as its check) |
+
+Why the table path misses: on these decks the text layer comes out one cell per line. The router's line grouping then splits rows across lines, so "row label + all values on one line" fails. This is the main gap for real decks, not the number parsing.
+
+Gaps: 5 decks, not 10; 26 labelled items, not 50. Charts: one vector waterfall only. Lands' End and PGT PDFs were downloaded but not labelled. Hand labels are read from images, not double-checked.
+
+
+## Table engines on real decks (99 table values, 19 labelled rows)
+
+`evals/real_deck_table_engines.py`, same hand labels, table rows only (the 6 KPI tiles are excluded).
+
+| Engine | Values on the labelled row line | Whole rows | Bbox |
+|---|---|---|---|
+| router (current) | 16/99 | 2/19 | yes |
+| pymupdf words, y-overlap grouping | 16/99 | 2/19 | yes |
+| pdfplumber | 58/99 | 3/19 | yes |
+| pdftotext -layout | 99/99 | 19/19 | no |
+| router + layout fallback | 99/99 (83 via layout) | 19/19 | 16 with bbox, 83 text-only |
+
+Existing golden sets, same run (`pdf_benchmark.py`): pdftotext_layout is worse than router on sh01 (4/18 page vs 16/18) and has no bbox. So it is not a router replacement. Using it only as a fallback keeps the existing sets as they are.
+
+Open: a layout-only hit has no bbox, so it cannot cite a location. It must not auto-verify. OCR chart fallback and the other 5 decks are not done.
+
+
+## Real decks, round 2 (Lands' End p12, Healthpeak p24 added)
+
+Labels: 13 more rows (Lands' End FY totals, Adjusted EBITDA and net loss from the stacked bars; Healthpeak development table, total spend per project). PGT's PDF in the set is the 8-K cover, not the release, so it is not labelled.
+
+- Router, all table rows: 36/124 values on the row line, 16 of 38 rows (38 includes 6 KPI tiles). Lands' End and Healthpeak rows hit on the router alone.
+- Router + layout fallback (`real_deck_table_engines.py`): 118/118 table values, 32/32 table rows. Text-only hits; the fallback has no bbox.
+- Chart waterfall with OCR fallback when the VLM returns no labels: 9/9 landed with bbox (ocr_unverified). The VLM still returned nothing on that crop; OCR did the work.
+
+Still open: the larger text-only tables in the other decks are not labelled; the PGT release is not in the set.
+
+
+## Layout fallback wired into fact creation, PGT release labelled
+
+- `facts.add_verified_fact`: when the quote is not in the page's text layer, it is looked for in the poppler `-layout` text of the kept PDF. A layout-only match is stored as `ocr_unverified` with no bbox (review queue, never auto-verified). Test: `test_quote_found_only_in_layout_text_is_ocr_unverified`.
+- PGT Q1 2023 earnings release (EX-99.1, p6, statement of operations, 11 rows, 22 values; replaces the 8-K cover that was in the set). PGT's own earnings presentation (EX-99.2) is also in `data/real_decks/`, not labelled yet.
+- Labels for the release are as printed. One row was first labelled "Weighted average diluted shares"; the printed row is "Diluted" under the heading "Weighted average number of common shares outstanding:", so the label was corrected to "Diluted".
+
+Scores on all labelled table rows (146 values, 49 rows incl. 6 KPI tiles):
+- Router alone: 58/146 values on the row line, 27/49 rows.
+- Router plus layout fallback: every table value (140/140) and every table row (43/43). Layout-only hits carry no bbox.
+

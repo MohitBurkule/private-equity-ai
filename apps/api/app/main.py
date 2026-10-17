@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import tempfile
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from datetime import date as DateT
@@ -93,12 +94,25 @@ from app.auth import (
     hash_key,
     key_id,
     list_keys,
+    principal_for_identity,
     principal_for_key,
     revoke_key,
 )
 from app.calc import Calc, find_conflicts, ltm, net_debt, nwc
 from app.calendar_events import retag_deals
 from app.chat_alerts import chat_poster
+from app.chat_inbound import (
+    HELP,
+    NOT_LINKED,
+    chat_identity,
+    format_answer,
+    slack_question,
+    slack_reply,
+    teams_question,
+    teams_reply,
+    verify_slack,
+    verify_teams,
+)
 from app.citations import quote_in_page
 from app.comps import EV_METRIC
 from app.connectors import oauth, vault
@@ -181,6 +195,7 @@ from app.models import (
     SyncRun,
     Target,
     TargetContact,
+    TargetNote,
     WorkflowSchedule,
 )
 from app.models import Tenant as TenantRow
@@ -189,13 +204,18 @@ from app.page_image import render_page
 from app.parse import chart_vlm
 from app.parse.sh01 import parse_capital_form
 from app.portfolio import (
+    MARK_METRIC,
     Covenant,
+    KpiObservation,
     PortfolioCompany,
     add_covenant,
+    budget_variance,
+    compliance_summary,
     current_kpis,
     evaluate_covenant,
     qoq_change,
     record_observation,
+    roll_forward,
 )
 from app.qoe import normalized_ebitda, nwc_peg, one_off_flags, revenue_trend
 from app.ratelimit import make_limiter
@@ -359,6 +379,25 @@ def admin_list_keys(tenant_id: str, db: Db, x_admin_token: Annotated[str | None,
     if db.get(TenantRow, tenant_id) is None:
         raise HTTPException(404, "tenant not found")
     return {"keys": list_keys(db, tenant_id)}
+
+
+@app.get("/admin/tenants/{tenant_id}/document-access")
+def admin_document_access(tenant_id: str, db: Db, x_admin_token: Annotated[str | None, Header()] = None):
+    """Synced documents whose source names who may read them, from the source's access list. Admin only: the
+    list names people and groups, so it stays off the key-scoped screens. Documents without an access list are
+    open to every key in the tenant and are not listed."""
+    if not admin_token_ok(x_admin_token):
+        raise HTTPException(403, "admin token required")
+    if db.get(TenantRow, tenant_id) is None:
+        raise HTTPException(404, "tenant not found")
+    bind_tenant(db, tenant_id)  # no key here, so RLS would hide the tenant's rows unless bound to it
+    rows = (db.query(DocumentSource, Document)
+            .join(Document, Document.id == DocumentSource.document_id)
+            .filter(DocumentSource.tenant_id == tenant_id, DocumentSource.acl.isnot(None))
+            .order_by(Document.filename).all())
+    docs = [{"document_id": d.id, "filename": d.filename, "deal": d.deal, "connector": src.connector,
+             "grants": json.loads(src.acl)} for src, d in rows]
+    return {"documents": docs, "restricted": len(docs)}
 
 
 @app.delete("/admin/keys/{kid}")
@@ -662,8 +701,10 @@ def get_page(doc_id: str, number: int, db: Db, who: Who):
 @app.get("/documents")
 def list_documents(db: Db, who: Who):
     hidden = hidden_deal_names(db, who)
+    acl_hidden = acl_hidden_doc_ids(db, who)  # the same test _own_doc applies, so a listed name always opens
     return [{"id": d.id, "filename": d.filename, "n_pages": d.n_pages, "deal": d.deal}
-            for d in db.query(Document).filter_by(tenant_id=who.tenant).all() if doc_visible(d, who, hidden)]
+            for d in db.query(Document).filter_by(tenant_id=who.tenant).all()
+            if doc_visible(d, who, hidden) and d.id not in acl_hidden]
 
 
 class FactIn(BaseModel):
@@ -1539,6 +1580,58 @@ def deal_note_edit(name: str, nid: int, body: DealNoteIn, db: Db, who: Writer):
     db.commit()
     log_event(db, who.tenant, actor(who), "deal.note_edit", {"deal": name, "id": nid, "before": old, "after": n.body})
     return _note_out(n)
+
+
+class TargetNoteIn(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+def _target_or_404(db: Session, who: Principal, tid: int) -> Target:
+    """A target the key may see: same tenant, and not the same company as an MNPI deal the key may not see."""
+    t = db.get(Target, tid)
+    if t is None or t.tenant_id != who.tenant or mnpi_name_conflict(db, who, t.name):
+        raise HTTPException(404, "target not found")
+    return t
+
+
+def _target_note_out(n: TargetNote) -> dict:
+    return {"id": n.id, "target_id": n.target_id, "author": n.author, "body": n.body,
+            "created_at": n.created_at, "edited_at": n.edited_at or None}
+
+
+@app.get("/targets/{tid}/notes")
+def target_notes_list(tid: int, db: Db, who: Who):
+    _target_or_404(db, who, tid)
+    rows = db.query(TargetNote).filter_by(tenant_id=who.tenant, target_id=tid).order_by(TargetNote.id).all()
+    return [_target_note_out(r) for r in rows]
+
+
+@app.post("/targets/{tid}/notes", status_code=201)
+def target_notes_add(tid: int, body: TargetNoteIn, db: Db, who: Writer):
+    _target_or_404(db, who, tid)
+    n = TargetNote(tenant_id=who.tenant, target_id=tid, author=actor(who), body=body.body.strip(),
+                   created_at=_now_iso(), edited_at="")
+    db.add(n)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "target.note", {"target": tid, "id": n.id})
+    return _target_note_out(n)
+
+
+@app.patch("/targets/{tid}/notes/{nid}")
+def target_note_edit(tid: int, nid: int, body: TargetNoteIn, db: Db, who: Writer):
+    """Same rule as deal notes: the author edits their own; a whole-tenant key may edit any. Old text is audited."""
+    _target_or_404(db, who, tid)
+    n = db.get(TargetNote, nid)
+    if n is None or n.tenant_id != who.tenant or n.target_id != tid:
+        raise HTTPException(404, "note not found")
+    if n.author != actor(who) and who.restricted:
+        raise HTTPException(403, "only the note's author or a whole-tenant key can edit it")
+    old = n.body
+    n.body = body.body.strip()
+    n.edited_at = _now_iso()
+    db.commit()
+    log_event(db, who.tenant, actor(who), "target.note_edit", {"target": tid, "id": nid, "before": old, "after": n.body})
+    return _target_note_out(n)
 
 
 @app.get("/deals/{name}/checklist")
@@ -2553,16 +2646,17 @@ def create_company(body: CompanyIn, db: Db, who: Writer):
 
 
 @app.post("/portfolio/companies/{company_id}/observations", status_code=201)
-def add_observation(company_id: int, fact_id: int, db: Db, who: Writer):
+def add_observation(company_id: int, fact_id: int, db: Db, who: Writer,
+                    kind: Literal["actual", "budget", "mark"] = "actual"):
     tenant = who.tenant
     f = db.get(Fact, fact_id)
     if f is not None and f.tenant_id == tenant and not fact_visible(f, visible_doc_ids(db, who)):
         raise HTTPException(422, "observation requires a verified, cited fact")
     try:
-        o = record_observation(db, tenant, company_id, fact_id)
+        o = record_observation(db, tenant, company_id, fact_id, kind)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
-    log_event(db, tenant, actor(who), "kpi.record", {"observation_id": o.id, "fact_id": fact_id})
+    log_event(db, tenant, actor(who), "kpi.record", {"observation_id": o.id, "fact_id": fact_id, "kind": kind})
     return {"id": o.id, "metric": o.metric, "period": o.period, "value": str(o.value)}
 
 
@@ -2572,6 +2666,105 @@ def kpis(company_id: int, db: Db, who: Who):
     return [{"metric": o.metric, "period": o.period, "value": str(o.value), "unit": o.unit,
              "fact_id": o.fact_id} for o in current_kpis(db, who.tenant, company_id)
             if fact_visible(db.get(Fact, o.fact_id), scope)]
+
+
+@app.get("/portfolio/companies/{company_id}/budget-vs-actual")
+def budget_vs_actual(company_id: int, period: str, db: Db, who: Who):
+    """Each metric with an actual or a budget figure for the period, side by side. Both figures are cited. A metric
+    where either side cites a document the caller may not see is left out, so no hidden figure shows through the
+    other side or the variance."""
+    scope = visible_doc_ids(db, who)
+    sides: dict[str, dict[str, KpiObservation]] = {}
+    for o in current_kpis(db, who.tenant, company_id) + current_kpis(db, who.tenant, company_id, "budget"):
+        if o.period == period:
+            sides.setdefault(o.metric, {})[o.kind] = o
+    rows = []
+    for metric in sorted(sides):
+        pair = sides[metric]
+        act, bud = pair.get("actual"), pair.get("budget")
+        if any(not fact_visible(db.get(Fact, o.fact_id), scope) for o in (act, bud) if o is not None):
+            continue
+        row = {"metric": metric, "unit": (act or bud).unit, "actual": None, "budget": None,
+               "variance": None, "variance_pct": None}
+        if act is not None:
+            row["actual"] = _cited_figure(db, act.fact_id, str(act.value))
+        if bud is not None:
+            row["budget"] = _cited_figure(db, bud.fact_id, str(bud.value))
+        if act is not None and bud is not None:
+            diff, pct = budget_variance(act.value, bud.value)
+            row["variance"] = str(diff)
+            row["variance_pct"] = None if pct is None else str(round(pct, 2))
+        rows.append(row)
+    return {"period": period, "metrics": rows}
+
+
+@app.get("/portfolio/companies/{company_id}/roll-forward")
+def valuation_roll_forward(company_id: int, period: str, prior: str, db: Db, who: Who,
+                           mark_metric: str = Query(MARK_METRIC, max_length=128)):
+    """Opening mark (prior period end), closing mark, cash in and out over the period, and the change in value
+    that the cash flows leave unexplained. Every figure is cited. A figure the caller may not see reads as missing,
+    so the change is withheld rather than computed from a hidden number."""
+    scope = visible_doc_ids(db, who)
+
+    def figure(rows, metric: str, p: str):
+        o = next((o for o in rows if o.metric == metric and o.period == p), None)
+        if o is None or not fact_visible(db.get(Fact, o.fact_id), scope):
+            return None, None
+        return o.value, _cited_figure(db, o.fact_id, str(o.value))
+
+    marks = current_kpis(db, who.tenant, company_id, "mark")
+    actuals = current_kpis(db, who.tenant, company_id)
+    open_v, open_c = figure(marks, mark_metric, prior)
+    close_v, close_c = figure(marks, mark_metric, period)
+    contrib_v, contrib_c = figure(actuals, "contributions", period)
+    dist_v, dist_c = figure(actuals, "distributions", period)
+    change = roll_forward(open_v, close_v, contrib_v, dist_v)
+    return {"period": period, "prior": prior, "opening": open_c, "closing": close_c,
+            "contributions": contrib_c, "distributions": dist_c,
+            "change_in_value": None if change is None else str(change)}
+
+
+def _cited_figure(db: Session, fact_id: int, value: str) -> dict:
+    """A figure as the portfolio routes return it: the value, its fact, and the document it was read from."""
+    c = _fact_cite(db, fact_id, value)
+    return {"value": value, "fact_id": fact_id, "source": c.source, "url": c.url}
+
+
+def _fact_cite(db: Session, fact_id: int, value: str) -> lp_mod.Cite:
+    """The cited source of one figure, as the LP model takes it: the document it was read from, and its link."""
+    f = db.get(Fact, fact_id)
+    src = f.sources[0] if f is not None and f.sources else None
+    doc = db.get(Document, src.document_id) if src is not None else None
+    link = db.query(DocumentSource).filter_by(document_id=src.document_id).first() if src is not None else None
+    return lp_mod.Cite(value, doc.filename if doc else f"fact {fact_id}", link.url if link else None)
+
+
+@app.get("/portfolio/lp-report")
+def portfolio_lp_report(period: str, prior: str, db: Db, who: Writer, format: str = "json"):
+    """Per-company section for LP reporting: cited actuals for the period, budget against actual where both are on
+    file, and the change in value from the roll-forward. Every line carries its source. A figure the caller may not
+    see is left out, as the company routes leave it out."""
+    model = lp_mod.Model(f"Portfolio LP report: {period} (prior mark {prior})")
+    for c in db.query(PortfolioCompany).filter_by(tenant_id=who.tenant).order_by(PortfolioCompany.name).all():
+        model.para((f"{c.name}:", None))
+        kpi_rows = kpis(c.id, db, who)
+        for k in kpi_rows:
+            model.para((f"{k['metric']} {k['value']} {k['unit']} for {period}.",
+                        _fact_cite(db, k["fact_id"], k["value"])))
+        for m in budget_vs_actual(c.id, period, db, who)["metrics"]:
+            if m["actual"] is None or m["budget"] is None:
+                continue
+            text = (f"{m['metric']}: actual {m['actual']['value']} against budget {m['budget']['value']}, "
+                    f"variance {m['variance']}.")
+            model.para((text, _fact_cite(db, m["actual"]["fact_id"], m["actual"]["value"])))
+        rf = valuation_roll_forward(c.id, period, prior, db, who)
+        if rf["change_in_value"] is not None and rf["closing"] is not None:
+            text = (f"Change in value from {prior} to {period}: {rf['change_in_value']} "
+                    "(closing mark less opening mark, adjusted for cash in and out).")
+            model.para((text, _fact_cite(db, rf["closing"]["fact_id"], rf["closing"]["value"])))
+        if not kpi_rows:
+            model.para((f"No figures on file for {period}.", None))
+    return _lp_output(model, format, "portfolio-lp-report")
 
 
 @app.get("/portfolio/submissions")
@@ -2615,7 +2808,7 @@ def covenant_status(company_id: int, db: Db, who: Who):
     scope = visible_doc_ids(db, who)
     covs = db.query(Covenant).filter_by(tenant_id=who.tenant, company_id=company_id).all()
     out = [{"id": c.id, "kpi_metric": c.kpi_metric, "operator": c.operator,
-            "tests": evaluate_covenant(db, c, scope)} for c in covs]
+            "tests": (tests := evaluate_covenant(db, c, scope)), "compliance": compliance_summary(tests)} for c in covs]
     breaches = [{"covenant_id": c["id"], "kpi_metric": c["kpi_metric"], **t}
                 for c in out for t in c["tests"] if t["status"] in ("breach", "unit_mismatch")]
     return {"covenants": out, "breaches": breaches}
@@ -3737,6 +3930,41 @@ def ask(body: AskIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_dependenc
     cite = lambda c: {"text": c.text, "document_id": c.doc_id, "page": c.page, "quote": c.quote}
     return {"status": a.status, "detail": a.detail, "claims": [cite(c) for c in a.claims],
             "rejected": [{**cite(c), "reason": c.reason} for c in a.rejected]}
+
+
+@app.post("/chat/{kind}/inbound")
+async def chat_inbound(kind: str, request: Request, db: Db):
+    """A Slack slash command or Teams outgoing webhook asks a question. The request must carry the chat app's
+    signature; the question runs as that app's configured key, so its scope and MNPI walls apply."""
+    if kind not in ("slack", "teams"):
+        raise HTTPException(404, "unknown chat app")
+    body = await request.body()
+    secret = os.environ.get("SLACK_SIGNING_SECRET" if kind == "slack" else "TEAMS_SECURITY_TOKEN")
+    if not secret:
+        raise HTTPException(503, f"{kind} inbound is not configured")
+    if kind == "slack":
+        ok = verify_slack(secret, request.headers.get("X-Slack-Request-Timestamp", ""),
+                          request.headers.get("X-Slack-Signature", ""), body, int(time.time()))
+        question = slack_question(body)
+    else:
+        ok = verify_teams(secret, request.headers.get("Authorization"), body)
+        question = teams_question(body)
+    if not ok:
+        raise HTTPException(401, "bad signature")
+    reply = slack_reply if kind == "slack" else teams_reply
+    if not question:
+        return reply(HELP)
+    who = principal_for_identity(db, chat_identity(kind, body))
+    if who is None:
+        return reply(NOT_LINKED)
+    bind_tenant(db, who.tenant)
+    a = answer_question(db, who.tenant, llm_dependency(), question, scope=visible_doc_ids(db, who))
+    filenames = {d.id: d.filename for d in db.query(Document).filter(
+        Document.tenant_id == who.tenant, Document.id.in_([c.doc_id for c in a.claims] or [""]))}
+    log_event(db, who.tenant, who.identity or f"chat:{kind}", "chat.ask", {"question": question, "status": a.status,
+                                                                         "claims": len(a.claims), "rejected": len(a.rejected)})
+    db.commit()
+    return reply(format_answer(a, filenames))
 
 
 class FKExtractIn(BaseModel):

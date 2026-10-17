@@ -186,6 +186,20 @@ export type Facets = { sector: { value: string | null; count: number }[]; countr
 
 export interface AlertBrief { since: string; total: number; by_kind: Record<string, number>; by_severity: Record<string, number> }
 
+export interface RefreshOut { checked: number; refreshed: number; failed: number; dissolved: number }
+
+export interface Note { id: number; author: string; body: string; created_at: string; edited_at: string | null }
+
+// Deal and target notes share one shape; only the path differs. The server decides who may edit (author, or a whole-tenant key).
+export const notesFor = (base: string) => ({
+  list: () => call<Note[]>(`${base}/notes`),
+  add: (body: string) => call<Note>(`${base}/notes`, "POST", { body }),
+  edit: (id: number, body: string) => call<Note>(`${base}/notes/${id}`, "PATCH", { body }),
+});
+
+export const dealNotes = (deal: string) => notesFor(`/deals/${encodeURIComponent(deal)}`);
+export const targetNotes = (tid: number) => notesFor(`/targets/${tid}`);
+
 export const api2 = {
   targets: (f: TargetFilter) => {
     const p = new URLSearchParams({ limit: "1000" });
@@ -196,6 +210,7 @@ export const api2 = {
     call<TargetBenchmark>(`/targets/benchmark?target_id=${targetId}&sector=${encodeURIComponent(sector)}`),
   targetFacets: () => call<Facets>("/targets/facets"),
   screen: (body: ScreenBody) => call<ScreenOut>("/targets/screen", "POST", body),
+  refreshTargets: () => call<RefreshOut>("/targets/refresh", "POST"),
   facts: (status?: string) => call<FactRow[]>(`/facts${status ? `?status=${status}` : ""}`),
   review: (id: number, action: "accept" | "reject", note?: string) => call<FactRow>(`/facts/${id}/review`, "POST", { action, note }),
   deals: () => call<DealRow[]>("/deals"),
@@ -271,6 +286,11 @@ export const api2 = {
   // A plain link would not send the key, so the research deck is fetched with it and saved from a blob.
   researchPptxBlob: (targetId: number) => fetch(`/api/targets/${targetId}/research.pptx`, { headers: auth() })
     .then((r) => { if (!r.ok) throw new Error(`research deck: ${r.status}`); return r.blob(); }),
+  documentAccess: (tenantId: string, adminToken: string) => fetch(`/api/admin/tenants/${encodeURIComponent(tenantId)}/document-access`, {
+    headers: { "X-Admin-Token": adminToken },
+  }).then((r) => j<DocumentAccess>(r)),
+  budgetVsActual: (companyId: number, period: string) => call<BudgetVsActual>(`/portfolio/companies/${companyId}/budget-vs-actual?period=${encodeURIComponent(period)}`),
+  portfolioSubmissions: (period: string) => call<SubmissionsOut>(`/portfolio/submissions?period=${encodeURIComponent(period)}`),
   emailAttach: (docId: string, deal: string) => call<{ document_id: string; deal: string }>(`/email/review/${encodeURIComponent(docId)}/attach`, "POST", { deal }),
 };
 
@@ -284,5 +304,15 @@ export interface PeerSet { id: number; deal: string; name: string; target_id: nu
 
 export interface PersonRow { id: number; name: string; organisation: string | null; title: string | null; expertise: string[]; deal: string | null; recorded_at: string }
 export interface PersonIn { name: string; organisation?: string; title?: string; expertise?: string[]; deal?: string }
+
+export interface DocumentAccessRow { document_id: string; filename: string; deal: string | null; connector: string; grants: string[] }
+export interface DocumentAccess { documents: DocumentAccessRow[]; restricted: number }
+
+/** A figure as the portfolio routes return it: its fact, and the document it was read from. */
+export interface CitedFigure { value: string; fact_id: number; source: string; url: string | null }
+export interface BudgetMetric { metric: string; unit: string; actual: CitedFigure | null; budget: CitedFigure | null; variance: string | null; variance_pct: string | null }
+export interface BudgetVsActual { period: string; metrics: BudgetMetric[] }
+export interface SubmissionRow { company_id: number; name: string; metrics: string[] }
+export interface SubmissionsOut { period: string; submitted: SubmissionRow[]; missing: SubmissionRow[]; pct_submitted: number | null }
 
 export const STAGES = ["sourcing", "screening", "dd", "ic", "signed", "closed", "passed"];

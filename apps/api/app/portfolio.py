@@ -7,6 +7,7 @@ supersedes the older one, which stays in history.
 """
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -39,6 +40,9 @@ class KpiObservation(Base):
     fact_id: Mapped[int] = mapped_column(ForeignKey("fact.id"), nullable=False)  # citation
     observed_at: Mapped[str] = mapped_column(String(40))
     superseded_by: Mapped[int | None] = mapped_column(Integer, default=None)
+    # "actual", "budget" or "mark". A budget or mark figure is cited like an actual but never supersedes one, so
+    # they can stand for the same metric and period and be compared.
+    kind: Mapped[str] = mapped_column(String(16), default="actual", server_default="actual")
 
 
 class Covenant(Base):
@@ -97,7 +101,8 @@ def evaluate_covenant(db: Session, cov: Covenant, scope: set[str] | None = None)
     return out
 
 
-def record_observation(db: Session, tenant_id: str, company_id: int, fact_id: int) -> KpiObservation:
+def record_observation(db: Session, tenant_id: str, company_id: int, fact_id: int,
+                       kind: str = "actual") -> KpiObservation:
     company = db.get(PortfolioCompany, company_id)
     if company is None or company.tenant_id != tenant_id:
         raise ValueError("company not found")
@@ -106,21 +111,22 @@ def record_observation(db: Session, tenant_id: str, company_id: int, fact_id: in
         raise ValueError("observation requires a verified, cited fact")
     obs = KpiObservation(tenant_id=tenant_id, company_id=company_id, metric=fact.metric, period=fact.period,
                          value=fact.value, unit=fact.unit, fact_id=fact.id,
-                         observed_at=datetime.now(UTC).isoformat())
+                         observed_at=datetime.now(UTC).isoformat(), kind=kind)
     db.add(obs)
     db.flush()
     for old in db.scalars(select(KpiObservation).where(
             KpiObservation.company_id == company_id, KpiObservation.metric == obs.metric,
-            KpiObservation.period == obs.period, KpiObservation.id != obs.id,
+            KpiObservation.period == obs.period, KpiObservation.kind == kind, KpiObservation.id != obs.id,
             KpiObservation.superseded_by.is_(None))):
         old.superseded_by = obs.id
     db.commit()
     return obs
 
 
-def current_kpis(db: Session, tenant_id: str, company_id: int) -> list[KpiObservation]:
+def current_kpis(db: Session, tenant_id: str, company_id: int, kind: str = "actual") -> list[KpiObservation]:
     return list(db.scalars(select(KpiObservation).where(
-        KpiObservation.tenant_id == tenant_id, KpiObservation.company_id == company_id, KpiObservation.superseded_by.is_(None))
+        KpiObservation.tenant_id == tenant_id, KpiObservation.company_id == company_id, KpiObservation.kind == kind,
+        KpiObservation.superseded_by.is_(None))
         .order_by(KpiObservation.metric, KpiObservation.period)))
 
 
@@ -133,3 +139,51 @@ def qoq_change(db: Session, tenant_id: str, company_id: int, metric: str, p_new:
     if cur[p_new].unit != cur[p_old].unit:
         return None
     return (cur[p_new].value - cur[p_old].value) / abs(cur[p_old].value) * 100
+
+
+def budget_variance(actual: Decimal, budget: Decimal) -> tuple[Decimal, Decimal | None]:
+    """Actual minus budget, and that gap as a share of the budget. The share is None when the budget is zero, since
+    there is no base to measure against."""
+    diff = actual - budget
+    return diff, (diff / abs(budget) * 100 if budget != 0 else None)
+
+
+MARK_METRIC = "equity_value"  # the holding's value, cited, at each period end
+
+
+def roll_forward(opening: Decimal | None, closing: Decimal | None, contributions: Decimal | None,
+                 distributions: Decimal | None) -> Decimal | None:
+    """Change in value over the period: closing mark, less opening mark, less the cash put in, plus the cash taken
+    out. None unless all four are present, so a gap never reads as a gain or a loss."""
+    if None in (opening, closing, contributions, distributions):
+        return None
+    return closing - opening - contributions + distributions
+
+
+def _month_index(period: str) -> int | None:
+    """Month number of a YYYY-MM period, None for any other period label (quarters, years, custom)."""
+    m = re.fullmatch(r"(\d{4})-(\d{2})", period)
+    return int(m[1]) * 12 + int(m[2]) - 1 if m and 1 <= int(m[2]) <= 12 else None
+
+
+def compliance_summary(tests: list[dict]) -> dict:
+    """Summary of one covenant's tests over its monthly ledger periods (rows from evaluate_covenant). `missing` lists
+    the months between the first and last tested period that have no test, so a gap in the ledger feed shows up
+    instead of reading as compliance. Status is breach if any tested month breached, no_data if none was tested."""
+    rows = sorted(tests, key=lambda t: t["period"])
+    breaches = [t["period"] for t in rows if t["status"] == "breach"]
+    seen = {t["period"] for t in rows}
+    missing = []
+    idx = [_month_index(t["period"]) for t in rows]
+    if rows and None not in (idx[0], idx[-1]):
+        for i in range(idx[0], idx[-1] + 1):
+            key = f"{i // 12:04d}-{i % 12 + 1:02d}"
+            if key not in seen:
+                missing.append(key)
+    headrooms = [(Decimal(t["headroom_pct"]), t["period"]) for t in rows if "headroom_pct" in t]
+    low = min(headrooms) if headrooms else None
+    status = "no_data" if not rows else ("breach" if breaches else "ok")
+    return {"status": status, "tested_months": len(rows), "first_breach": breaches[0] if breaches else None,
+            "latest": rows[-1] if rows else None,
+            "min_headroom": {"period": low[1], "headroom_pct": str(low[0])} if low else None,
+            "missing": missing}

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { api2, ScreenBody, ScreenOut, Target, TargetFilter } from "./api";
+import { api2, RefreshOut, ScreenBody, ScreenOut, Target, TargetFilter, targetNotes } from "./api";
+import { NotesPanel } from "./Notes";
 import { fmtAmount } from "./format";
 import { useLoad } from "./hooks";
 import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input } from "./ui";
@@ -111,6 +112,20 @@ export function Targets() {
   const cur = items.find((t) => t.id === sel);
   const bench = useLoad(() => (cur?.sector ? api2.targetBenchmark(cur.id, cur.sector) : Promise.resolve(null)), [cur?.id]);
   const selCls = "rounded-lg border border-line bg-bg px-2 py-1.5 text-sm";
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshed, setRefreshed] = useState<RefreshOut | null>(null);
+  const [refreshErr, setRefreshErr] = useState("");
+  const refresh = async () => {
+    setRefreshing(true); setRefreshErr(""); setRefreshed(null);
+    try {
+      setRefreshed(await api2.refreshTargets());
+      list.reload();
+    } catch (e) {
+      setRefreshErr(e instanceof Error ? e.message : "Refresh failed");
+    } finally {
+      setRefreshing(false);
+    }
+  };
   return (
     <div className="h-full overflow-y-auto p-6">
       <h1 className="mb-1 text-xl font-semibold tracking-tight">Acquisition targets</h1>
@@ -125,7 +140,10 @@ export function Targets() {
         <Input aria-label="Min revenue" type="number" placeholder="Min revenue" value={f.min_revenue ?? ""} onChange={(e) => set("min_revenue", e.target.value)} className="w-36" />
         <Input aria-label="Max revenue" type="number" placeholder="Max revenue" value={f.max_revenue ?? ""} onChange={(e) => set("max_revenue", e.target.value)} className="w-36" />
         <span className="text-sm text-mut">{list.data ? `${list.data.total} shown` : ""}</span>
+        <Button onClick={refresh} disabled={refreshing}>{refreshing ? "Refreshing" : "Refresh from sources"}</Button>
       </div>
+      {refreshed && <p className="mb-4 text-sm text-mut">{refreshed.refreshed} of {refreshed.checked} refreshed from SEC and Companies House; {refreshed.failed} failed, {refreshed.dissolved} dissolved (never refreshed silently).</p>}
+      <ErrorLine e={refreshErr} />
       {items.length === 0 && list.data ? <Empty>No targets match. Import from SEC or Companies House, or loosen the filters.</Empty> : (
         <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
           <Card><CardHead title="Map" hint="Dot size = revenue. Click a dot for details." /><div className="p-4"><MapView items={items} sel={sel} onPick={setSel} /></div></Card>
@@ -152,6 +170,7 @@ export function Targets() {
               )}
             </div>
           </Card>
+          {cur && <NotesPanel title={`Notes: ${cur.name}`} hint="Shared with everyone who can see this target" api={targetNotes(cur.id)} deps={[cur.id]} />}
           <ScreenPanel />
           <Card className="lg:col-span-2">
             <CardHead title="Targets" />
