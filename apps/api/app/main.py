@@ -155,6 +155,7 @@ from app.portfolio import (
     qoq_change,
     record_observation,
 )
+from app.qoe import normalized_ebitda, one_off_flags
 from app.ratelimit import make_limiter
 from app.report import build_report, build_report_docx
 from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
@@ -769,6 +770,14 @@ def lbo_get(run_id: int, db: Db, who: Who):
     if r is None:
         raise HTTPException(404, "run not found")
     return {**_lbo_run_row(r), "request": json.loads(r.request), "result": json.loads(r.result)}
+
+
+@app.get("/calc/normalized-ebitda")
+def calc_normalized_ebitda(entity: str, period: str, db: Db, who: Who):
+    """Reported EBITDA plus reviewed add-backs, less deductions. Withheld while any bridge line is unreviewed;
+    add-backs above 10% of reported EBITDA come back as one-off flags for a person to check."""
+    c = normalized_ebitda(db, who.tenant, entity, period, visible_doc_ids(db, who))
+    return {**_calc_out(c), "one_off_flags": one_off_flags(c)}
 
 
 @app.get("/calc/ltm")
@@ -2735,6 +2744,7 @@ def extract(doc_id: str, body: ExtractIn, db: Db, who: Writer, llm: Annotated[LL
 class RowExtractIn(BaseModel):
     schema_name: str
     period: str
+    entity: str | None = None  # the company the table is about; bridge lines are stored under it
 
 
 @app.post("/documents/{doc_id}/extract-rows")
@@ -2744,7 +2754,9 @@ def extract_row_table(doc_id: str, body: RowExtractIn, db: Db, who: Writer,
     doc = _own_doc(db, who, doc_id)
     if body.schema_name not in ROW_SCHEMAS:
         raise HTTPException(422, f"schema must be one of {sorted(ROW_SCHEMAS)}")
-    results, detail, checks = extract_rows(db, who.tenant, llm, doc, body.schema_name, body.period)
+    if body.schema_name == "ebitda_bridge" and not body.entity:
+        raise HTTPException(422, "ebitda_bridge needs the company name in entity")
+    results, detail, checks = extract_rows(db, who.tenant, llm, doc, body.schema_name, body.period, body.entity)
     log_event(db, who.tenant, actor(who), "extract_rows",
               {"document_id": doc.id, "schema": body.schema_name,
                "accepted": sum(r.status == "accepted" for r in results)})

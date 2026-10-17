@@ -31,7 +31,7 @@ def run(h, doc, schema, rows):
     app.dependency_overrides[llm_dependency] = lambda: Fake(rows)
     try:
         return c.post(f"/documents/{doc}/extract-rows", headers=h,
-                      json={"schema_name": schema, "period": "FY24"}).json()
+                      json={"schema_name": schema, "period": "FY24", "entity": "Co"}).json()
     finally:
         app.dependency_overrides.pop(llm_dependency)
 
