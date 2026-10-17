@@ -113,7 +113,10 @@ DEAL_KINDS = ("deal", "dd")  # alerts whose title starts with the deal name, e.g
 
 
 def alert_deal(a: Alert) -> str | None:
-    """The deal an alert is about, when it is one of the deal-scoped kinds. Other alerts have no deal."""
+    """The deal an alert is about. The stored deal column is authoritative; alerts written before it existed
+    fall back to the title, for the deal-scoped kinds only."""
+    if a.deal:
+        return a.deal
     if a.kind not in DEAL_KINDS or ": " not in a.title:
         return None
     return a.title.split(": ", 1)[0]
