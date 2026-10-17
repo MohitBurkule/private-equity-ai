@@ -4,6 +4,7 @@
 mod audit;
 mod auth;
 mod citations;
+mod deals;
 mod documents;
 mod error;
 mod facts;
@@ -49,6 +50,7 @@ pub fn app(state: AppState) -> Router {
         .route("/me", get(whoami))
         .route("/facts", get(facts::list_facts).post(facts::create_fact))
         .route("/documents", get(documents::list_documents))
+        .route("/deals", get(deals::list_deals))
         .route("/deals/:name/notes", get(notes::list_deal_notes))
         .route("/targets/:tid/notes", get(notes::list_target_notes))
         .route("/memo/templates", get(memo::list_templates))
