@@ -1153,6 +1153,32 @@ def ic_review(deal: str, db: Db, who: Who):
             "changed_since_ic": since, "ic_recorded": latest is not None}
 
 
+@app.get("/ic/precedents")
+def ic_precedents(deal: str, db: Db, who: Who):
+    """Past IC outcomes for deals at the same stage in this tenant, the partner's first comparison. Stage is the only
+    deal attribute the workspace records, so it stands in for sector until one exists. Only deals this key may see
+    are compared: walled MNPI deals and other scopes are left out, and no other tenant is ever read."""
+    if not _dd_scope_ok(who, deal):
+        raise HTTPException(403, "deal is outside this key's scope")
+    target = db.query(Deal).filter_by(tenant_id=who.tenant, name=deal).one_or_none()
+    stage = target.stage if target else None
+    visible = deal_scope(db, who)
+    if target is None or (visible is not None and deal not in visible):
+        raise HTTPException(404, "deal not found")
+    peers = [d.name for d in db.query(Deal).filter_by(tenant_id=who.tenant, stage=stage).all()
+             if d.name != deal and (visible is None or d.name in visible)]
+    rows = db.query(ICDecision).filter(ICDecision.tenant_id == who.tenant,
+                                       ICDecision.deal.in_(peers)).order_by(ICDecision.id).all() if peers else []
+    latest: dict[str, ICDecision] = {}
+    for r in rows:
+        latest[r.deal] = r  # rows are in id order, so the last one per deal is its current view
+    counts: dict[str, int] = {}
+    for r in latest.values():
+        counts[r.outcome] = counts.get(r.outcome, 0) + 1
+    return {"deal": deal, "stage": stage, "precedents": [_decision_out(latest[n]) for n in sorted(latest)],
+            "outcome_counts": counts, "compared_deals": len(peers)}
+
+
 @app.get("/dd/summary")
 def dd_summary(deal: str, db: Db, who: Who):
     """Counts per category and the list of items still open: the missing-document tracker."""
