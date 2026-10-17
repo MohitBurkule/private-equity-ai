@@ -73,7 +73,7 @@ TERMS: dict[str, dict] = {
     },
     "termination_fee": {
         "doc": ("spa",),
-        "re": r"(?:reverse )?termination fee[^.]{0,120}?((?:US\$|\$|£|€)\s?[\d,]+(?:\.\d+)?(?:\s?(?:million|billion))?)",
+        "re": r'(?:reverse )?termination fee[^.]{0,120}?((?:US\$|\$|£|€)\s?[\d,]+(?:\.\d+)?(?:\s?(?:million|billion))?)|((?:US\$|\$|£|€)\s?[\d,]+(?:\.\d+)?(?:\s?(?:million|billion))?)[^.]{0,60}?\(the [“"]?(?:reverse )?termination fee',
     },
     "material_adverse_effect": {
         "doc": ("spa", "credit"),
@@ -133,7 +133,7 @@ def extract(pages: list[tuple[int, str]], doc_type: str) -> dict:
                     found.append(
                         Finding(
                             term,
-                            m.group(1).strip(),
+                            next(g for g in m.groups() if g).strip(),
                             num,
                             sent.strip(),
                             bool(_NEG.search(sent)),
