@@ -107,6 +107,22 @@ def test_pptx_export_has_figures_sources_and_respects_empty():
     assert "Nothing to report" in texts(build_memo_pptx(s, "t", "Nobody"))
 
 
+def test_revenue_chart_slide_carries_source_footnote():
+    import io
+
+    from pptx import Presentation
+
+    from app.memo import build_memo_pptx
+    s, doc = setup_db()
+    kw = {"tenant_id": "t", "entity": "Chart Co", "unit": "USD", "document_id": doc, "page": 1}
+    add_verified_fact(s, metric="revenue", value=Decimal(1000), quote="Total revenues 1,000", period="FY23", **kw)
+    add_verified_fact(s, metric="revenue", value=Decimal(1000), quote="Total revenues 1,000", period="FY24", **kw)
+    prs = Presentation(io.BytesIO(build_memo_pptx(s, "t", "Chart Co")))
+    chart_slide = next(sl for sl in prs.slides if sl.shapes.title is not None and "Revenue trend" in sl.shapes.title.text)
+    foot = [sh.text_frame.text for sh in chart_slide.shapes if sh.has_text_frame and sh.text_frame.text.startswith("Source:")]
+    assert foot and foot[0].startswith("Source: [") and "Total revenues 1,000" in foot[0]
+
+
 def test_pptx_endpoint_auth_and_type():
     from app.main import app
     from tests.helpers import new_tenant

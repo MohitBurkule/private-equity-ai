@@ -1,14 +1,14 @@
 """Pending deal deletion requests: the first of two steps before a deal is removed
 
-Revision ID: 20261017_1900_deal_deletion
-Revises: 20261017_1830_deal_sponsor
+Revision ID: 20261017_1915_deal_deletion
+Revises: 20261017_1900_valuation_round
 """
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = '20261017_1900_deal_deletion'
-down_revision = '20261017_1830_deal_sponsor'
+revision = '20261017_1915_deal_deletion'
+down_revision = '20261017_1900_valuation_round'
 branch_labels = None
 depends_on = None
 
