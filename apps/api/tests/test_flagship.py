@@ -201,3 +201,23 @@ def test_legal_model_reader_reads_an_amount_first_termination_fee_from_a_real_me
     fake = legal_reader.read(pages, "spa", ["termination_fee"], Local(
         ['{"quote": "Parent shall pay a fee in the amount of $30,000,000 (the “Termination Fee”).", "page": 23}']))
     assert fake["findings"] == [] and fake["dropped"][0]["reason"] == "quote is not on the cited page"
+
+
+def test_comps_peer_with_a_market_ev_fact_gets_its_cited_multiple():
+    from types import SimpleNamespace
+
+    from app.flagship import comps_step
+    from app.peers import Peer
+    peers = [Peer("1", Decimal(100), "FY2025", "u1", "r", "RXO INC"), Peer("2", Decimal(50), "FY2025", "u2", "r", "NO EV")]
+
+    calls = []
+
+    def discover(*a, **k):
+        calls.append(1)
+        return peers if len(calls) == 1 else []
+
+    evs = {"RXO INC": SimpleNamespace(id=7, value=Decimal(950), unit="USD")}
+    st = comps_step(Decimal(1000), "4213", set(), 1, discover, ev_lookup=lambda n: evs.get(n))
+    rxo, nov = st.result["peers"][:2]
+    assert rxo["enterprise_value"] == "950" and rxo["ev_fact_id"] == 7 and rxo["ev_revenue_multiple"] == "9.50"
+    assert "enterprise_value" not in nov
