@@ -15,7 +15,8 @@ def _seed(s: Session):
     f1 = Fact(tenant_id="t", entity="Acme", metric="revenue", period="FY2024", value=1200, unit="USD_m",
               status="verified")
     f1.sources.append(FactSource(document_id="d1", page=4, quote="Revenue was $1,200m"))
-    f2 = Fact(tenant_id="t", entity="Acme", metric="ebitda", period="FY2024", value=300, unit="USD_m")
+    f2 = Fact(tenant_id="t", entity="Acme", metric="ebitda", period="FY2024", value=300, unit="USD_m",
+              status="verified")
     f2.sources.append(FactSource(document_id="d2", page=9, quote="EBITDA 300"))
     s.add_all([f1, f2])
     s.flush()

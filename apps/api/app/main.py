@@ -462,8 +462,8 @@ def lbo_returns(body: dict, db: Db, who: Who, xlsx: bool = False):
     for name, spec in raw.items():
         if "fact_id" in spec:
             f = db.query(Fact).filter(Fact.id == spec["fact_id"], Fact.tenant_id == who.tenant).first()
-            if f is None or not fact_visible(f, scope) or not f.sources:
-                raise HTTPException(422, f"{name}: fact not found or has no source")
+            if f is None or not fact_visible(f, scope) or not f.sources or f.status != "verified":
+                raise HTTPException(422, f"{name}: fact not found, not verified, or has no source")
             names = {d.id: d.filename for d in db.query(Document).filter(
                 Document.id.in_({s.document_id for s in f.sources}))}
             src = {"document_id": f.sources[0].document_id, "filename": names.get(f.sources[0].document_id),
