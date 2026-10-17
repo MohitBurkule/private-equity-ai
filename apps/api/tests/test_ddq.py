@@ -48,3 +48,14 @@ def test_ddq_batch_flags_unanswered_and_isolates_errors():
         assert c.post("/ddq", headers=h, json={"questions": ["q"] * 201}).status_code == 422
     finally:
         m.app.dependency_overrides.clear()
+
+
+def test_ddq_with_empty_corpus_marks_every_question_for_a_human():
+    h = new_tenant(c, "ddq2")
+    m.app.dependency_overrides[m.llm_dependency] = lambda: Scripted("none")
+    try:
+        items = c.post("/ddq", headers=h, json={"questions": ["What was revenue?", "What is the fund size?"]}).json()["items"]
+        assert [i["status"] for i in items] == ["not_found", "not_found"]
+        assert all(i["needs_human"] and i["claims"] == [] for i in items)
+    finally:
+        m.app.dependency_overrides.clear()

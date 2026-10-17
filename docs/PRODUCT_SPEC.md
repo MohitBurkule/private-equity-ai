@@ -37,7 +37,7 @@ Target modules: `firm_knowledge.py` (profile), `agent.py` (tool registry, workfl
 | 1 | Sourcing and screening of targets | PARTIAL | Deals + stages, UK CH/PSC feeds, PitchBook/Crowdcube/Seedrs export import, holdings. Missing: criteria-driven screen over a universe, scoring, saved screens | workflows |
 | 2 | Add-on search | MISSING | Needs entity universe + similarity + exclusion of owned/seen companies; uses firm screening criteria | workflows |
 | 3 | Enterprise search (docs, email, data) | PARTIAL | Seen-before lookup across targets, portfolio and visible deals (#117).  Scoped BM25, hybrid plumbing (not wired), ACL, eml/office/xlsx/pdf parse, source viewer. Missing: dense retrieval + rerank, cross-deal "have we seen this", connectors | PDF + integrations |
-| 4 | IC materials | PARTIAL | Cited memo, DOCX + PPTX export, facts gate. Missing: firm templates, version diff, comments, auto-pull from CRM/SharePoint | workflows |
+| 4 | IC materials | PARTIAL | Cited memo, DOCX + PPTX export, facts gate, accepted firm rules (LP tone, sign-off threshold, board cadence) quoted in the memo and report drafts. Missing: firm templates, version diff, comments, auto-pull from CRM/SharePoint | workflows |
 | 5 | Trading comps | PARTIAL | `/market/quote` (Yahoo, Stooq, FactSet providers), XBRL companyfacts. Missing: comps table builder, implied range | comps |
 | 6 | Precedent transactions | MISSING | Holdings import has deal rows; needs multiple calc + dataset | comps |
 | 7 | Legal review (NDA, SPA, covenants) | PARTIAL | Covenants table, extract schemas, cap table, share ledger, waterfall. Missing: clause library, playbook compare, red-flag table | workflows |
