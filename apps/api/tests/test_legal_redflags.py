@@ -42,3 +42,20 @@ def test_absent_rule_has_no_cite_and_no_guess():
     flags = red_flags(extract([(1, "Nothing relevant here.")], "nda"))
     gov = next(f for f in flags if f["rule"] == "gov_law_absent")
     assert gov["quote"] is None and gov["value"] is None
+
+
+def test_word_numbers_parsed_and_long_survival_flagged():
+    flags = red_flags(
+        extract(
+            [(1, "Obligations survive for seven (7) years after termination.")], "nda"
+        )
+    )
+    f = next(x for x in flags if x["rule"] == "survival_long")
+    assert f["value"] == "seven (7)" and f["page"] == 1
+
+
+def test_word_number_without_digits_still_parsed():
+    flags = red_flags(
+        extract([(1, "Sellers shall not solicit employees for twelve months.")], "nda")
+    )
+    assert all(f["rule"] != "non_solicit_long" for f in flags)
