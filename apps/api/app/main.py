@@ -1875,6 +1875,13 @@ def alerts_scan(db: Db, who: Writer):
     return {"created": [al.alert_dict(a) for a in made]}
 
 
+@app.get("/alerts/brief")
+def alerts_brief(db: Db, who: Who, since: str):
+    """Alerts raised since an ISO timestamp, counted by kind and severity, with the most urgent items first."""
+    _unrestricted(who)
+    return al.brief(db, who.tenant, since)
+
+
 @app.get("/alerts")
 def alerts_list(db: Db, who: Who, status: str | None = None):
     _unrestricted(who)
