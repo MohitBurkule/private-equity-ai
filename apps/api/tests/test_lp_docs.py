@@ -1,3 +1,4 @@
+import json
 from datetime import date
 from decimal import Decimal
 
@@ -81,3 +82,31 @@ def test_endpoints_return_json_docx_and_refuse_bad_format():
             "due": "2026-11-01", "notice_days": {"value": "10", "source": "terms"},
             "commitments": {"A": {"value": "2000000", "source": "lpa-A"}, "B": {"value": "3000000", "source": "lpa-B"}}}
     assert "sources" in c.post("/lp/capital-call", headers=h, json=call).json()
+
+
+class _Fake:
+    def __init__(self, reply):
+        self.reply = reply
+
+    def complete(self, system, prompt):
+        return self.reply
+
+
+def test_tone_rewrite_applied_only_when_tokens_and_numbers_hold():
+    from app import lp_tone
+
+
+    m = lp_letter("Fund I", date(2026, 9, 30), FLOWS, cite("900", "nav"), [])
+    neutral = [p[0][0] for p in m.paragraphs if len(p) == 1]
+    ok = json.dumps({"paragraphs": [{"id": str(i), "text": "Calm update: " + lp_tone.mask(p[0][0])[0]}
+                                    for i, p in enumerate(m.paragraphs) if len(p) == 1 and p[0][0]]})
+    rw, st = lp_tone.rewrite(m, "plain", _Fake(ok))
+    assert st.status == "applied" and any("Calm update" in t for p in rw.paragraphs for t, _ in p)
+    bad = json.dumps({"paragraphs": [{"id": str(i), "text": "Update: 950 is the figure."}
+                                     for i, p in enumerate(m.paragraphs) if len(p) == 1 and p[0][0]]})
+    rw2, st2 = lp_tone.rewrite(m, "plain", _Fake(bad))
+    assert st2.status == "rejected" and [p[0][0] for p in rw2.paragraphs if len(p) == 1] == neutral
+    dropped = json.dumps({"paragraphs": [{"id": str(i), "text": "No token here."}
+                                         for i, p in enumerate(m.paragraphs) if len(p) == 1 and p[0][0]]})
+    assert lp_tone.rewrite(m, "plain", _Fake(dropped))[1].status == "rejected"
+    assert lp_tone.rewrite(m, "plain", _Fake("not json"))[1].status == "rejected"

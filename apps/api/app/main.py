@@ -43,6 +43,7 @@ from app import jobs as jobs_mod
 from app import lbo as lbo_mod
 from app import legal as legal_mod
 from app import lp_docs as lp_mod
+from app import lp_tone as lp_tone_mod
 from app import notify as notify_mod
 from app import outreach as outreach_mod
 from app import peers as peers_mod
@@ -1292,9 +1293,9 @@ class CapitalCallIn(BaseModel):
     lp: str | None = Field(default=None, max_length=256)
 
 
-def _lp_output(model: lp_mod.Model, fmt: str, name: str):
+def _lp_output(model: lp_mod.Model, fmt: str, name: str, style: dict | None = None):
     if fmt == "json":
-        return model.to_dict()
+        return {**model.to_dict(), **({"style": style} if style is not None else {})}
     if fmt == "docx":
         return Response(lp_mod.to_docx(model), headers={"Content-Disposition": f'attachment; filename="{name}.docx"'},
                         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
@@ -1305,9 +1306,11 @@ def _lp_output(model: lp_mod.Model, fmt: str, name: str):
 
 
 @app.post("/lp/letter")
-def lp_letter(body: LpLetterIn, who: Writer, db: Db, format: str = "json"):
+def lp_letter(body: LpLetterIn, who: Writer, db: Db, format: str = "json", style: bool = False):
     """Quarterly LP letter: fund metrics from dated flows, portfolio KPIs and the accepted LP tone rule.
-    Every figure is cited to the source supplied with it. format: json, docx or pptx."""
+    Every figure is cited to the source supplied with it. format: json, docx or pptx.
+    style=true lets the configured local model rephrase the narrative in the tone rule; numbers are masked
+    and the rewrite is kept only if it passes the number check (json shows the outcome under "style")."""
     try:
         model = lp_mod.lp_letter(body.fund, body.as_of,
                                  [lp_mod.Flow(f.on, f.amount, f.source.cite()) for f in body.flows],
@@ -1316,8 +1319,18 @@ def lp_letter(body: LpLetterIn, who: Writer, db: Db, format: str = "json"):
                                  body.tone.cite() if body.tone else None)
     except (ValueError, ArithmeticError) as e:
         raise HTTPException(422, str(e)) from e
+    outcome = None
+    if style:
+        if body.tone is None:
+            outcome = {"status": "not_requested", "reason": "no accepted LP tone rule"}
+        else:
+            try:
+                model, st = lp_tone_mod.rewrite(model, body.tone.value, get_llm())
+                outcome = {"status": st.status, "reason": st.reason}
+            except NoLLMConfigured:
+                outcome = {"status": "not_requested", "reason": "no local model configured"}
     log_event(db, who.tenant, actor(who), "lp.letter", {"fund": body.fund, "format": format})
-    return _lp_output(model, format, "lp-letter")
+    return _lp_output(model, format, "lp-letter", outcome)
 
 
 @app.post("/lp/capital-call")
