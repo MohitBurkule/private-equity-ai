@@ -23,6 +23,8 @@ CONCEPTS = {
     "net_income": ("NetIncomeLoss",),
     "total_assets": ("Assets",),
     "operating_cash_flow": ("NetCashProvidedByUsedInOperatingActivities",),
+    "depreciation_amortization": ("DepreciationDepletionAndAmortization", "DepreciationAmortizationAndAccretionNet",
+                                  "DepreciationAndAmortization"),
 }
 
 

@@ -46,9 +46,12 @@ def sic_companies(sic: str, pages: int, get: Fetch) -> list[str]:
 
 def discover(target_revenue: Decimal, sic: str, exclude: set[str], pages: int = 3, low: Decimal = Decimal("0.5"),
              high: Decimal = Decimal(2), min_year: int = 2024, get: Fetch | None = None,
-             facts_get: Fetch | None = None) -> list[Peer]:
+             facts_get: Fetch | None = None, want: int = 10) -> list[Peer]:
+    """Up to `want` peers from `pages` pages of the SIC feed (100 companies a page), in feed order."""
     peers: list[Peer] = []
     for cik in sic_companies(sic, pages, get or edgar._default_get):
+        if len(peers) >= want:
+            break
         if cik in exclude:
             continue
         try:
