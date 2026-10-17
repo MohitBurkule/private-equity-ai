@@ -57,7 +57,7 @@ def items(data: Path):
                     out.append({"id": r["id"], "file": f, "page": s["page"], "parts": [("", " ".join(nums(q)) or q) for q in re.split(r";| \.\.\. ", s["quote"])], "kind": "sh01"})
     for l in (gdir / "golden_table_v1.jsonl").open():
         r = json.loads(l)
-        f = data / f"sec/{r['doc']}.pdf"
+        f = data / (r["doc"] + ".pdf") if "/" in r["doc"] else data / f"sec/{r['doc']}.pdf"
         out.append({"id": r["id"], "file": f, "page": r["pdf_page_1based"], "parts": [(r["row_label"], r["raw"])], "kind": "table_v1"})
     return out
 
