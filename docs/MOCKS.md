@@ -12,7 +12,7 @@ and an e2e test that skips when the service is not running.
 | Google Drive | WireMock 3.9.1 (jar) | wired locally | `tests/test_wiremock_adapters.py` |
 | CRM (Salesforce SOQL, HubSpot companies/deals/contacts) | WireMock 3.9.1 (jar) | wired locally | `tests/test_wiremock_adapters.py` |
 | Slack (conversations.list, conversations.history) | WireMock 3.9.1 (jar) | wired locally | `tests/test_wiremock_adapters.py` |
-| SSO / OIDC | mock-oauth2-server 6.1.1 (jar) | wired locally | `tests/test_oauth_mock_idp_e2e.py`, skips without `MOCK_OAUTH_URL` |
+| SSO / OIDC | mock-oauth2-server 6.1.1 (jar) | wired locally | `tests/test_oauth_mock_idp_e2e.py`, `tests/test_sso_mock_idp_e2e.py` (roles from scope, config in `apps/api/tests/mock_oauth/config.json`); both skip without `MOCK_OAUTH_URL` |
 | Object store (S3) | moto server (pip) | available, no adapter yet | no S3 connector exists |
 | SFTP data room | Apache MINA SSHD (jar) | not wired | no SFTP connector exists |
 | Google Sheets | fake in tests | planned mock | `tests/test_gsheets.py` (in-test fake) |
