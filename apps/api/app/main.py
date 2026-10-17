@@ -1155,9 +1155,9 @@ def ic_review(deal: str, db: Db, who: Who):
 
 @app.get("/ic/precedents")
 def ic_precedents(deal: str, db: Db, who: Who):
-    """Past IC outcomes for deals at the same stage in this tenant, the partner's first comparison. Stage is the only
-    deal attribute the workspace records, so it stands in for sector until one exists. Only deals this key may see
-    are compared: walled MNPI deals and other scopes are left out, and no other tenant is ever read."""
+    """Past IC outcomes for deals at the same stage in this tenant, and the same SIC code when the target has one.
+    Only deals this key may see are compared: walled MNPI deals and other scopes are left out, and no other tenant
+    is ever read."""
     if not _dd_scope_ok(who, deal):
         raise HTTPException(403, "deal is outside this key's scope")
     target = db.query(Deal).filter_by(tenant_id=who.tenant, name=deal).one_or_none()
@@ -1165,8 +1165,11 @@ def ic_precedents(deal: str, db: Db, who: Who):
     visible = deal_scope(db, who)
     if target is None or (visible is not None and deal not in visible):
         raise HTTPException(404, "deal not found")
+    # A SIC match is the stronger comparison, so it is required when the target has one. Without one, stage alone.
+    match = "sic+stage" if target.sic else "stage"
     peers = [d.name for d in db.query(Deal).filter_by(tenant_id=who.tenant, stage=stage).all()
-             if d.name != deal and (visible is None or d.name in visible)]
+             if d.name != deal and (visible is None or d.name in visible)
+             and (not target.sic or d.sic == target.sic)]
     rows = db.query(ICDecision).filter(ICDecision.tenant_id == who.tenant,
                                        ICDecision.deal.in_(peers)).order_by(ICDecision.id).all() if peers else []
     latest: dict[str, ICDecision] = {}
@@ -1175,7 +1178,8 @@ def ic_precedents(deal: str, db: Db, who: Who):
     counts: dict[str, int] = {}
     for r in latest.values():
         counts[r.outcome] = counts.get(r.outcome, 0) + 1
-    return {"deal": deal, "stage": stage, "precedents": [_decision_out(latest[n]) for n in sorted(latest)],
+    return {"deal": deal, "stage": stage, "sic": target.sic, "match": match,
+            "precedents": [_decision_out(latest[n]) for n in sorted(latest)],
             "outcome_counts": counts, "compared_deals": len(peers)}
 
 
@@ -1200,6 +1204,7 @@ class DealIn(BaseModel):
     stage: str = "sourcing"
     note: str | None = None
     mnpi: bool = False
+    sic: str | None = None
 
 
 class DealUpdate(BaseModel):
@@ -1207,13 +1212,14 @@ class DealUpdate(BaseModel):
     note: str | None = None
     legal_hold: bool | None = None
     mnpi: bool | None = None
+    sic: str | None = None
 
 
 def _deal_out(db: Session, who: Principal, d: Deal) -> dict:
     dd = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=d.name).all()
     docs = db.query(Document).filter_by(tenant_id=who.tenant, deal=d.name).count()
     closed = sum(r.status != "open" for r in dd)
-    return {"name": d.name, "stage": d.stage, "note": d.note, "legal_hold": d.legal_hold, "mnpi": d.mnpi, "updated_at": d.updated_at,
+    return {"name": d.name, "stage": d.stage, "sic": d.sic, "note": d.note, "legal_hold": d.legal_hold, "mnpi": d.mnpi, "updated_at": d.updated_at,
             "documents": docs, "dd_total": len(dd), "dd_open": len(dd) - closed}
 
 
@@ -1231,6 +1237,7 @@ def deal_create(body: DealIn, db: Db, who: Writer):
     if db.query(Deal).filter_by(tenant_id=who.tenant, name=name).first():
         raise HTTPException(409, "deal already exists")
     d = Deal(tenant_id=who.tenant, name=name, stage=body.stage, note=body.note, mnpi=body.mnpi,
+             sic=(body.sic or "").strip() or None,
              created_by=who.key_id if body.mnpi else None, updated_at=_now_iso())
     db.add(d)
     db.commit()
@@ -1356,6 +1363,9 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
         d.mnpi = body.mnpi
         if body.mnpi and d.created_by is None:
             d.created_by = who.key_id or None
+    if body.sic is not None:
+        _require(who, "write", "edit deal sector", deal=name)
+        d.sic = body.sic.strip() or None
     if body.stage is not None:
         if body.stage not in STAGES:
             raise HTTPException(422, f"stage must be one of {STAGES}")

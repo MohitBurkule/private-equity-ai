@@ -58,3 +58,25 @@ def test_target_outside_scope_is_refused():
     h = scoped_key(tid, ["Acme"])
     assert c.get("/ic/precedents", params={"deal": "Beta"}, headers=h).status_code == 403
     assert c.get("/ic/precedents", params={"deal": "Nope"}, headers=owner).status_code == 404
+
+
+def test_sic_narrows_precedents_to_the_same_industry():
+    _, h = tenant("precedents-sic")
+    for name, sic in [("Acme", "62012"), ("Beta", "62012"), ("Gamma", "41201")]:
+        assert c.post("/deals", headers=h, json={"name": name, "stage": "ic", "sic": sic}).status_code == 201
+    decide(h, "Beta", "proceed")
+    decide(h, "Gamma", "pass")
+    r = c.get("/ic/precedents", params={"deal": "Acme"}, headers=h).json()
+    assert r["match"] == "sic+stage" and r["sic"] == "62012"
+    assert [p["deal"] for p in r["precedents"]] == ["Beta"]
+    assert r["compared_deals"] == 1
+
+
+def test_no_sic_falls_back_to_stage_only():
+    _, h = tenant("precedents-nosic")
+    assert c.post("/deals", headers=h, json={"name": "Acme", "stage": "ic"}).status_code == 201
+    assert c.post("/deals", headers=h, json={"name": "Beta", "stage": "ic", "sic": "41201"}).status_code == 201
+    decide(h, "Beta", "hold")
+    r = c.get("/ic/precedents", params={"deal": "Acme"}, headers=h).json()
+    assert r["match"] == "stage" and r["sic"] is None
+    assert [p["deal"] for p in r["precedents"]] == ["Beta"]
