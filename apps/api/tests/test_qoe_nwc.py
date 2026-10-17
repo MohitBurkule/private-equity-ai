@@ -14,7 +14,7 @@ NWC_METRICS = (("current_assets", 6), ("cash", 5), ("current_liabilities", 7), (
 
 def test_nwc_peg_is_average_of_complete_periods_and_withheld_on_gap():
     h = new_tenant(c, "peg1")
-    doc, fact = setup(h)
+    _, fact = setup(h)
     for m, row in NWC_METRICS:
         fact(m, "FY23", row)
     # FY23 NWC = (400 - 120) - (300 - 60) = 40
