@@ -42,10 +42,32 @@ FILINGS = [
         ("cash", "FY2025", ["us-gaap:CashAndCashEquivalentsAtCarryingValue"], "@2025-12-31", "Cash and cash equivalents"),
     ]),
     ("filings/XPO_10-K_FY2025.htm", "XPO", [
+        ("revenue", "FY2025", ["us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"], FY25, "Revenue"),
+        # Prior years from the same three-year income statement; one period gives no trend chart in the memo.
+        ("revenue", "FY2024", ["us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"], "2024-01-01/2024-12-31", "Revenue"),
+        ("revenue", "FY2023", ["us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax"], "2023-01-01/2023-12-31", "Revenue"),
         ("operating_income", "FY2025", ["us-gaap:OperatingIncomeLoss"], FY25, "Operating income"),
+        ("operating_income", "FY2024", ["us-gaap:OperatingIncomeLoss"], "2024-01-01/2024-12-31", "Operating income"),
+        ("operating_income", "FY2023", ["us-gaap:OperatingIncomeLoss"], "2023-01-01/2023-12-31", "Operating income"),
+        ("net_income", "FY2025", ["us-gaap:NetIncomeLoss"], FY25, "Net income"),
+        ("net_income", "FY2024", ["us-gaap:NetIncomeLoss"], "2024-01-01/2024-12-31", "Net income"),
+        ("net_income", "FY2023", ["us-gaap:NetIncomeLoss"], "2023-01-01/2023-12-31", "Net income"),
         ("depreciation_and_amortization", "FY2025", ["us-gaap:DepreciationAndAmortization"], FY25, "Depreciation and amortization"),
+        ("depreciation_and_amortization", "FY2024", ["us-gaap:DepreciationAndAmortization"], "2024-01-01/2024-12-31", "Depreciation and amortization"),
+        ("depreciation_and_amortization", "FY2023", ["us-gaap:DepreciationAndAmortization"], "2023-01-01/2023-12-31", "Depreciation and amortization"),
+        # Balance sheet: this filing has FY2025 and FY2024 only, so no FY2023 debt or cash here.
+        ("long_term_debt", "FY2025", ["us-gaap:LongTermDebtNoncurrent"], "@2025-12-31", "Long-term debt"),
+        ("long_term_debt", "FY2024", ["us-gaap:LongTermDebtNoncurrent"], "@2024-12-31", "Long-term debt"),
+        ("cash", "FY2025", ["us-gaap:CashAndCashEquivalentsAtCarryingValue"], "@2025-12-31", "Cash and cash equivalents"),
+        ("cash", "FY2024", ["us-gaap:CashAndCashEquivalentsAtCarryingValue"], "@2024-12-31", "Cash and cash equivalents"),
         ("interest_expense", "FY2025", ["us-gaap:InterestExpenseNonoperating"], FY25, "Interest expense"),
     ]),
+]
+
+# Adjusted EBITDA has no XBRL tag in the filing: it is a printed non-GAAP line in the MD&A summary, so the
+# value is cited by its quote on the page and kept under its own basis, never as GAAP EBITDA.
+ADJUSTED_EBITDA = [
+    ("filings/XPO_10-K_FY2025.htm", "XPO", 34, "Adjusted EBITDA (1) 1,142 1,115", (("FY2025", 1142), ("FY2024", 1115))),
 ]
 
 
@@ -94,10 +116,12 @@ SECTORS = {"3M Company": "Industrials", "Hertz Global Holdings": "Consumer", "So
            "XPO": "Industrials"}
 seeded = {}  # entity -> fact ids, so each entity gets a portfolio holding with its KPIs as observations
 
+docs = {}  # filing name -> uploaded document id, reused by the quote-cited figures below
 for name, entity, wanted in FILINGS:
     path = os.path.join(FOLDER, name)
     raw, ctype = multipart(path)
     doc = must(call("POST", "/documents", h, raw=raw, ctype=ctype), (200,), f"upload {name}")["id"]
+    docs[name] = doc
     with open(path, encoding="utf-8", errors="replace") as f:
         _, tags = read_filing(f.read())
     for metric, period, concepts, period_key, label in wanted:
@@ -122,6 +146,25 @@ for name, entity, wanted in FILINGS:
         must(call("POST", f"/facts/{fid}/review", h, {"action": "accept"}), (200,), "review")
         seeded.setdefault(entity, []).append(fid)
         print(f"fact {entity} {metric} {period}: {fig.text} (p. {fig.page}) accepted")
+
+for name, entity, page, quote, figures_m in ADJUSTED_EBITDA:
+    for period, millions in figures_m:
+        body = {
+            "entity": entity,
+            "metric": "ebitda",
+            "period": period,
+            "value": str(millions * 10**6),
+            "unit": "USD",
+            "document_id": docs[name],
+            "page": page,
+            "quote": quote,
+            "scale": 10**6,
+            "basis": "Adjusted (non-GAAP)",
+        }
+        fid = must(call("POST", "/facts", h, body), (201,), f"adjusted ebitda {period}")["id"]
+        must(call("POST", f"/facts/{fid}/review", h, {"action": "accept"}), (200,), "review")
+        seeded.setdefault(entity, []).append(fid)
+        print(f"fact {entity} ebitda {period}: {millions} (p. {page}, Adjusted) accepted")
 
 for entity, fact_ids in seeded.items():
     company = must(

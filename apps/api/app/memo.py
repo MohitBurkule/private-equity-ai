@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.acl import fact_visible
 from app.citations import locator_label
+from app.derived import net_debt_points, note_numbers
 from app.firm_knowledge import applied_rules
 from app.models import Document, Fact
 
@@ -59,8 +60,9 @@ MARGINS = (("gross margin", "gross_profit", "revenue"), ("operating margin", "op
 LEVERAGE = ("net debt / EBITDA", "net_debt", "ebitda")
 
 
-def ratio_series(facts: dict[tuple[str, str], tuple[Decimal, str, int]]) -> dict[str, list]:
+def ratio_series(facts: dict[tuple[str, str], tuple[Decimal, str, int | tuple[int, ...]]]) -> dict[str, list]:
     """Margins (%) and net debt / EBITDA (x) per period, each point keeping the note numbers of its two inputs.
+    A derived input (net debt) carries the notes of its own components, so the point cites all of them.
     Pure, same inputs as derive_lines. Nothing is derived across units."""
     out: dict[str, list] = {}
     periods = sorted({p for _, p in facts})
@@ -71,7 +73,8 @@ def ratio_series(facts: dict[tuple[str, str], tuple[Decimal, str, int]]) -> dict
                 dv, du, dn = facts[(den, period)]
                 if dv and nu == du:
                     scale = Decimal(1) if label == LEVERAGE[0] else Decimal(100)
-                    out.setdefault(label, []).append((period, nv / dv * scale, (nn, dn)))
+                    pair = (*note_numbers(nn), *note_numbers(dn))
+                    out.setdefault(label, []).append((period, nv / dv * scale, pair))
     return out
 
 
@@ -142,8 +145,13 @@ def build_memo_data(db: Session, tenant_id: str, entity: str, scope: set[str] | 
         memo.notes.append(f'[{n}] {doc.filename if doc else src.document_id[:8]}, {where}: '
                           f'"{src.quote.strip()}"')
         memo.lines.append(f"{f.metric} ({f.period}, {f.basis}): {_gloss(f.value)} {f.unit} [{n}]")
-    memo.derived += derive_lines({k: (f.value, f.unit, note_no[f.id]) for k, f in by_key.items()})
-    memo.ratios = ratio_series({k: (f.value, f.unit, note_no[f.id]) for k, f in by_key.items()})
+    plain = {k: (f.value, f.unit, note_no[f.id]) for k, f in by_key.items()}
+    # Net debt is labelled as derived, with the note numbers of the debt and cash it is built from.
+    nd = net_debt_points(plain)
+    memo.derived += [f"net debt ({p}): {_gloss(v)} {u} = long_term_debt - cash [{a}, {b}]"
+                     for p, (v, u, (a, b)) in sorted(nd.items())]
+    memo.derived += derive_lines(plain)
+    memo.ratios = ratio_series({**plain, **{("net_debt", p): x for p, x in nd.items()}})
     for (metric, period), f in sorted(by_key.items(), key=lambda kv: kv[0][1]):
         memo.series.setdefault(metric, []).append((period, f.value, note_no[f.id]))
     memo.risks = risk_lines({k: (f.value, f.unit, note_no[f.id]) for k, f in by_key.items()})
@@ -316,11 +324,12 @@ def build_memo_pptx(db: Session, tenant_id: str, entity: str, scope: set[str] | 
         cd.categories = cats
         for name, vals in series:
             cd.add_series(name, vals)
-        sl.shapes.add_chart(kind, Inches(0.5), Inches(1.5), Inches(9), Inches(4.9), cd)
-        box = sl.shapes.add_textbox(Inches(0.5), Inches(6.6), Inches(9), Inches(0.8))
+        # The chart gives up height so the full source list fits below it: a cut-off line hides its citation.
+        sl.shapes.add_chart(kind, Inches(0.5), Inches(1.4), Inches(9), Inches(3.7), cd)
+        box = sl.shapes.add_textbox(Inches(0.5), Inches(5.2), Inches(9), Inches(2.2))
         box.text_frame.word_wrap = True
         box.text_frame.text = foot(nums)
-        box.text_frame.paragraphs[0].font.size = Pt(9)
+        box.text_frame.paragraphs[0].font.size = Pt(7)
 
     for metric, label in (("revenue", "Revenue"), ("ebitda", "EBITDA")):
         pts = m.series.get(metric, [])
