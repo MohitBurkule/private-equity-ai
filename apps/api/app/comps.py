@@ -15,6 +15,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app import derived as derived_mod
 from app.calc import _find
 from app.marketdata import NoData
 from app.models import Fact
@@ -32,6 +33,7 @@ class Row:
     nm: dict[str, str] = field(default_factory=dict)  # metric -> reason not meaningful
     facts: dict[str, int] = field(default_factory=dict)  # role -> fact id
     fx: dict[str, dict] = field(default_factory=dict)  # metric -> cited rate when the denominator was converted
+    derived: dict[str, dict] = field(default_factory=dict)  # metric -> formula and component fact ids when computed
     cells: dict[str, dict] = field(default_factory=dict)  # "ev" / metric -> as-of period and cited source of that input
     stale: list[str] = field(default_factory=list)  # inputs whose period differs from the comparison period
 
@@ -97,6 +99,22 @@ def implied_range(metric: str, target_value: Decimal, st: Stats) -> Implied:
 FxFn = Callable[[str, str], tuple[Decimal, str, str]]
 
 
+def _denominator(db: Session, tenant: str, ent: str, metric: str, period: str,
+                 scope: set[str] | None) -> tuple[Decimal, str, int | None, dict | None] | None:
+    """Value, unit, fact id and derivation for a denominator. A stored fact wins. Otherwise a formula in
+    app.derived (EBITDA = operating income + D&A) is computed from its cited components, and the result says so."""
+    f = _find(db, tenant, ent, metric, period, scope)
+    if f is not None:
+        return f.value, f.unit, f.id, None
+    if metric not in derived_mod.SUMS:
+        return None
+    try:
+        d = derived_mod.derive(db, tenant, scope, metric, ent, period)
+    except ValueError:  # a component is missing, unverified, hidden or in another unit: no figure, never a guess
+        return None
+    return d.value, d.unit, None, {"formula": metric, "components": [c.fact_id for c in d.components]}
+
+
 def build_rows(db: Session, tenant: str, entities: list[str], period: str, metrics: list[str],
                scope: set[str] | None, ev_period: str | None = None, fx: FxFn | None = None) -> list[Row]:
     rows = []
@@ -107,25 +125,31 @@ def build_rows(db: Session, tenant: str, entities: list[str], period: str, metri
             r.facts["enterprise_value"] = ev.id
             r.cells["ev"] = _cell(db, ev)
         for m in metrics:
-            d = _find(db, tenant, ent, m, period, scope)
+            d = _denominator(db, tenant, ent, m, period, scope)
             if ev is None or d is None:
                 r.multiples[m], r.nm[m] = None, ("no enterprise value fact" if ev is None
                                                  else f"no {m} fact for {period}")
                 continue
-            r.facts[m] = d.id
-            r.cells[m] = _cell(db, d)
-            denom = d.value
-            if ev.unit != d.unit:
+            value, unit, fact_id, derivation = d
+            if fact_id is not None:
+                r.facts[m] = fact_id
+                r.cells[m] = _cell(db, db.get(Fact, fact_id))
+            if derivation is not None:
+                r.derived[m] = derivation
+                r.cells[m] = {"period": period, "unit": unit, "derived": derivation["formula"],
+                              "components": derivation["components"]}
+            denom = value
+            if ev.unit != unit:
                 if fx is None:
-                    r.multiples[m], r.nm[m] = None, f"unit mismatch {ev.unit} vs {d.unit}"
+                    r.multiples[m], r.nm[m] = None, f"unit mismatch {ev.unit} vs {unit}"
                     continue
                 try:
-                    rate, as_of, source = fx(d.unit, ev.unit)
+                    rate, as_of, source = fx(unit, ev.unit)
                 except (NoData, OSError) as e:  # no rate, or the rate source is unreachable: never a guess
-                    r.multiples[m], r.nm[m] = None, f"no FX rate {d.unit} to {ev.unit}: {e}"
+                    r.multiples[m], r.nm[m] = None, f"no FX rate {unit} to {ev.unit}: {e}"
                     continue
-                denom = d.value * rate
-                r.fx[m] = {"from": d.unit, "to": ev.unit, "rate": str(rate), "as_of": as_of, "source": source}
+                denom = value * rate
+                r.fx[m] = {"from": unit, "to": ev.unit, "rate": str(rate), "as_of": as_of, "source": source}
             r.multiples[m], r.nm[m] = multiple(ev.value, denom)
             if r.multiples[m] is not None:
                 r.nm.pop(m)
@@ -161,18 +185,20 @@ def run(db: Session, tenant: str, target: str, entities: list[str], period: str,
     for m in metrics:
         st = stats([r.multiples[m] for r in rows if r.multiples.get(m) is not None])
         out["stats"][m] = {k: (v if k == "n" or v is None else str(v)) for k, v in st.__dict__.items()}
-        t = _find(db, tenant, target, m, target_period or period, scope)
+        t = _denominator(db, tenant, target, m, target_period or period, scope)
         if t is None:
             out["implied"].append({"metric": m, "multiple": f"EV/{m}", "target_fact_id": None,
                                    "note": f"no {m} fact for {target}"})
             continue
-        im = implied_range(m, t.value, st)
-        out["implied"].append({"metric": m, "multiple": im.multiple, "target_fact_id": t.id,
-                               "target_value": str(t.value), "unit": t.unit, "note": im.note,
+        t_value, t_unit, t_fact_id, t_derivation = t
+        im = implied_range(m, t_value, st)
+        out["implied"].append({"metric": m, "multiple": im.multiple, "target_fact_id": t_fact_id,
+                               "target_value": str(t_value), "unit": t_unit, "note": im.note,
+                               "derived": t_derivation,
                                **{k: None if getattr(im, k) is None else str(getattr(im, k))
                                   for k in ("low", "mid", "high")}})
     for r in rows:
-        out["peers"].append({"entity": r.entity, "facts": r.facts, "nm": r.nm, "fx": r.fx,
+        out["peers"].append({"entity": r.entity, "facts": r.facts, "nm": r.nm, "fx": r.fx, "derived": r.derived,
                              "cells": r.cells, "stale": r.stale,
                              "multiples": {k: None if v is None else str(v.quantize(Decimal("0.01")))
                                            for k, v in r.multiples.items()}})
