@@ -21,8 +21,8 @@ export function PlaybookReport() {
           api.playbookReport(docId.trim(), docType)
             .then((r) => setRules(r.rules)).catch((x) => { setRules(null); setErr(String(x)); }).finally(() => setBusy(false));
         }}>
-          <label className="text-xs text-mut">Document id<Input className="mt-1" value={docId} onChange={(e) => setDocId(e.target.value)} /></label>
-          <label className="text-xs text-mut">Document type<Input className="mt-1" value={docType} onChange={(e) => setDocType(e.target.value)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Document id<Input value={docId} onChange={(e) => setDocId(e.target.value)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Document type<Input value={docType} onChange={(e) => setDocType(e.target.value)} /></label>
           <Button variant="primary" type="submit" disabled={!docId.trim() || busy}>{busy ? "Loading" : "Run playbook"}</Button>
         </form>
       </Card>
