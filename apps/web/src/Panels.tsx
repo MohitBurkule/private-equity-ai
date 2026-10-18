@@ -5,6 +5,7 @@ import { SourceChip } from "./source";
 import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input, Loading, Page } from "./ui";
 import { useState } from "react";
 import { DealWorkspace } from "./DealWorkspace";
+import { covenantBadge, covenantTestCount } from "./covenantSummary";
 
 
 export function ReviewQueue() {
@@ -123,13 +124,12 @@ export function Deals() {
 
 export function PortfolioPanel() {
   const { data, error, loading } = useLoad<Report>(api2.report);
-  // Tests are counted from the report itself, so the badge can say how much was checked, not just that nothing broke.
-  const tests = data?.companies.reduce((n, c) => n + c.covenants.reduce((m, cov) => m + cov.tests.length, 0), 0) ?? 0;
+  const tests = data ? covenantTestCount(data.companies) : 0;
   return (
     <Page title="Portfolio" hint="Every KPI is tied to a cited fact. Covenants test those KPIs against cited thresholds.">
       <ErrorLine e={error} />
       <Card>
-        <CardHead title="Covenant alerts" right={data && <Badge tone={data.breaches.length ? "bad" : tests ? "ok" : "mut"}>{data.breaches.length ? `${data.breaches.length} breach` : tests ? `${tests} tests, 0 breaches` : data.companies.length ? "no tests run" : "no companies"}</Badge>} />
+        <CardHead title="Covenant alerts" right={data && <Badge tone={data.breaches.length ? "bad" : tests ? "ok" : "mut"}>{covenantBadge(data, tests)}</Badge>} />
         {loading && <Loading />}
         {data?.breaches.length === 0 && <Empty>{tests ? "No breaches in the visible tests." : data.companies.length ? "No covenant tests have run yet. Add one on a company's Covenants tab, with a cited threshold." : "No portfolio companies yet. A company appears here once one of its verified KPIs is tracked."}</Empty>}
         <ul className="divide-y divide-line">
