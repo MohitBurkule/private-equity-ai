@@ -566,6 +566,18 @@ class LlmUsage(Base):
     chars: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class LlmCall(Base):
+    """One language-model call: which model, how many characters in and out, and how long it took."""
+    __tablename__ = "llm_call"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    at: Mapped[str] = mapped_column(String(40))
+    model: Mapped[str] = mapped_column(String(160))
+    chars_in: Mapped[int] = mapped_column(Integer)
+    chars_out: Mapped[int] = mapped_column(Integer)
+    latency_ms: Mapped[int] = mapped_column(Integer)
+
+
 class AnswerCache(Base):
     """A previous /ask answer, keyed on question, visible documents with their hashes, and prompt version."""
     __tablename__ = "answer_cache"

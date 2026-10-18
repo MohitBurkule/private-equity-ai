@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import UTC, datetime
 from typing import Protocol
 
@@ -94,9 +95,15 @@ class CappedLLM:
         sent = len(system) + len(prompt)
         if cap and row.chars + sent > cap:
             raise LLMCapExceeded(f"daily LLM allowance used up for this tenant ({cap} characters)")
+        from app.models import LlmCall
+
+        started = time.monotonic()
         out = self.inner.complete(system, prompt)
+        latency_ms = int((time.monotonic() - started) * 1000)
         row.calls += 1
         row.chars += sent + len(out)
+        self.db.add(LlmCall(tenant_id=self.tenant_id, at=datetime.now(UTC).isoformat(timespec="seconds"),
+                            model=llm_id(self.inner)[:160], chars_in=sent, chars_out=len(out), latency_ms=latency_ms))
         self.db.commit()
         return out
 

@@ -3048,6 +3048,19 @@ def add_observation(company_id: int, fact_id: int, db: Db, who: Writer,
     return {"id": o.id, "metric": o.metric, "period": o.period, "value": str(o.value)}
 
 
+@app.get("/llm/report")
+def llm_report(db: Db, who: Writer, days: int = 7):
+    """Language-model calls for this tenant over the last `days` days, per model: count, characters, latency."""
+    _whole_tenant(who)
+    from app.llm_report import summarise
+    from app.models import LlmCall
+
+    since = (datetime.now(UTC) - timedelta(days=max(1, min(days, 90)))).isoformat(timespec="seconds")
+    rows = (db.query(LlmCall.model, LlmCall.chars_in, LlmCall.chars_out, LlmCall.latency_ms)
+            .filter(LlmCall.tenant_id == who.tenant, LlmCall.at >= since).all())
+    return {"days": max(1, min(days, 90)), "models": summarise(rows)}
+
+
 @app.get("/portfolio/companies/{company_id}/kpis")
 def kpis(company_id: int, db: Db, who: Who):
     scope = visible_doc_ids(db, who)
