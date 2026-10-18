@@ -496,6 +496,17 @@ class MemoComment(Base):
     status: Mapped[str] = mapped_column(String(16), default="open", server_default="open")  # open | resolved
 
 
+class MemoSignoff(Base):
+    """Who signed off a saved memo version, and when. One sign-off per person per version; history is kept."""
+    __tablename__ = "memo_signoff"
+    __table_args__ = (UniqueConstraint("version_id", "approver"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    version_id: Mapped[int] = mapped_column(ForeignKey("memo_version.id"), index=True)
+    approver: Mapped[str] = mapped_column(String(64))
+    signed_at: Mapped[str] = mapped_column(String(40))
+
+
 class SavedSearch(Base):
     """A search the team reruns across the documents it can see. Runs under the rerunning person's own access."""
     __tablename__ = "saved_search"
