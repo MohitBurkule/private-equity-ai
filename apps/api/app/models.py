@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    Float,
     ForeignKey,
     Integer,
     LargeBinary,
@@ -277,6 +278,21 @@ class ValuationRound(Base):
     currency: Mapped[str] = mapped_column(String(3))
     document_id: Mapped[str] = mapped_column(ForeignKey("document.id"))
     line: Mapped[int] = mapped_column(Integer)
+
+
+class PageFigure(Base):
+    """A figure found on a page of a document, with its position. Values are never read off it here; a chart
+    value becomes a fact only through the review queue, citing this figure's page and bbox."""
+    __tablename__ = "page_figure"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    document_id: Mapped[str] = mapped_column(ForeignKey("document.id"), index=True)
+    page: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(16))
+    left: Mapped[float] = mapped_column(Float)
+    top: Mapped[float] = mapped_column(Float)
+    right: Mapped[float] = mapped_column(Float)
+    bottom: Mapped[float] = mapped_column(Float)
 
 
 class WebhookEndpoint(Base):
