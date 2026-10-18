@@ -220,6 +220,13 @@ def audit_marker(conn):
         return cur.fetchone()[0]
 
 
+def normalize_generated(method, path, body):
+    """Keys and tenant ids are random, so the two stacks issue different values. Only those are masked."""
+    if method == "POST" and (path == "/admin/tenants" or path.endswith("/keys")) and isinstance(body, dict):
+        return {k: ("<generated>" if k in ("api_key", "key_id", "tenant_id") else v) for k, v in body.items()}
+    return body
+
+
 def audit_since(conn, marker):
     """Audit rows written after `marker`. Ids and timestamps differ between stacks, so only actor, action and payload compare."""
     with conn.cursor() as cur:
@@ -311,6 +318,16 @@ def main():
                 requests.append((path, name))
         requests.append((f"DELETE /admin/keys/{REVOKE_KID}", "ADMIN"))
         requests.append(("DELETE /admin/keys/nope", "ADMIN"))
+        for body in [{"role": "viewer", "deals": ["Other"], "deal_roles": {"Other": "partner"}},
+                     {}, {"identity": "Ana@Example.test", "groups": ["G1", "g1", " g2 "]}]:
+            requests.append((f"POST /admin/tenants/{TENANT_ID}/keys|{json.dumps(body)}", "ADMIN"))
+        for body in [{"role": "nope"}, {"role": "analyst", "deals": ["Other"], "deal_roles": {"Zeta": "partner"}},
+                     {"deal_roles": {"Other": "boss"}}]:
+            requests.append((f"POST /admin/tenants/{TENANT_ID}/keys|{json.dumps(body)}", "ADMIN"))
+        requests.append(("POST /admin/tenants/nope/keys|{}", "ADMIN"))
+        requests.append((f"POST /admin/tenants/{TENANT_ID}/keys|{{}}", "NOTOKEN"))
+        requests.append(("POST /admin/tenants|{\"name\": \"Acme\"}", "ADMIN"))
+        requests.append(("POST /admin/tenants|{\"name\": \"Acme\"}", "NOTOKEN"))
         for flag in [True, False]:
             requests.append((f"PUT /admin/tenants/{TENANT_ID}/pii-redaction|{json.dumps({'on': flag})}", "ADMIN"))
         requests.append((f"PUT /admin/tenants/{TENANT_ID}/pii-redaction|{json.dumps({'on': 'yes'})}", "ADMIN"))
@@ -323,8 +340,8 @@ def main():
         failures = 0
         for path, who in requests:
             body = None
-            method, path = path.split(" ", 1) if path.startswith(("DELETE ", "PUT ")) else ("GET", path)
-            if method == "PUT":
+            method, path = path.split(" ", 1) if path.startswith(("DELETE ", "PUT ", "POST ")) else ("GET", path)
+            if method in ("PUT", "POST"):
                 path, body = path.split("|", 1)
                 body = json.loads(body)
             key = keys.get(who) if who else None
@@ -333,6 +350,7 @@ def main():
             for label, base in [("fastapi", FA), ("rust", RS)]:
                 marker = audit_marker(conn)
                 status, resp = call(base, path, key, method=method, body=body, headers=hdr)
+                status, resp = status, normalize_generated(method, path, resp)
                 results[label] = (status, resp, audit_since(conn, marker))
             fa, rs = results["fastapi"], results["rust"]
             same = fa[0] == rs[0] and fa[1] == rs[1] and fa[2] == rs[2]

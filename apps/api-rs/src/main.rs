@@ -32,7 +32,7 @@ mod workflows;
 use axum::{
     extract::State,
     http::HeaderMap,
-    routing::{delete, get, put},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use serde_json::{json, Value};
@@ -76,11 +76,15 @@ pub fn app(state: AppState) -> Router {
         .route("/audit/verify", get(audit::verify_audit))
         .route("/calc/periods", get(calc::calc_periods))
         .route("/admin/keys/:kid", delete(admin::revoke_key))
+        .route("/admin/tenants", post(admin::create_tenant))
+        .route(
+            "/admin/tenants/:tenant_id/keys",
+            get(admin::list_keys).post(admin::add_key),
+        )
         .route(
             "/admin/tenants/:tenant_id/pii-redaction",
             put(admin::set_pii_redaction),
         )
-        .route("/admin/tenants/:tenant_id/keys", get(admin::list_keys))
         .route(
             "/admin/tenants/:tenant_id/document-access",
             get(admin::document_access),
