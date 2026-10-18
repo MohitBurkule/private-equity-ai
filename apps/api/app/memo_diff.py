@@ -35,6 +35,20 @@ def _label(line: str) -> str:
     return " ".join(_NUMBER.sub(" # ", _body(line)).split())
 
 
+def _readable(line: str, changed: set[int]) -> str:
+    """The line as a reader wrote it, with only the changed figures replaced by an ellipsis. Years and other
+    unchanged numbers stay, so 'Revenue FY2025' reads as itself."""
+    i = 0
+
+    def mask(m: re.Match) -> str:
+        nonlocal i
+        out = "…" if i in changed else m.group(0)
+        i += 1
+        return out
+
+    return " ".join(_NUMBER.sub(mask, _body(line)).split()).lstrip("- ").strip()
+
+
 def _numbers(line: str) -> list[str]:
     return _NUMBER.findall(_body(line))
 
@@ -61,7 +75,11 @@ def figure_changes(previous: str, current: str) -> dict:
             claim_removed.append(old)
             continue
         unmatched_added.remove(match)
-        figures.append({"label": _label(old), "from": _numbers(old), "to": _numbers(match),
+        old_nums, new_nums = _numbers(old), _numbers(match)
+        changed = {i for i, (a, b) in enumerate(zip(old_nums, new_nums)) if a != b}
+        figures.append({"label": _readable(old, changed),
+                        "from": [old_nums[i] for i in sorted(changed)],
+                        "to": [new_nums[i] for i in sorted(changed)],
                         "notes_from": _NOTE.findall(old), "notes_to": _NOTE.findall(match)})
     return {"figure_changes": figures,
             "claim_changes": {"added": unmatched_added, "removed": claim_removed}}
