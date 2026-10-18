@@ -110,6 +110,12 @@ def seed(conn):
             ("Other", "d" * 64, "operating_income", "FY24", 15),
             ("Other", "d" * 64, "depreciation_and_amortization", "FY24", 5),
             ("Zeta", "e" * 64, "revenue", "FY24", 500),
+            ("PeerA", "d" * 64, "enterprise_value", "FY24", 1200),
+            ("PeerA", "d" * 64, "revenue", "FY24", 240),
+            ("PeerB", "d" * 64, "enterprise_value", "FY24", 900),
+            ("PeerB", "d" * 64, "revenue", "FY24", 300),
+            ("PeerC", "d" * 64, "enterprise_value", "FY24", 700),
+            ("Zeta", "e" * 64, "enterprise_value", "FY24", 2000),
         ]:
             cur.execute(
                 "INSERT INTO fact (tenant_id, entity, metric, period, value, unit, basis, status)"
@@ -215,6 +221,9 @@ def main():
                 "/memo?entity=Nope",
                 "/memo",
                 "/memo?entity=Other&peers=A,B&period=FY24",
+                "/memo?entity=Other&peers=PeerA,PeerB,Zeta,PeerC&period=FY24",
+                "/memo?entity=Zeta&peers=Other,PeerA,PeerB&period=FY24",
+                "/memo?entity=Other&peers=PeerA,PeerB,PeerC&period=FY23",
                 "/memo/sections?entity=Other",
                 "/memo/sections?entity=Zeta&template=snapshot",
                 "/memo/sections?entity=Other&template=board",

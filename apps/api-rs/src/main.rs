@@ -6,6 +6,7 @@ mod audit;
 mod auth;
 mod checklist;
 mod citations;
+mod comps;
 mod dd;
 mod deals;
 mod derived;

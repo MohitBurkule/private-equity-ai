@@ -4,6 +4,7 @@
 
 use crate::auth::principal;
 use crate::citations::locator_label;
+use crate::comps;
 use crate::error::ApiError;
 use crate::memo::BUILT_IN;
 use crate::proxy;
@@ -11,7 +12,7 @@ use crate::visibility::Visibility;
 use crate::AppState;
 use axum::{
     extract::{Query, Request, State},
-    http::HeaderMap,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -138,6 +139,7 @@ struct Memo {
     notes: Vec<String>,
     rules: Vec<Rule>,
     risks: Vec<String>,
+    comps: Vec<String>,
 }
 
 /// Python memo.build_memo_data, for a caller whose visible facts are `vis`.
@@ -390,6 +392,11 @@ fn render_memo(entity: &str, m: &Memo) -> String {
         out.push("Firm rules applied (accepted, quoted):".into());
         out.extend(m.rules.iter().map(|r| format!("- {}", rule_line(r))));
     }
+    if !m.comps.is_empty() {
+        out.push(String::new());
+        out.push("Trading comps (peers, each cited):".into());
+        out.extend(m.comps.iter().map(|c| format!("- {c}")));
+    }
     out.push(String::new());
     out.push("Sources:".into());
     out.extend(m.notes.iter().cloned());
@@ -448,10 +455,146 @@ fn render_sections(
     out.join("\n") + "\n"
 }
 
-/// _memo_comps / _memo_legal need the comps and legal modules: such a request goes to FastAPI unchanged.
+/// _memo_legal needs the legal module: a request that names a legal_doc goes to FastAPI unchanged.
 fn needs_relay(q: &HashMap<String, String>) -> bool {
-    let set = |k: &str| q.get(k).is_some_and(|v| !v.is_empty());
-    set("legal_doc") || (set("peers") && set("period"))
+    q.get("legal_doc").is_some_and(|v| !v.is_empty())
+}
+
+/// Python `_memo_comps`: peers and a period, or no comps section at all.
+async fn memo_comps(
+    tx: &mut Transaction<'_, Postgres>,
+    vis: &Visibility,
+    m: &mut Memo,
+    entity: &str,
+    q: &HashMap<String, String>,
+) -> Result<(), ApiError> {
+    let names: Vec<String> = q
+        .get("peers")
+        .map(|p| {
+            p.split(',')
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let period = q.get("period").cloned().unwrap_or_default();
+    if names.is_empty() || period.is_empty() {
+        return Ok(());
+    }
+    if names.len() > 50 {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "too many peers",
+        ));
+    }
+    let res = comps::run_revenue(tx, vis, entity, &names, &period).await?;
+    add_comps(tx, m, &res).await
+}
+
+/// Python memo.add_comps: each peer's EV and multiple cited, then the median and the implied range.
+async fn add_comps(
+    tx: &mut Transaction<'_, Postgres>,
+    m: &mut Memo,
+    res: &comps::Comps,
+) -> Result<(), ApiError> {
+    for p in &res.peers {
+        let Some(ev) = &p.ev else {
+            m.comps.push(format!(
+                "{}: no enterprise value fact, no multiple",
+                p.entity
+            ));
+            continue;
+        };
+        let n_ev = cite_fact(tx, m, ev).await?;
+        let ev_doc = doc_name(tx, &ev.sources[0].doc_id)
+            .await?
+            .unwrap_or_else(|| "unknown".into());
+        let mut parts = vec![format!(
+            "EV {} {} [{n_ev}] (EV source: {ev_doc})",
+            gloss(ev.value),
+            ev.unit
+        )];
+        match (p.multiple, &p.rev) {
+            (Some(mult), Some(rev)) => {
+                let n = cite_fact(tx, m, rev).await?;
+                parts.push(format!(
+                    "EV/revenue {}x [{n}]",
+                    comps::quantize_multiple(mult)
+                ));
+            }
+            _ => parts.push(format!(
+                "EV/revenue not meaningful: {}",
+                p.nm.as_deref().unwrap_or("no multiple")
+            )),
+        }
+        m.comps.push(format!(
+            "{} ({}): {}",
+            p.entity,
+            res.period,
+            parts.join("; ")
+        ));
+    }
+    if let Some(median) = res.median {
+        m.comps.push(format!(
+            "Peer median EV/revenue: {median}x across {} peers (computed in code)",
+            res.n
+        ));
+    }
+    match (
+        &res.implied.low,
+        &res.implied.mid,
+        &res.implied.high,
+        &res.implied.target,
+    ) {
+        (Some(low), Some(mid), Some(high), Some(t)) => {
+            let n = cite_fact(tx, m, t).await?;
+            m.comps.push(format!(
+                "Implied EV from revenue {} {}: {low} to {high}, median {mid} [{n}]",
+                t.value, t.unit
+            ));
+        }
+        _ => m
+            .comps
+            .push(format!("Implied range for revenue: {}", res.implied.note)),
+    }
+    Ok(())
+}
+
+/// Python memo._cite_fact: append the fact's first source as a footnote and return its number.
+async fn cite_fact(
+    tx: &mut Transaction<'_, Postgres>,
+    m: &mut Memo,
+    f: &comps::FactRec,
+) -> Result<i32, ApiError> {
+    let n = m.notes.len() as i32 + 1;
+    let src = &f.sources[0];
+    let filename = doc_name(tx, &src.doc_id)
+        .await?
+        .unwrap_or_else(|| src.doc_id[..8].to_string());
+    let where_ = locator_label(
+        src.page,
+        src.section.as_deref(),
+        src.heading.as_deref(),
+        &src.kind,
+        src.anchor.as_deref(),
+    );
+    m.notes.push(format!(
+        "[{n}] {filename}, {where_}: \"{}\"",
+        src.quote.trim()
+    ));
+    Ok(n)
+}
+
+async fn doc_name(
+    tx: &mut Transaction<'_, Postgres>,
+    doc_id: &str,
+) -> Result<Option<String>, ApiError> {
+    let row: Option<(String,)> = sqlx::query_as("SELECT filename FROM document WHERE id = $1")
+        .bind(doc_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+    Ok(row.map(|r| r.0))
 }
 
 pub async fn get_memo(State(s): State<AppState>, req: Request) -> Result<Response, ApiError> {
@@ -467,7 +610,8 @@ pub async fn get_memo(State(s): State<AppState>, req: Request) -> Result<Respons
         .cloned()
         .ok_or_else(|| ApiError::missing_query("entity"))?;
     let vis = Visibility::load(&mut tx, &p).await?;
-    let m = build_data(&mut tx, &vis, &entity).await?;
+    let mut m = build_data(&mut tx, &vis, &entity).await?;
+    memo_comps(&mut tx, &vis, &mut m, &entity, &q).await?;
     tx.commit().await?;
     let markdown = render_memo(&entity, &m);
     Ok(Json(json!({ "entity": entity, "markdown": markdown })).into_response())
