@@ -61,8 +61,8 @@ def test_playbook_report_reads_an_html_exhibit_stored_as_text_blocks():
 
     c = TestClient(app)
     h = new_tenant(c, "pbr2")
-    html = ("<html><body><p>Section 6.01 Financial Covenant. The Total Net Leverage Ratio shall not exceed "
-            "6.00 to 1.00 as of any quarter end.</p></body></html>").encode()
+    html = (b"<html><body><p>Section 6.01 Financial Covenant. The Total Net Leverage Ratio shall not exceed "
+            b"6.00 to 1.00 as of any quarter end.</p></body></html>")
     doc = c.post("/documents", headers=h, files={"file": ("credit.html", html, "text/html")}).json()
     r = c.get(f"/documents/{doc['id']}/playbook-report?doc_type=credit", headers=h)
     assert r.status_code == 200
