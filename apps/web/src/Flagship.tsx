@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, api2, DocumentInfo, FlagshipBody, FlagshipResult, FlagshipStep } from "./api";
 import { Badge, Button, Card, CardHead, ErrorLine, Input, Page } from "./ui";
+import { MemoVersions } from "./MemoVersions";
 
 // Mirrors the LBO defaults the demo run uses. Each one is a labelled assumption, never a sourced figure.
 const LBO_DEFAULTS: FlagshipBody["lbo"] = {
@@ -69,6 +70,7 @@ export function Flagship() {
   };
   return (
     <Page title="10-K to IC memo" hint="One run: tagged figures, peers, precedents, legal red flags, LBO and the memo. Each step reports whether it ran, was skipped, or failed, and why.">
+      <MemoVersions entity={entity} />
       <Card>
         <CardHead title="Run" />
         <div className="grid grid-cols-[minmax(0,1fr)] gap-3 p-5 sm:grid-cols-4">
