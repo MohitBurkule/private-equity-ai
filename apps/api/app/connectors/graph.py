@@ -1,11 +1,13 @@
 """Microsoft Graph: Outlook mail, plus OneDrive/SharePoint document libraries (one API, one token)."""
 from __future__ import annotations
 
+import os
 from urllib.parse import quote
 
 from app.connectors.base import Connector, Item
 
-G = "https://graph.microsoft.com/v1.0"
+# GRAPH_BASE_URL is an operator override for tests and staging; production leaves it unset.
+G = os.environ.get("GRAPH_BASE_URL") or "https://graph.microsoft.com/v1.0"
 
 
 class Outlook(Connector):

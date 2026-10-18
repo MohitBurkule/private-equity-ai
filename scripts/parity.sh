@@ -31,6 +31,15 @@ stop_all() {
 }
 trap stop_all EXIT
 
+# A local Graph stand-in with a per-run certificate: both stacks read their directory calls from it.
+GRAPH_PORT="${PARITY_GRAPH_PORT:-8443}"
+openssl req -x509 -newkey rsa:2048 -nodes -keyout "$DIR/graph.key" -out "$DIR/graph.pem" -days 2 \
+  -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" -addext "basicConstraints=critical,CA:FALSE" >/dev/null 2>&1
+python3 "$ROOT/apps/api-rs/parity/fake_graph.py" "$GRAPH_PORT" "$DIR/graph.pem" "$DIR/graph.key" \
+  "https://127.0.0.1:$GRAPH_PORT/v1.0" >"$DIR/graph.log" 2>&1 &
+echo $! >"$DIR/graph.pid"
+for _ in $(seq 1 50); do curl -sk -o /dev/null "https://127.0.0.1:$GRAPH_PORT/" && break; sleep 0.1; done
+
 wait_http() { # url, seconds
   for _ in $(seq 1 $(( $2 * 10 ))); do curl -sf -o /dev/null "$1" && return 0; sleep 0.1; done
   echo "timed out waiting for $1" >&2; return 1
@@ -50,6 +59,7 @@ SQL
   DATABASE_URL="postgresql+psycopg://app_user@localhost:$PORT/pe_parity" \
   MIGRATE_DATABASE_URL="postgresql+psycopg://postgres@localhost:$PORT/pe_parity" \
   APP_DB_ROLE=app_user ADMIN_TOKEN=test-admin RATE_LIMIT_PER_MIN=0 SPOOL_DIR="$DIR/spool" \
+  GRAPH_BASE_URL="https://127.0.0.1:$GRAPH_PORT/v1.0" SSL_CERT_FILE="$DIR/graph.pem" \
     nohup python3 -m uvicorn app.main:app --host 127.0.0.1 --port "$FA_PORT" >"$DIR/fastapi.log" 2>&1 &
   echo $! >"$DIR/fastapi.pid"
 )
@@ -59,6 +69,7 @@ wait_http "http://127.0.0.1:$FA_PORT/health" 120
   cd "$ROOT/apps/api-rs"
   cargo build --release --quiet
   DATABASE_URL="postgres://app_user@localhost:$PORT/pe_parity" ADMIN_TOKEN=test-admin \
+  GRAPH_BASE_URL="https://127.0.0.1:$GRAPH_PORT/v1.0" GRAPH_CA_FILE="$DIR/graph.pem" \
   FASTAPI_UPSTREAM="http://127.0.0.1:$FA_PORT" RS_BIND="127.0.0.1:$RS_PORT" RATE_LIMIT_PER_MIN=0 \
     nohup ./target/release/pe-api-rs >"$DIR/rust.log" 2>&1 &
   echo $! >"$DIR/rust.pid"
