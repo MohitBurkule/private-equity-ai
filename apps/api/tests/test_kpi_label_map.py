@@ -15,7 +15,7 @@ def test_company_label_is_mapped_and_default_still_works_unknown_still_skipped()
     assert c.put(f"/portfolio/companies/{cid}/label-map", json={"labels": {"Sales": "revenue"}}, headers=h).status_code == 200
     body = _upload(h, cid, _pack(ROWS)).json()
     assert len(body["observations"]) == 2
-    assert [s["cell"] for s in body["skipped"]] == ["Sep!C9"]
+    assert [s["cell"] for s in body["skipped"]] == ["Sep!C6"]
     kpis = c.get(f"/portfolio/companies/{cid}/kpis", headers=h).json()
     assert {k["metric"] for k in kpis} == {"revenue"}
 
