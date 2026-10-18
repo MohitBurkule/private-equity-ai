@@ -76,7 +76,7 @@ export function Deals() {
     <Page title="Deals" hint="Pipeline and the due-diligence request list for each deal.">
       <Card>
         <CardHead title="Pipeline" right={
-          <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (!name.trim()) return; api2.createDeal(name).then(() => { setName(""); deals.reload(); }).catch(fail); }}>
+          <form className="flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); if (!name.trim()) return; api2.createDeal(name).then(() => { setName(""); deals.reload(); }).catch(fail); }}>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="New deal name" aria-label="New deal name" /><Button variant="primary" type="submit">Create</Button>
           </form>} />
         <ErrorLine e={deals.error || dd.error} />
