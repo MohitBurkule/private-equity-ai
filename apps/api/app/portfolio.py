@@ -26,6 +26,7 @@ class PortfolioCompany(Base):
     sector: Mapped[str | None] = mapped_column(String(128), default=None)
     sic: Mapped[str | None] = mapped_column(String(8), default=None)  # SIC code; add-on search matches on it too
     ownership_pct: Mapped[Decimal | None] = mapped_column(Numeric(7, 4), default=None)
+    inbox_alias: Mapped[str | None] = mapped_column(String(64), default=None, index=True)  # e.g. "acme-kpi": packs mailed here
     label_map: Mapped[str | None] = mapped_column(Text, default=None)  # JSON {workbook label: KPI}, merged over the default map
 
 

@@ -53,6 +53,30 @@ def company_label_map(company: PortfolioCompany) -> dict[str, str]:
     return {**KPI_MAP, **extra}
 
 
+def set_inbox_alias(db: Session, tenant_id: str, company_id: int, alias: str | None) -> str | None:
+    """A short address-like name a company's packs are sent to. Lower case, letters digits and dashes. Unique per tenant."""
+    company = db.get(PortfolioCompany, company_id)
+    if company is None or company.tenant_id != tenant_id:
+        raise ValueError("company not found")
+    clean = alias.strip().lower() if alias else None
+    if clean and not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,62}", clean):
+        raise ValueError("alias must be 2-63 letters, digits or dashes")
+    if clean:
+        taken = db.query(PortfolioCompany).filter(PortfolioCompany.tenant_id == tenant_id,
+                                                  PortfolioCompany.inbox_alias == clean,
+                                                  PortfolioCompany.id != company_id).first()
+        if taken is not None:
+            raise ValueError("alias already used by another company")
+    company.inbox_alias = clean
+    db.commit()
+    return clean
+
+
+def company_for_alias(db: Session, tenant_id: str, alias: str) -> PortfolioCompany | None:
+    return (db.query(PortfolioCompany)
+            .filter_by(tenant_id=tenant_id, inbox_alias=alias.strip().lower()).first())
+
+
 def set_label_map(db: Session, tenant_id: str, company_id: int, labels: dict[str, str]) -> dict[str, str]:
     company = db.get(PortfolioCompany, company_id)
     if company is None or company.tenant_id != tenant_id:
