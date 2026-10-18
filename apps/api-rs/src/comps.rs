@@ -3,6 +3,7 @@
 //! unit and the denominator is positive; otherwise the peer carries the reason. Statistics skip those peers.
 
 use crate::error::ApiError;
+use crate::facts::stored;
 use crate::visibility::Visibility;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::{Decimal, RoundingStrategy};
@@ -85,6 +86,7 @@ pub async fn find_fact(
     .fetch_all(&mut **tx)
     .await?;
     for (id, value, unit) in rows {
+        let value = stored(value);
         let srcs: Vec<SourceRow> = sqlx::query_as(
             "SELECT document_id, page, quote, kind, section, heading, anchor FROM fact_source \
                  WHERE fact_id = $1 ORDER BY id",

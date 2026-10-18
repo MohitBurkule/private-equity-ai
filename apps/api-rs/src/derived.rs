@@ -3,6 +3,7 @@
 
 use crate::auth::principal;
 use crate::error::ApiError;
+use crate::facts::stored;
 use crate::visibility::Visibility;
 use crate::AppState;
 use axum::{
@@ -82,6 +83,7 @@ pub async fn derive(
                 "{metric} for {entity} {period} is not a verified, cited, visible fact"
             ));
         }
+        let value = stored(value);
         units.insert(unit);
         parts.push(Component {
             fact_id: id,

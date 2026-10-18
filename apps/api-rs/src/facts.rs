@@ -30,6 +30,12 @@ fn de_decimal<'de, D: Deserializer<'de>>(d: D) -> Result<Decimal, D::Error> {
     Decimal::from_str(&s).map_err(de::Error::custom)
 }
 
+/// A fact value as Postgres stores it, Numeric(24, 6). sqlx reads a zero back unscaled, so every read site rescales.
+pub fn stored(mut value: Decimal) -> Decimal {
+    value.rescale(6);
+    value
+}
+
 fn default_scale() -> Decimal {
     Decimal::ONE
 }
@@ -125,7 +131,7 @@ pub async fn list_facts(
             })
             .collect();
         out.push(json!({
-            "id": f.0, "entity": f.1, "metric": f.2, "period": f.3, "value": f.4.to_string(), "unit": f.5,
+            "id": f.0, "entity": f.1, "metric": f.2, "period": f.3, "value": stored(f.4).to_string(), "unit": f.5,
             "basis": f.6, "status": f.7, "reviewed_by": f.8, "reviewed_at": f.9, "review_note": f.10,
             "sources": srcs,
         }));

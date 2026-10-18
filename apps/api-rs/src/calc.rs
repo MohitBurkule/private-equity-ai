@@ -4,6 +4,7 @@
 use crate::auth::principal;
 use crate::citations::locator_label;
 use crate::error::ApiError;
+use crate::facts::stored;
 use crate::visibility::Visibility;
 use crate::AppState;
 use axum::{
@@ -140,14 +141,11 @@ async fn find(
                 })
             })
             .collect();
-        // Numeric(24, 6) values read back with scale 6 in Python; sqlx returns a zero unscaled.
-        let mut value = value;
-        value.rescale(6);
         return Ok(Some(Found {
             id,
             metric,
             period,
-            value,
+            value: stored(value),
             unit,
             basis,
             sources,
