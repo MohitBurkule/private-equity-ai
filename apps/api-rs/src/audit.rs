@@ -1,9 +1,18 @@
 //! Port of app/audit.py: one sha256 hash chain per tenant. The payload string is hashed as stored, so it must match
 //! what Python writes: keys sorted, ", " and ": " separators.
 
-use serde_json::Value;
+use crate::auth::principal;
+use crate::error::ApiError;
+use crate::AppState;
+use axum::{
+    extract::{Query, State},
+    http::{HeaderMap, StatusCode},
+    Json,
+};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Transaction};
+use std::collections::HashMap;
 
 /// Python json.dumps(sort_keys=True) layout. Non-ASCII text is not escaped (Python would write \uXXXX).
 pub fn py_json(v: &Value) -> String {
@@ -58,4 +67,60 @@ pub async fn log_event(
         .execute(&mut **tx)
         .await?;
     Ok(())
+}
+
+type AuditRow = (i32, String, String, String, String);
+
+/// FastAPI's `limit: int = Query(100, ge=1, le=500)`, checked before the handler runs.
+fn audit_limit(raw: Option<&String>) -> Result<i64, ApiError> {
+    let Some(raw) = raw else { return Ok(100) };
+    let n: i64 = raw.parse().map_err(|_| ApiError::query_int("limit", raw))?;
+    if n < 1 {
+        return Err(ApiError::query_below("limit", raw, 1));
+    }
+    if n > 500 {
+        return Err(ApiError::query_above("limit", raw, 500));
+    }
+    Ok(n)
+}
+
+/// Port of GET /audit (app/main.py audit_list): the tenant's chain, newest first, whole-tenant keys only.
+pub async fn list_audit(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, ApiError> {
+    let (p, mut tx) = principal(&s, &headers).await?;
+    // Validation runs before the handler in FastAPI, so a bad limit answers 422 even for a scoped key.
+    let limit = audit_limit(q.get("limit"))?;
+    if p.deals.is_some() {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "the audit trail covers the whole tenant; use an unrestricted key",
+        ));
+    }
+    // Python `if action:`: an empty filter means no filter.
+    let action = q.get("action").filter(|a| !a.is_empty()).cloned();
+    let rows: Vec<AuditRow> = sqlx::query_as(
+        "SELECT id, ts, actor, action, payload FROM audit_event \
+         WHERE ($1::text IS NULL OR action = $1) ORDER BY id DESC LIMIT $2",
+    )
+    .bind(action)
+    .bind(limit)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let items: Vec<Value> = rows
+        .into_iter()
+        .map(|(id, ts, actor, action, payload)| {
+            json!({
+                "id": id,
+                "ts": ts,
+                "actor": actor,
+                "action": action,
+                "payload": serde_json::from_str::<Value>(&payload).unwrap_or(Value::Null),
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "items": items })))
 }

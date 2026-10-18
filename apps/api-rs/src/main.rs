@@ -64,6 +64,7 @@ pub fn app(state: AppState) -> Router {
         .route("/dd/requests", get(dd::list_requests))
         .route("/dd/questions", get(dd::list_questions))
         .route("/dd/summary", get(dd::dd_summary))
+        .route("/audit", get(audit::list_audit))
         .route("/alerts", get(alerts::list_alerts))
         .route("/alerts/brief", get(alerts::alerts_brief))
         .route("/deals/:name/checklist", get(checklist::list_checklist))
