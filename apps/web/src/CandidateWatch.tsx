@@ -1,10 +1,10 @@
 import { api2, AlertRow } from "./api";
 import { useLoad } from "./hooks";
-import { Badge, Button, Card, CardHead, Empty, ErrorLine, Page } from "./ui";
+import { Badge, Button, Card, CardHead, Empty, ErrorLine, Loading, Page } from "./ui";
 
 /** Candidate watch: companies the weekly search found on the firm's sectors, each to be triaged by a person. */
 export function CandidateWatch() {
-  const { data, error, reload, setError } = useLoad(async () => (await api2.alerts()).filter((a) => a.kind === "candidate"));
+  const { data, error, loading, reload, setError } = useLoad(async () => (await api2.alerts()).filter((a) => a.kind === "candidate"));
   const mark = (id: number, status: string) => api2.setAlertStatus(id, status).then(reload).catch((e) => setError(String(e)));
   const open = data?.filter((a) => a.status === "new") ?? [];
   const done = data?.filter((a) => a.status !== "new") ?? [];
@@ -23,6 +23,7 @@ export function CandidateWatch() {
       <ErrorLine e={error} />
       <Card>
         <CardHead title="New" right={<Badge tone={open.length ? "acc" : "ok"}>{open.length}</Badge>} />
+        {loading && <Loading />}
         {data && open.length === 0 && <Empty>No new candidates.</Empty>}
         <ul className="divide-y divide-line">{open.map(row)}</ul>
       </Card>

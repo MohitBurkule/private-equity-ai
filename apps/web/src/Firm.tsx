@@ -1,7 +1,7 @@
 import { api2 } from "./api";
 import { useLoad } from "./hooks";
 import { SourceChip } from "./source";
-import { Badge, Button, Card, CardHead, Empty, ErrorLine } from "./ui";
+import { Badge, Button, Card, CardHead, Empty, ErrorLine, Loading } from "./ui";
 
 /** What the firm has told us about how it works: board cadence, sign-off thresholds, screening criteria, LP tone... */
 export function Firm() {
@@ -41,6 +41,7 @@ export function Firm() {
           </ul>
         </Card>
       ))}
+      {terms.loading && <Loading />}
       {terms.data?.length === 0 && <Card><Empty>No terms defined.</Empty></Card>}
     </div>
   );

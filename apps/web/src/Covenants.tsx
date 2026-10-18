@@ -2,11 +2,11 @@ import { api2, CovenantStatus, FactRow } from "./api";
 import { SourceChip } from "./source";
 import { fmtAmount } from "./format";
 import { useLoad } from "./hooks";
-import { Badge, Card, CardHead, Empty, Page } from "./ui";
+import { Badge, Card, CardHead, Empty, Loading, Page } from "./ui";
 
 /** Covenant tracker: every covenant of every portfolio company, each test against its cited threshold. */
 export function Covenants() {
-  const { data, error } = useLoad(async () => {
+  const { data, error, loading } = useLoad(async () => {
     const report = await api2.report();
     const rows = await Promise.all(report.companies.map(async (c) => ({ name: c.name, status: await api2.covenants(c.id) })));
     return rows as { name: string; status: CovenantStatus }[];
@@ -18,6 +18,7 @@ export function Covenants() {
   return (
     <Page title="Covenants" hint="Each KPI is tested against a cited threshold. A breach shows the period, the value and the threshold it missed.">
       {error && <Card className="p-5 text-sm text-bad">{error}</Card>}
+      {loading && <Loading />}
       {data && all.length === 0 && <Card><Empty>No covenant tests on portfolio companies yet. Add one on a company, with a cited threshold.</Empty></Card>}
       {terms.data && terms.data.length > 0 && (
         <Card>

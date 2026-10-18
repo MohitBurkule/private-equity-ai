@@ -2,7 +2,7 @@ import { Play } from "lucide-react";
 import { useState } from "react";
 import { AgentRunOut, api2, WorkflowInfo } from "./api";
 import { useLoad } from "./hooks";
-import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input } from "./ui";
+import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input, Loading } from "./ui";
 
 function Runner({ w }: { w: WorkflowInfo }) {
   const [vals, setVals] = useState<Record<string, string>>({});
@@ -39,12 +39,13 @@ function Runner({ w }: { w: WorkflowInfo }) {
 }
 
 export function Workflows() {
-  const { data, error } = useLoad(api2.workflows);
+  const { data, error, loading } = useLoad(api2.workflows);
   return (
     <div className="mx-auto max-w-4xl space-y-5 p-6">
       <div><h1 className="text-xl font-semibold tracking-tight">Workflows</h1>
         <p className="text-sm text-mut">Repeatable multi-step jobs built from the same tools the chat agent uses. Every step and its output is logged.</p></div>
       <ErrorLine e={error} />
+      {loading && <Loading />}
       {data?.length === 0 && <Card><Empty>No workflows are registered on this server yet.</Empty></Card>}
       {data?.map((w) => <Runner key={w.name} w={w} />)}
     </div>

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api, ValuationRound } from "./api";
 import { useLoad } from "./hooks";
 import { SourceChip } from "./source";
-import { Card, CardHead, Empty, ErrorLine, Input, Page } from "./ui";
+import { Card, CardHead, Empty, ErrorLine, Input, Loading, Page } from "./ui";
 
 /** Round and valuation history from uploaded exports. Each row opens the file it came from; the CSV line is shown as text. */
 export function ValuationRounds() {
@@ -14,6 +14,7 @@ export function ValuationRounds() {
       <ErrorLine e={rounds.error} />
       <Card>
         <CardHead title="Rounds" right={<Input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Filter by company" aria-label="Filter by company" />} />
+        {rounds.loading && <Loading />}
         {rounds.data && rounds.data.length === 0 && <Empty>No rounds yet. Import a valuation export to see history here.</Empty>}
         {shown.length === 0 && (rounds.data?.length ?? 0) > 0 && <Empty>No company matches "{company}".</Empty>}
         <ul className="divide-y divide-line text-sm">

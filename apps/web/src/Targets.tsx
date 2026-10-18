@@ -3,7 +3,7 @@ import { api2, RefreshOut, ScreenBody, ScreenOut, Target, TargetFilter, targetNo
 import { NotesPanel } from "./Notes";
 import { fmtAmount } from "./format";
 import { useLoad } from "./hooks";
-import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input } from "./ui";
+import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input, Loading } from "./ui";
 
 const W = 720, H = 360;
 const PALETTE = ["#0f9d8a", "#c2410c", "#4f6bd8", "#a21caf", "#b45309", "#0369a1", "#be123c", "#4d7c0f"];
@@ -144,6 +144,7 @@ export function Targets() {
       </div>
       {refreshed && <p className="mb-4 text-sm text-mut">{refreshed.refreshed} of {refreshed.checked} refreshed from SEC and Companies House; {refreshed.failed} failed, {refreshed.dissolved} dissolved (never refreshed silently).</p>}
       <ErrorLine e={refreshErr} />
+      {list.loading && <Loading />}
       {items.length === 0 && list.data ? <Empty>No targets match. Import from SEC or Companies House, or loosen the filters.</Empty> : (
         <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
           <Card><CardHead title="Map" hint="Dot size = revenue. Click a dot for details." /><div className="p-4"><MapView items={items} sel={sel} onPick={setSel} /></div></Card>
