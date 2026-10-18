@@ -40,7 +40,7 @@ export function NotesPanel({ title, hint, api, deps }: { title: string; hint: st
             ) : <p className="whitespace-pre-wrap">{n.body}</p>}
           </div>
         ))}
-        {notes.data && notes.data.length === 0 && <p className="text-mut">No notes yet.</p>}
+        {notes.data && notes.data.length === 0 && <p className="text-mut">No notes yet. Add the first one below; it keeps its author and date.</p>}
         {editing === null && (
           <div className="flex gap-2">
             <Input aria-label="New note" placeholder="Add a note" value={draft} onChange={(e) => setDraft(e.target.value)} className="flex-1" />
