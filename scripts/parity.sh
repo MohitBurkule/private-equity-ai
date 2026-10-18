@@ -58,7 +58,7 @@ wait_http "http://127.0.0.1:$FA_PORT/health" 120
 (
   cd "$ROOT/apps/api-rs"
   cargo build --release --quiet
-  DATABASE_URL="postgres://app_user@localhost:$PORT/pe_parity" \
+  DATABASE_URL="postgres://app_user@localhost:$PORT/pe_parity" ADMIN_TOKEN=test-admin \
   FASTAPI_UPSTREAM="http://127.0.0.1:$FA_PORT" RS_BIND="127.0.0.1:$RS_PORT" RATE_LIMIT_PER_MIN=0 \
     nohup ./target/release/pe-api-rs >"$DIR/rust.log" 2>&1 &
   echo $! >"$DIR/rust.pid"
