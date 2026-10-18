@@ -102,6 +102,8 @@ export function Deals() {
       {sel && (
         <Card>
           <CardHead title={`Due diligence: ${sel}`} right={<Button onClick={() => api2.ddSeed(sel).then(dd.reload).catch(fail)}>Add standard request list</Button>} />
+          {dd.loading && <Loading />}
+          {dd.data?.length === 0 && <Empty>No requests yet. Use "Add standard request list" to seed the usual ones.</Empty>}
           {[...byCat.entries()].map(([cat, rows]) => (
             <div key={cat} className="border-t border-line first:border-0">
               <p className="bg-sunk px-5 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-mut">{cat.replace("_", " / ")}</p>
