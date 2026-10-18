@@ -1,13 +1,13 @@
 """Portfolio companies can have an inbox alias that their KPI packs are mailed to
 
-Revision ID: 20261018_0500_company_inbox_alias
+Revision ID: 20261018_0500_inbox_alias
 Revises: 20261018_0400_memo_signoff
 """
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = '20261018_0500_company_inbox_alias'
+revision = '20261018_0500_inbox_alias'
 down_revision = '20261018_0400_memo_signoff'
 branch_labels = None
 depends_on = None
