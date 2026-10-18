@@ -236,6 +236,7 @@ from app.portfolio import (
 )
 from app.qoe import normalized_ebitda, nwc_peg, one_off_flags, revenue_trend
 from app.ratelimit import make_limiter
+from app.reference_calls import review as reference_review
 from app.report import build_report, build_report_docx
 from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
 from app.shareledger import Event as LedgerEvent
@@ -1400,6 +1401,13 @@ def expert_call_review(body: ExpertCallIn, who: Who):
     return {"turns": len(turns), "speakers": sorted({t.speaker for t in turns}),
             "flags": [{"line": f.line, "speaker": f.speaker, "phrase": f.phrase, "quote": f.quote}
                       for f in flags(turns)]}
+
+
+@app.post("/dd/reference-calls/review")
+def reference_call_review(body: ExpertCallIn, who: Who):
+    """Turns of a customer reference-call transcript, with lines to read first: MNPI phrases and commercial risk
+    phrases (churn, switching, pricing pushback). Stores nothing; a flag is a prompt, not a finding."""
+    return reference_review(body.transcript)
 
 
 @app.post("/lbo/workbook/ties")
