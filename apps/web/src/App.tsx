@@ -40,6 +40,7 @@ import { LpReport } from "./LpReport";
 import { SourceProvider } from "./source";
 import { Button, Card } from "./ui";
 import clsx from "clsx";
+import { recentDeals, RECENT_EVENT } from "./recentDeals";
 
 const NAV: { id: string; icon: ReactNode }[] = [
   { id: "Home", icon: <MessageSquare size={16} /> },
@@ -120,6 +121,12 @@ export function App() {
   const [state, setState] = useState<"checking" | "need-key" | "ok">(getApiKey() ? "checking" : "need-key");
   const [msg, setMsg] = useState("");
   const [tour, setTour] = useState(() => !tourDone());
+  const [recent, setRecent] = useState(recentDeals);
+  useEffect(() => {
+    const onChange = () => setRecent(recentDeals());
+    window.addEventListener(RECENT_EVENT, onChange);
+    return () => window.removeEventListener(RECENT_EVENT, onChange);
+  }, []);
   const check = () => {
     if (!getApiKey()) { setState("need-key"); return; }
     setState("checking");
@@ -146,6 +153,7 @@ export function App() {
         <button onClick={() => { setApiKey(""); check(); }} className="mt-auto flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-mut hover:bg-sunk"><LogOut size={16} />Sign out</button>
       </nav>
       <CommandPalette items={[
+        ...recent.map((d) => ({ id: `deal-${d}`, label: d, hint: "Recent deal", run: () => setTab("Deals") })),
         ...NAV.map((n) => ({ id: `nav-${n.id}`, label: n.id, hint: "Section", run: () => setTab(n.id) })),
         { id: "tour", label: "Start guided tour", hint: "Help", run: () => { setTab("Home"); setTour(true); } },
       ]} />

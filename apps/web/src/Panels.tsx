@@ -6,6 +6,7 @@ import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input, Loading, Page }
 import { useState } from "react";
 import { DealWorkspace } from "./DealWorkspace";
 import { covenantBadge, covenantTestCount } from "./covenantSummary";
+import { pushRecentDeal } from "./recentDeals";
 
 
 export function ReviewQueue() {
@@ -88,7 +89,7 @@ export function Deals() {
         <table className="w-full text-sm">
           <tbody>
             {deals.data?.map((d) => (
-              <tr key={d.name} className={"cursor-pointer border-t border-line first:border-0 hover:bg-sunk " + (sel === d.name ? "bg-acc-soft" : "")} onClick={() => setSel(d.name)}>
+              <tr key={d.name} className={"cursor-pointer border-t border-line first:border-0 hover:bg-sunk " + (sel === d.name ? "bg-acc-soft" : "")} onClick={() => { setSel(d.name); pushRecentDeal(d.name); }}>
                 <td className="px-5 py-3 font-medium">{d.name}</td>
                 <td><select aria-label={`Stage of ${d.name}`} value={d.stage} onClick={(e) => e.stopPropagation()} onChange={(e) => api2.setStage(d.name, e.target.value).then(deals.reload).catch(fail)} className="rounded-md border border-line bg-bg px-2 py-1">
                   {STAGES.map((s) => <option key={s}>{s}</option>)}</select></td>
