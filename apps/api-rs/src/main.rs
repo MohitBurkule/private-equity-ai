@@ -10,6 +10,7 @@ mod calc;
 mod checklist;
 mod citations;
 mod comps;
+mod comps_calc;
 mod dd;
 mod deals;
 mod derived;
@@ -90,6 +91,7 @@ pub fn app(state: AppState) -> Router {
         .route("/calc/fund-metrics", post(fund::calc_fund_metrics))
         .route("/calc/waterfall", post(waterfall::calc_waterfall))
         .route("/calc/share-ledger", post(shareledger::calc_share_ledger))
+        .route("/calc/comps", post(comps_calc::calc_comps))
         .route("/calc/normalized-ebitda", get(calc::calc_normalized_ebitda))
         .route("/calc/revenue-trend", get(calc::calc_revenue_trend))
         .route("/calc/net-debt-adjusted", get(calc::calc_net_debt_adjusted))

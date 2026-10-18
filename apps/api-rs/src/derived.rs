@@ -17,26 +17,30 @@ use sqlx::{Postgres, Transaction};
 use std::collections::{BTreeSet, HashMap};
 
 /// Python derived.SUMS: formula name -> component metrics, summed.
-const SUMS: [(&str, [&str; 2]); 1] = [(
+pub(crate) fn is_formula(name: &str) -> bool {
+    SUMS.iter().any(|(n, _)| *n == name)
+}
+
+pub(crate) const SUMS: [(&str, [&str; 2]); 1] = [(
     "ebitda",
     ["operating_income", "depreciation_and_amortization"],
 )];
 
 /// One component: fact id, metric, value, and the citation fields derive keeps (document, page, quote).
 pub struct Component {
-    fact_id: i32,
+    pub(crate) fact_id: i32,
     metric: &'static str,
     value: Decimal,
     sources: Vec<Value>,
 }
 
 pub struct Derived {
-    formula: String,
-    entity: String,
-    period: String,
-    unit: String,
-    value: Decimal,
-    components: Vec<Component>,
+    pub(crate) formula: String,
+    pub(crate) entity: String,
+    pub(crate) period: String,
+    pub(crate) unit: String,
+    pub(crate) value: Decimal,
+    pub(crate) components: Vec<Component>,
 }
 
 /// Python derive(): a ValueError becomes Err(message). The first fact by id stands for each metric, as the
