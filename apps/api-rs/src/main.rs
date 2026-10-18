@@ -14,6 +14,7 @@ mod facts;
 mod memo;
 mod names;
 mod notes;
+mod peer_sets;
 mod proxy;
 mod ratelimit;
 mod scope;
@@ -63,6 +64,7 @@ pub fn app(state: AppState) -> Router {
         .route("/deals/:name/checklist", get(checklist::list_checklist))
         .route("/deals/:name/snapshot", get(snapshot::deal_snapshot))
         .route("/deals/:name/notes", get(notes::list_deal_notes))
+        .route("/deals/:name/peer-sets", get(peer_sets::list_peer_sets))
         .route("/targets/:tid/notes", get(notes::list_target_notes))
         .route("/memo/templates", get(memo::list_templates))
         .route("/memo/versions", get(memo::list_versions))

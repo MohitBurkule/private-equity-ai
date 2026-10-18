@@ -83,6 +83,11 @@ def seed(conn):
             " '2026-10-17T11:00:00+00:00')",
             (tenant_id,),
         )
+        cur.execute(
+            "INSERT INTO peer_set (tenant_id, deal, name, target_id, items, dropped, refreshed_at, created_by, created_at)"
+            " VALUES (%s, 'Other', 'Software peers', 1, %s, '[]', '2026-10-17T12:00:00+00:00', 'seed', '2026-10-17T12:00:00+00:00')",
+            (tenant_id, '[{"cik": "1", "name": "Peer A", "revenue": "100", "period": "FY24", "source_url": "https://example.test/a"}]'),
+        )
     for name, body in [
         ("scoped_other", {"role": "analyst", "deals": ["Other"]}),
         ("zeta", {"role": "analyst", "deals": ["Zeta"]}),
@@ -143,6 +148,9 @@ def main():
                 "/deals/Zeta/checklist",
                 "/deals/Other/snapshot",
                 "/deals/Zeta/snapshot",
+                "/deals/Other/peer-sets",
+                "/deals/Zeta/peer-sets",
+                "/deals/Nope/peer-sets",
                 "/documents",
                 "/memo/versions?entity=Other",
                 "/memo/versions/1",
