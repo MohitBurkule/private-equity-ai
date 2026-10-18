@@ -135,6 +135,7 @@ from app.connectors.sync import sync as connector_sync
 from app.crunchbase import read_funding_rounds_numbered
 from app.db import make_engine, make_session_factory
 from app.dd import STATUSES, TEMPLATE
+from app.dd_followups import drafts
 from app.edgar import fetch_companyfacts
 from app.email_links import EMAIL_CONNECTORS, links_for
 from app.email_routing import unattached_emails
@@ -1333,6 +1334,16 @@ def dd_question_list(db: Db, who: Who, deal: str | None = None, status: str | No
     if status:
         q = q.filter_by(status=status)
     return [_dd_question_out(r) for r in q.order_by(DDQuestion.id).all() if _dd_scope_ok(who, r.deal)]
+
+
+@app.get("/dd/followups")
+def dd_followups(deal: Annotated[str, Query(min_length=1, max_length=128)], db: Db, who: Who):
+    """Draft follow-ups for a deal: one per open request, one per question still unanswered. Drafts only."""
+    if not _dd_scope_ok(who, deal):
+        raise HTTPException(403, "deal is outside this key's scope")
+    reqs = db.query(DDRequest).filter_by(tenant_id=who.tenant, deal=deal, status="open").order_by(DDRequest.id).all()
+    qs = db.query(DDQuestion).filter_by(tenant_id=who.tenant, deal=deal, status="open").order_by(DDQuestion.id).all()
+    return drafts([r.title for r in reqs], [q.question for q in qs])
 
 
 @app.patch("/dd/questions/{qid}")
