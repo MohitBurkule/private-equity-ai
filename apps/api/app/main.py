@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 import time
+import zipfile
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from datetime import date as DateT
@@ -107,6 +108,7 @@ from app.auth import (
     principal_for_key,
     revoke_key,
 )
+from app.bridge_workbook import store_candidates as store_bridge_candidates
 from app.calc import Calc, find_conflicts, ltm, net_debt, net_debt_adjusted, nwc
 from app.calendar_events import retag_deals
 from app.chat_alerts import chat_poster
@@ -1148,6 +1150,26 @@ def calc_normalized_ebitda(entity: str, period: str, db: Db, who: Who):
     add-backs above 10% of reported EBITDA come back as one-off flags for a person to check."""
     c = normalized_ebitda(db, who.tenant, entity, period, visible_doc_ids(db, who))
     return {**_calc_out(c), "one_off_flags": one_off_flags(c)}
+
+
+@app.post("/calc/bridge-candidates")
+async def upload_bridge_candidates(entity: Annotated[str, Form(min_length=1, max_length=200)],
+                                   file: Annotated[UploadFile, File()], db: Db, who: Writer):
+    """EBITDA bridge workbook. Each line is stored as a candidate (status auto) with its sheet and cell cited;
+    a reviewer accepts each one before it counts toward normalized EBITDA."""
+    data = await file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "bridge.xlsx"
+        path.write_bytes(data)
+        try:
+            out = store_bridge_candidates(db, who.tenant, entity, path, file.filename or "bridge.xlsx")
+        except (ValueError, zipfile.BadZipFile) as e:
+            raise HTTPException(422, str(e)) from e
+    log_event(db, who.tenant, actor(who), "calc.bridge_candidates",
+              {"entity": entity, "stored": len(out["fact_ids"]), "skipped": len(out["skipped"])})
+    return out
 
 
 @app.get("/calc/ltm")
