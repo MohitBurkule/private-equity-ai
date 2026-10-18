@@ -165,6 +165,7 @@ from app.ixbrl_full import read_filing
 from app.kpi_workbook import ingest_kpi_pack as kpi_pack_ingest
 from app.lbo_workbook import named_inputs, tie
 from app.llm import LLM, LLMCapExceeded, NoLLMConfigured, get_llm, llm_id
+from app.market import shares as market_shares
 from app.marketdata import NoData
 from app.memo import build_memo, build_memo_docx, build_memo_pptx
 from app.memo_templates import TEMPLATES, build_memo_sections
@@ -1334,6 +1335,14 @@ def dd_question_list(db: Db, who: Who, deal: str | None = None, status: str | No
     if status:
         q = q.filter_by(status=status)
     return [_dd_question_out(r) for r in q.order_by(DDQuestion.id).all() if _dd_scope_ok(who, r.deal)]
+
+
+@app.get("/market/shares")
+def market_shares_get(market: Annotated[str, Query(min_length=1, max_length=200)],
+                      metric: Annotated[str, Query(min_length=1, max_length=200)],
+                      period: Annotated[str, Query(min_length=1, max_length=64)], db: Db, who: Who):
+    """Competitor shares of a market, from cited facts. Derived figures, labelled as such. Reports; never picks."""
+    return market_shares(db, who.tenant, market, metric, period, visible_doc_ids(db, who))
 
 
 @app.get("/dd/followups")
