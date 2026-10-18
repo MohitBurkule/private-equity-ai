@@ -30,6 +30,15 @@ pub fn de_decimal<'de, D: Deserializer<'de>>(d: D) -> Result<Decimal, D::Error> 
     Decimal::from_str(&s).map_err(de::Error::custom)
 }
 
+/// A Decimal read the way pydantic reads one: a JSON number or a string.
+pub struct Dec(pub Decimal);
+
+impl<'de> Deserialize<'de> for Dec {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        de_decimal(d).map(Dec)
+    }
+}
+
 /// A fact value as Postgres stores it, Numeric(24, 6). sqlx reads a zero back unscaled, so every read site rescales.
 pub fn stored(mut value: Decimal) -> Decimal {
     value.rescale(6);
