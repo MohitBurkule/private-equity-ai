@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { api, api2, DealRow, getApiKey, setApiKey } from "./api";
 import { CommandPalette } from "./CommandPalette";
 import { Chat } from "./Chat";
+import { Tour, tourDone } from "./Tour";
 import { Dashboards } from "./Dashboards";
 import { Targets } from "./Targets";
 import { Comps } from "./Comps";
@@ -118,6 +119,7 @@ export function App() {
   const [tab, setTab] = useState("Home");
   const [state, setState] = useState<"checking" | "need-key" | "ok">(getApiKey() ? "checking" : "need-key");
   const [msg, setMsg] = useState("");
+  const [tour, setTour] = useState(() => !tourDone());
   const check = () => {
     if (!getApiKey()) { setState("need-key"); return; }
     setState("checking");
@@ -145,7 +147,9 @@ export function App() {
       </nav>
       <CommandPalette items={[
         ...NAV.map((n) => ({ id: `nav-${n.id}`, label: n.id, hint: "Section", run: () => setTab(n.id) })),
+        { id: "tour", label: "Start guided tour", hint: "Help", run: () => { setTab("Home"); setTour(true); } },
       ]} />
+      {tour && <Tour onGo={setTab} onClose={() => setTour(false)} />}
       {/* display: contents keeps the screens' own flex layout; the element gives screen readers a main landmark. */}
       <main className="contents">
       <SourceProvider>
