@@ -127,9 +127,9 @@ export function PortfolioPanel() {
     <Page title="Portfolio" hint="Every KPI is tied to a cited fact. Covenants test those KPIs against cited thresholds.">
       <ErrorLine e={error} />
       <Card>
-        <CardHead title="Covenant alerts" right={data && <Badge tone={data.breaches.length ? "bad" : "ok"}>{data.breaches.length ? `${data.breaches.length} breach` : "all clear"}</Badge>} />
+        <CardHead title="Covenant alerts" right={data && <Badge tone={data.breaches.length ? "bad" : data.companies.length ? "ok" : "mut"}>{data.breaches.length ? `${data.breaches.length} breach` : data.companies.length ? "all clear" : "no companies"}</Badge>} />
         {loading && <Loading />}
-        {data?.breaches.length === 0 && <Empty>No breaches in the visible data.</Empty>}
+        {data?.breaches.length === 0 && <Empty>{data.companies.length ? "No breaches in the visible data." : "No portfolio companies yet. A company appears here once one of its verified KPIs is tracked."}</Empty>}
         <ul className="divide-y divide-line">
           {data?.breaches.map((b, i) => (
             <li key={i} className="flex flex-wrap items-center gap-3 px-5 py-3 text-sm">
