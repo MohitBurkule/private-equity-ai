@@ -140,6 +140,9 @@ async fn find(
                 })
             })
             .collect();
+        // Numeric(24, 6) values read back with scale 6 in Python; sqlx returns a zero unscaled.
+        let mut value = value;
+        value.rescale(6);
         return Ok(Some(Found {
             id,
             metric,
@@ -283,8 +286,8 @@ fn include_leases(q: &HashMap<String, String>) -> Result<bool, ApiError> {
     }
 }
 
-/// Shared parameter check for the net debt routes: entity and period are required.
-fn net_debt_query(q: &HashMap<String, String>) -> Result<(String, String), ApiError> {
+/// Shared parameter check for the period routes: entity and period are required.
+fn entity_period_query(q: &HashMap<String, String>) -> Result<(String, String), ApiError> {
     let missing: Vec<Value> = ["entity", "period"]
         .iter()
         .filter(|name| !q.contains_key(**name))
@@ -300,13 +303,53 @@ fn net_debt_query(q: &HashMap<String, String>) -> Result<(String, String), ApiEr
     Ok((q["entity"].clone(), q["period"].clone()))
 }
 
+/// Python nwc(): (current assets - cash) - (current liabilities - short-term debt).
+async fn nwc(
+    tx: &mut Transaction<'_, Postgres>,
+    vis: &Visibility,
+    entity: &str,
+    period: &str,
+) -> Result<Calc, ApiError> {
+    let mut c = Calc::new(
+        "Net working capital".into(),
+        entity,
+        "(current assets - cash) - (current liabilities - short-term debt)".into(),
+    );
+    combine(
+        tx,
+        vis,
+        &mut c,
+        &[
+            ("current assets", "current_assets", period, 1),
+            ("cash", "cash", period, -1),
+            ("current liabilities", "current_liabilities", period, -1),
+            ("short-term debt", "short_term_debt", period, 1),
+        ],
+    )
+    .await?;
+    Ok(c)
+}
+
+pub async fn calc_nwc(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, ApiError> {
+    let (p, mut tx) = principal(&s, &headers).await?;
+    let (entity, period) = entity_period_query(&q)?;
+    let vis = Visibility::load(&mut tx, &p).await?;
+    let c = nwc(&mut tx, &vis, &entity, &period).await?;
+    tx.commit().await?;
+    Ok(Json(c.to_json()))
+}
+
 pub async fn calc_net_debt(
     State(s): State<AppState>,
     headers: HeaderMap,
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, ApiError> {
     let (p, mut tx) = principal(&s, &headers).await?;
-    let (entity, period) = net_debt_query(&q)?;
+    let (entity, period) = entity_period_query(&q)?;
     let leases = include_leases(&q)?;
     let vis = Visibility::load(&mut tx, &p).await?;
     let c = net_debt(&mut tx, &vis, &entity, &period, leases).await?;
@@ -321,7 +364,7 @@ pub async fn calc_net_debt_adjusted(
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, ApiError> {
     let (p, mut tx) = principal(&s, &headers).await?;
-    let (entity, period) = net_debt_query(&q)?;
+    let (entity, period) = entity_period_query(&q)?;
     let leases = include_leases(&q)?;
     let vis = Visibility::load(&mut tx, &p).await?;
     let nd = net_debt(&mut tx, &vis, &entity, &period, leases).await?;
