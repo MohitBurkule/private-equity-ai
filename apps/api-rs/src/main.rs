@@ -27,6 +27,7 @@ mod ratelimit;
 mod scope;
 mod snapshot;
 mod sumcheck;
+mod tieout;
 mod visibility;
 mod workflows;
 
@@ -81,6 +82,7 @@ pub fn app(state: AppState) -> Router {
         .route("/calc/nwc", get(calc::calc_nwc))
         .route("/calc/nwc-peg", get(calc::calc_nwc_peg))
         .route("/calc/sumcheck", post(sumcheck::calc_sumcheck))
+        .route("/calc/tieout", post(tieout::calc_tieout))
         .route("/calc/normalized-ebitda", get(calc::calc_normalized_ebitda))
         .route("/calc/revenue-trend", get(calc::calc_revenue_trend))
         .route("/calc/net-debt-adjusted", get(calc::calc_net_debt_adjusted))
