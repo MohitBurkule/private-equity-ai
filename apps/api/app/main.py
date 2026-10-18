@@ -199,6 +199,7 @@ from app.models import (
     IngestJob,
     LboRun,
     MemoComment,
+    MemoSignoff,
     MemoTemplate,
     MemoVersion,
     OutreachItem,
@@ -2298,6 +2299,41 @@ def memo_version_get(version_id: int, db: Db, who: Who):
 def _memo_comment_out(c: MemoComment) -> dict:
     return {"id": c.id, "author": c.author, "body": c.body, "created_at": c.created_at,
             "assignee": c.assignee, "status": c.status}
+
+
+def _signoff_out(s: MemoSignoff) -> dict:
+    return {"approver": s.approver, "signed_at": s.signed_at}
+
+
+@app.post("/memo/versions/{version_id}/signoff", status_code=201)
+def memo_version_signoff(version_id: int, db: Db, who: Writer):
+    """The signing person approves this saved version. Refused while any comment on it is still open."""
+    _whole_tenant(who)
+    v = db.get(MemoVersion, version_id)
+    if v is None or v.tenant_id != who.tenant:
+        raise HTTPException(404, "version not found")
+    open_comments = db.query(MemoComment).filter_by(tenant_id=who.tenant, version_id=v.id, status="open").count()
+    if open_comments:
+        raise HTTPException(409, f"{open_comments} open comment(s) on this version; resolve them before sign-off")
+    existing = db.query(MemoSignoff).filter_by(version_id=v.id, approver=actor(who)).first()
+    if existing is not None:
+        return _signoff_out(existing)
+    s = MemoSignoff(tenant_id=who.tenant, version_id=v.id, approver=actor(who),
+                    signed_at=datetime.now(UTC).isoformat(timespec="seconds"))
+    db.add(s)
+    db.commit()
+    log_event(db, who.tenant, actor(who), "memo.signoff", {"version_id": v.id, "entity": v.entity, "number": v.number})
+    return _signoff_out(s)
+
+
+@app.get("/memo/versions/{version_id}/signoffs")
+def memo_version_signoffs(version_id: int, db: Db, who: Who):
+    _whole_tenant(who)
+    v = db.get(MemoVersion, version_id)
+    if v is None or v.tenant_id != who.tenant:
+        raise HTTPException(404, "version not found")
+    rows = db.query(MemoSignoff).filter_by(tenant_id=who.tenant, version_id=v.id).order_by(MemoSignoff.signed_at).all()
+    return {"items": [_signoff_out(r) for r in rows]}
 
 
 @app.post("/memo/versions/{version_id}/comments", status_code=201)
