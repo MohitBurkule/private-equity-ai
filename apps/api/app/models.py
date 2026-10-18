@@ -492,6 +492,8 @@ class MemoComment(Base):
     author: Mapped[str] = mapped_column(String(64), default="")
     body: Mapped[str] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(String(40), default="")
+    assignee: Mapped[str | None] = mapped_column(String(64), default=None)  # who owns the follow-up
+    status: Mapped[str] = mapped_column(String(16), default="open", server_default="open")  # open | resolved
 
 
 class SavedSearch(Base):
