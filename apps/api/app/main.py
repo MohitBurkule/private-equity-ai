@@ -3441,6 +3441,22 @@ def legal_terms(doc_id: str, doc_type: str, db: Db, who: Who):
     return out
 
 
+@app.get("/documents/{doc_id}/playbook-report")
+def playbook_report_get(doc_id: str, doc_type: str, db: Db, who: Who):
+    """Every firm playbook rule checked against one document: flagged, clear, or not_compared. Never clear for a
+    limit that had no number to test."""
+    _own_doc(db, who, doc_id)
+    pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc_id).order_by(PageRow.number)]
+    # With no text, every presence rule would read as clear. Refuse instead of reporting an unchecked document as checked.
+    if not pages:
+        raise HTTPException(422, "document has no text pages to check against the playbook")
+    try:
+        out = legal_mod.extract(pages, doc_type)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"document_id": doc_id, "doc_type": doc_type, "rules": legal_mod.playbook_report(out)}
+
+
 @app.get("/precedents/summary")
 def precedents_summary(db: Db, who: Who, document_ids: str):
     """Stated EV and multiples across deal documents (comma-separated ids), with page and quote per input."""
