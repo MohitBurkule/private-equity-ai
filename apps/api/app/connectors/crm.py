@@ -115,6 +115,25 @@ class Affinity(CrmConnector):
     def home_url(self, obj):
         return f"https://app.affinity.co/{obj}"
 
+    # Stage sync is OFF unless AFFINITY_STAGE_SYNC=1. The payload shape below is NOT verified against Affinity's
+    # API docs or a licensed account: it is a mock-tested placeholder ({"id", "name", "stage"} rows, PUT body
+    # {"stage"}). Check it against the customer's own Affinity docs before turning the flag on anywhere real.
+    def _stage_sync_on(self) -> None:
+        import os
+        if os.environ.get("AFFINITY_STAGE_SYNC") != "1":
+            raise ConnectorError("affinity stage sync is off (set AFFINITY_STAGE_SYNC=1; payload shape unverified)")
+
+    def fetch_stages(self, limit: int) -> list[dict]:
+        self._stage_sync_on()
+        rows = self.fetch_rows("opportunities", limit)
+        return [{"id": str(r["id"]), "name": r.get("name") or "", "stage": r.get("stage") or ""} for r in rows]
+
+    def push_stage(self, ext_id: str, stage: str) -> None:
+        self._stage_sync_on()
+        self.http(f"https://api.affinity.co/opportunities/{ext_id}",
+                  {"Authorization": f"Basic {base64.b64encode(f':{self.token}'.encode()).decode()}",
+                   "Content-Type": "application/json", "X-Method": "PUT", "X-Post-Body": json.dumps({"stage": stage})})
+
 
 class DealCloud(CrmConnector):
     """DealCloud (Intapp) is tenant-specific: opts site (e.g. acme.dealcloud.com) and objects (entry type
