@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api, api2, dealNotes, DealSnapshot, LegalOut } from "./api";
 import { useLoad } from "./hooks";
 import { SourceChip } from "./source";
-import { Badge, Button, Card, CardHead, Empty, ErrorLine } from "./ui";
+import { Badge, Button, Card, CardHead, Empty, ErrorLine, Loading } from "./ui";
 import { NotesPanel } from "./Notes";
 
 const TYPES = [["nda", "NDA"], ["spa", "SPA"], ["credit", "Credit agreement"]] as const;
@@ -40,6 +40,7 @@ export function DealWorkspace({ deal }: { deal: string }) {
           })}
         </div>
       )}
+      {docs.loading && <Loading />}
       {docs.data?.length === 0 && <Empty>No documents tagged to this deal yet. Upload with the deal name or import from an integration.</Empty>}
       <ul className="divide-y divide-line">
         {docs.data?.map((d) => (

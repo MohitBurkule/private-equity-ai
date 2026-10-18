@@ -5,7 +5,7 @@ import { useLoad } from "./hooks";
 import { filterDocs } from "./libraryFilter";
 import { loadViews, saveViews, SavedView } from "./savedViews";
 import { SourceChip } from "./source";
-import { Button, Card, CardHead, Empty, ErrorLine, Input } from "./ui";
+import { Button, Card, CardHead, Empty, ErrorLine, Input, Loading } from "./ui";
 
 export function Documents() {
   const docs = useLoad<DocumentInfo[]>(api.documents);
@@ -46,6 +46,7 @@ export function Documents() {
             <input type="file" className="sr-only" aria-label="Upload a document" accept=".pdf,.xlsx,.docx,.pptx,.eml,.zip,.csv,.html"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) { setBusy(true); void run(async () => { await api.upload(f); docs.reload(); }).finally(() => setBusy(false)); } }} />
           </label>} />
+        {docs.loading && <Loading />}
         {docs.data?.length === 0 && <Empty>No documents yet. Upload a CIM, a 10-K or a spreadsheet to begin.</Empty>}
         {docs.data && docs.data.length > 0 && (
           <div className="px-4 pt-3">
