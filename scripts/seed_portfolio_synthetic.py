@@ -28,6 +28,7 @@ PACK_LINES = [
     "Distributions actual 2025 4.0",
     "Equity value 2024 310.0",
     "Equity value 2025 330.0",
+    "Covenant revenue minimum 2025 300.0",
 ]
 
 
@@ -104,6 +105,8 @@ FIGURES = [
     ("distributions", "2025", 4, "GAAP", "Distributions actual 2025 4.0", "actual"),
     ("equity_value", "2024", 310, "GAAP", "Equity value 2024 310.0", "mark"),
     ("equity_value", "2025", 330, "GAAP", "Equity value 2025 330.0", "mark"),
+    # The covenant threshold: a cited figure, not an observation, so it has no kind.
+    ("covenant revenue minimum", "2025", 300, "GAAP", "Covenant revenue minimum 2025 300.0", None),
 ]
 # Scanned copy: the quote is only in OCR text, so /facts stores it ocr_unverified and it waits in the review queue.
 SCAN_LINES = ("SYNTHETIC scanned pack. Not a real company.", "Revenue forecast 2027 440.0")
@@ -116,6 +119,7 @@ s, company = call("POST", "/portfolio/companies", {"name": HOLDING, "sector": "I
 if s != 201:
     sys.exit(f"holding failed: {s} {company}")
 cid = company["id"]
+threshold_id = None
 for metric, period, value, basis, quote, kind in FIGURES:
     s, fact = call("POST", "/facts", {"entity": HOLDING, "metric": metric, "period": period,
                                        "value": str(value * M), "unit": "USD", "document_id": doc, "page": 1,
@@ -124,8 +128,17 @@ for metric, period, value, basis, quote, kind in FIGURES:
         print(f"fact {metric} {period} rejected: {fact}")
         continue
     call("POST", f"/facts/{fact['id']}/review", {"action": "accept"})
+    if kind is None:
+        threshold_id = fact["id"]
+        continue
     s, obs = call("POST", f"/portfolio/companies/{cid}/observations?fact_id={fact['id']}&kind={kind}")
     print(f"{kind} {metric} {period}: {'ok' if s in (200, 201) else obs}")
+# One covenant on the holding: revenue must stay at or above the cited minimum. Its test reads the actual
+# revenue observation, so the demo shows one test and no breach.
+if threshold_id is not None:
+    s, cov = call("POST", f"/portfolio/companies/{cid}/covenants",
+                  {"kpi_metric": "revenue", "operator": ">=", "threshold_fact_id": threshold_id})
+    print(f"covenant revenue >= minimum: {'ok' if s == 201 else cov}")
 
 metric, period, value, basis, quote = LAYOUT_ONLY
 s, fact = call("POST", "/facts", {"entity": HOLDING, "metric": metric, "period": period, "value": str(value * M),
