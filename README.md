@@ -64,6 +64,28 @@ Known rough edges: `/ask` and auto-extraction need an LLM key and have not run a
 - Data sources: SEC XBRL cross-check and filings list; Companies House filing list, officers and PSC (keyed API), PSC snapshot extractor, Basic Company Data parser, SH01 capital-form reader; holdings CSV import (Seedrs, Crowdcube and similar exports, header-mapped); market quotes from Yahoo, Stooq and FactSet (`/market/quote`); PitchBook, Crowdcube and Seedrs/Republic CSV exports turned into cited facts (`/documents/{id}/vendor-facts`).
 - Eval dashboard in the UI; React UI for all of the above.
 
+## Screenshots
+Captured from the running UI.
+
+| | |
+| --- | --- |
+| ![Key screen](docs/screenshots/01-key-screen.png) | ![Chat inbox](docs/screenshots/02-home-chat-inbox.png) |
+| API key sign-in | Home: chat and inbox |
+| ![Cited answer](docs/screenshots/03-chat-answer.png) | ![Source drawer](docs/screenshots/04-chat-source-drawer.png) |
+| Answer with citations | Source drawer: quote on the cited page |
+| ![Documents](docs/screenshots/05-documents.png) | ![Deals](docs/screenshots/06-deals.png) |
+| Document library | Deals pipeline |
+| ![Portfolio](docs/screenshots/07-portfolio.png) | ![Dashboards](docs/screenshots/08-dashboards.png) |
+| Portfolio KPIs | Dashboards |
+| ![Review queue](docs/screenshots/09-review.png) | ![Evals](docs/screenshots/10-evals.png) |
+| Reviewer queue for unverified facts | Eval dashboard |
+| ![Comps](docs/screenshots/11-comps.png) | ![Integrations](docs/screenshots/12-integrations.png) |
+| Comparable companies | Data source integrations |
+| ![Firm profile](docs/screenshots/13-firm-profile.png) | ![Workflows](docs/screenshots/14-workflows.png) |
+| Firm profile and rules | Workflows |
+| ![Targets](docs/screenshots/15-targets.png) | |
+| Targets | |
+
 ## What does not work yet
 - Dense retrieval (BM25 recall@10 is 0.57 on the sample set; no model downloads in the build sandbox).
 - A PitchBook API client (only its CSV export is read), and real keyed responses for FactSet and Companies House: test fixtures are synthetic until someone with a licence or key saves real responses.
