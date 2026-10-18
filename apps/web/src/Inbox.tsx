@@ -3,22 +3,27 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { api, api2 } from "./api";
 import { fmtAmount } from "./format";
-import { Badge, Card, CardHead, Empty } from "./ui";
+import { Badge, Card, CardHead, Empty, ErrorLine } from "./ui";
 
 interface Item { key: string; tone: "bad" | "warn" | "acc"; icon: ReactNode; title: string; body: string; go: string }
 
 /** Proactive inbox: alerts computed from the user's own data every time the app opens. */
 export function Inbox({ onGo }: { onGo: (tab: string) => void }) {
   const [items, setItems] = useState<Item[] | null>(null);
+  const [error, setError] = useState("");
   useEffect(() => {
     const load = async () => {
       const out: Item[] = [];
       const day = new Date(Date.now() - 864e5).toISOString();
+      // A failed source must not read as "nothing needs attention": count the failures and say so when every source failed.
+      const failures: string[] = [];
+      const soft = <T,>(p: Promise<T>, fallback: T) => p.catch((e: unknown) => { failures.push(String(e)); return fallback; });
       const [brief, report, conflicts, queue, deals] = await Promise.all([
-        api2.brief(day).catch(() => null), api2.report().catch(() => null), api2.conflicts().catch(() => []),
-        Promise.all([api2.facts("auto"), api2.facts("ocr_unverified")]).then((a) => a.flat()).catch(() => []),
-        api2.deals().catch(() => []),
+        soft(api2.brief(day), null), soft(api2.report(), null), soft(api2.conflicts(), []),
+        soft(Promise.all([api2.facts("auto"), api2.facts("ocr_unverified")]).then((a) => a.flat()), []),
+        soft(api2.deals(), []),
       ]);
+      if (failures.length === 5) { setError(failures[0]); setItems(null); return; }
       if (brief && brief.total > 0) {
         const crit = brief.by_severity.critical ?? 0;
         out.push({
@@ -51,7 +56,8 @@ export function Inbox({ onGo }: { onGo: (tab: string) => void }) {
     <Card className="flex h-full flex-col">
       <CardHead title="Inbox" hint="Things that need you, found automatically" right={items && <Badge tone={items.length ? "warn" : "ok"}>{items.length}</Badge>} />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {items === null && <Empty>Checking your data...</Empty>}
+        <ErrorLine e={error} />
+        {items === null && !error && <Empty>Checking your data...</Empty>}
         {items?.length === 0 && <Empty><CheckCircle2 className="mx-auto mb-2 text-ok" size={20} />Nothing needs attention.</Empty>}
         <ul className="divide-y divide-line">
           {items?.map((it) => (
