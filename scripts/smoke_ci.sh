@@ -38,6 +38,7 @@ if [ -f "$DATA_DIR/filings/3M_2019_10K.htm" ]; then
   fi
   python3 scripts/seed_portfolio_synthetic.py "http://localhost:8000" "$KEY" | sed "s/^/synthetic: /"
   python3 scripts/seed_peer_ev_synthetic.py "$DATABASE_URL" | sed "s/^/synthetic peers: /"
+  python3 scripts/seed_similar_synthetic.py "http://localhost:8000" "$KEY" | sed "s/^/synthetic similar: /"
   echo "smoke: demo data from $DATA_DIR"
 else
   echo "smoke: demo smoke skipped, no filings at $DATA_DIR/filings; running on an empty tenant"
