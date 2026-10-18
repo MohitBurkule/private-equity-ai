@@ -71,8 +71,8 @@ export function Flagship() {
     <Page title="10-K to IC memo" hint="One run: tagged figures, peers, precedents, legal red flags, LBO and the memo. Each step reports whether it ran, was skipped, or failed, and why.">
       <Card>
         <CardHead title="Run" />
-        <div className="grid gap-3 p-5 sm:grid-cols-4">
-          <label className="text-sm sm:col-span-2">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-3 p-5 sm:grid-cols-4">
+          <label className="min-w-0 text-sm sm:col-span-2">
             <span className="mb-1 block text-xs uppercase tracking-wider text-mut">Document</span>
             <select value={docId} onChange={(e) => setDocId(e.target.value)} aria-label="Document" className="w-full rounded-lg border border-line bg-panel px-2.5 py-2 text-sm">
               {docs.length === 0 && <option value="">No documents uploaded</option>}

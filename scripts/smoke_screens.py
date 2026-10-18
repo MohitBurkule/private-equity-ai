@@ -29,6 +29,11 @@ def on_console(msg, current: dict, failures: list[str]) -> None:
     failures.append(f"{current['name']}: console {msg.text} at {msg.location.get('url', '')}")
 
 
+# A phone-width page that scrolls sideways is a layout bug a desktop run cannot show; the body
+# must fit the viewport at 400px on every screen.
+OVERFLOW_JS = "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
+
+
 def main() -> int:
     base_url, api_key = sys.argv[1], sys.argv[2]
     failures: list[str] = []
@@ -47,6 +52,17 @@ def main() -> int:
             current["name"] = name
             page.locator("nav[aria-label=Sections]").get_by_role("button", name=name, exact=True).click()
             page.wait_for_load_state("networkidle")
+        phone = browser.new_context(viewport={"width": 400, "height": 800}).new_page()
+        phone.goto(base_url)
+        phone.evaluate("(k) => sessionStorage.setItem('pe_api_key', k)", api_key)
+        phone.reload()
+        phone.wait_for_load_state("networkidle")
+        for name in names:
+            phone.locator("nav[aria-label=Sections]").get_by_role("button", name=name, exact=True).click()
+            phone.wait_for_load_state("networkidle")
+            overflow = phone.evaluate(OVERFLOW_JS)
+            if overflow > 0:
+                failures.append(f"{name}: page scrolls sideways by {overflow}px at 400px")
         browser.close()
     print(f"opened {len(names)} screens")
     for line in failures:
