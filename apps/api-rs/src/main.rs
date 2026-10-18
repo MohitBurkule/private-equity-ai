@@ -78,6 +78,7 @@ pub fn app(state: AppState) -> Router {
         .route("/calc/ltm", get(calc::calc_ltm))
         .route("/calc/net-debt", get(calc::calc_net_debt))
         .route("/calc/nwc", get(calc::calc_nwc))
+        .route("/calc/nwc-peg", get(calc::calc_nwc_peg))
         .route("/calc/net-debt-adjusted", get(calc::calc_net_debt_adjusted))
         .route("/admin/keys/:kid", delete(admin::revoke_key))
         .route("/admin/tenants", post(admin::create_tenant))
