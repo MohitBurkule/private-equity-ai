@@ -2,7 +2,7 @@ import { api2, DDRow, DealRow, EvalRunRow, FactRow, Report, STAGES } from "./api
 import { fmtAmount } from "./format";
 import { useLoad } from "./hooks";
 import { SourceChip } from "./source";
-import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input, Page } from "./ui";
+import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input, Loading, Page } from "./ui";
 import { useState } from "react";
 import { DealWorkspace } from "./DealWorkspace";
 
@@ -80,6 +80,7 @@ export function Deals() {
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="New deal name" aria-label="New deal name" /><Button variant="primary" type="submit">Create</Button>
           </form>} />
         <ErrorLine e={deals.error || dd.error} />
+        {deals.loading && <Loading />}
         {deals.data?.length === 0 && <Empty>No deals yet. Create one to start a diligence list.</Empty>}
         <table className="w-full text-sm">
           <tbody>

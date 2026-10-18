@@ -49,6 +49,8 @@ export const Badge = ({ tone = "mut", children }: { tone?: "mut" | "ok" | "bad" 
   </span>
 );
 
+export const Loading = () => <p className="px-5 py-8 text-center text-sm text-mut" role="status">Loading…</p>;
+
 export const Empty = ({ children }: { children: ReactNode }) => (
   <p className="px-5 py-8 text-center text-sm text-mut">{children}</p>
 );
