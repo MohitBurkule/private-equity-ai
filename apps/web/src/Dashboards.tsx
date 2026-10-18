@@ -4,7 +4,7 @@ import { api2, DealRow, Report, STAGES } from "./api";
 import { fmtAmount } from "./format";
 import { useLoad } from "./hooks";
 import { SourceChip } from "./source";
-import { Badge, Button, Card, CardHead, Empty, ErrorLine } from "./ui";
+import { Badge, Button, Card, CardHead, Empty, ErrorLine, Loading } from "./ui";
 
 const tip = { background: "var(--c-panel)", border: "1px solid var(--c-line)", borderRadius: 8, fontSize: 12 };
 
@@ -132,7 +132,9 @@ export function Dashboards() {
     <div className="mx-auto max-w-5xl space-y-5 p-6">
       <div><h1 className="text-xl font-semibold tracking-tight">Dashboards</h1><p className="text-sm text-mut">Click through any chart to the deal or the source page behind it.</p></div>
       <ErrorLine e={report.error || deals.error} />
+      {report.loading && <Loading />}
       {report.data && <KpiBoard report={report.data} />}
+      {deals.loading && <Loading />}
       {deals.data && <Pipeline deals={deals.data} />}
     </div>
   );

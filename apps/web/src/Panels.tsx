@@ -8,7 +8,7 @@ import { DealWorkspace } from "./DealWorkspace";
 
 
 export function ReviewQueue() {
-  const { data, error, reload, setError } = useLoad<FactRow[]>(async () => [
+  const { data, error, loading, reload, setError } = useLoad<FactRow[]>(async () => [
     ...(await api2.facts("auto")), ...(await api2.facts("ocr_unverified")),
   ]);
   const conflicts = useLoad(api2.conflicts);
@@ -18,6 +18,7 @@ export function ReviewQueue() {
       <Card>
         <CardHead title="Waiting for review" />
         <ErrorLine e={error} />
+        {loading && <Loading />}
         {data?.length === 0 && <Empty>Nothing waiting for review.</Empty>}
         <ul className="divide-y divide-line">
           {data?.map((f) => (
@@ -34,6 +35,7 @@ export function ReviewQueue() {
       </Card>
       <Card>
         <CardHead title="Conflicts between documents" hint="Same metric and period, different values. Each value sits beside its own source. Nothing is picked for you." />
+        {conflicts.loading && <Loading />}
         {conflicts.data?.length === 0 && <Empty>No conflicts found.</Empty>}
         <ul className="divide-y divide-line">
           {conflicts.data?.map((c, i) => (
@@ -118,12 +120,13 @@ export function Deals() {
 }
 
 export function PortfolioPanel() {
-  const { data, error } = useLoad<Report>(api2.report);
+  const { data, error, loading } = useLoad<Report>(api2.report);
   return (
     <Page title="Portfolio" hint="Every KPI is tied to a cited fact. Covenants test those KPIs against cited thresholds.">
       <ErrorLine e={error} />
       <Card>
         <CardHead title="Covenant alerts" right={data && <Badge tone={data.breaches.length ? "bad" : "ok"}>{data.breaches.length ? `${data.breaches.length} breach` : "all clear"}</Badge>} />
+        {loading && <Loading />}
         {data?.breaches.length === 0 && <Empty>No breaches in the visible data.</Empty>}
         <ul className="divide-y divide-line">
           {data?.breaches.map((b, i) => (
@@ -155,12 +158,13 @@ export function PortfolioPanel() {
 const isNum = (v: unknown): v is number => typeof v === "number";
 
 export function EvalDashboard() {
-  const { data, error } = useLoad<EvalRunRow[]>(api2.evals);
+  const { data, error, loading } = useLoad<EvalRunRow[]>(api2.evals);
   const bySuite = new Map<string, EvalRunRow[]>();
   data?.forEach((r) => bySuite.set(r.suite, [...(bySuite.get(r.suite) ?? []), r]));
   return (
     <Page title="Evals" hint="How well the system itself performs, tracked run over run.">
       <ErrorLine e={error} />
+      {loading && <Loading />}
       {data?.length === 0 && <Card><Empty>No eval runs recorded. Run evals/record.py to add some.</Empty></Card>}
       {[...bySuite.entries()].map(([suite, runs]) => {
         const latest = runs[0];
