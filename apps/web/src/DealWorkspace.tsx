@@ -45,7 +45,7 @@ export function DealWorkspace({ deal }: { deal: string }) {
         {docs.data?.map((d) => (
           <li key={d.id} className="px-5 py-3">
             <div className="flex flex-wrap items-center gap-3 text-sm">
-              <span className="min-w-0 flex-1 truncate font-medium">{d.filename}</span><span className="tnum text-mut">{d.n_pages} {d.n_pages === 1 ? "page" : "pages"}</span>
+              <span className="min-w-0 flex-1 basis-full truncate font-medium sm:basis-auto">{d.filename}</span><span className="tnum text-mut">{d.n_pages} {d.n_pages === 1 ? "page" : "pages"}</span>
               <SourceChip docId={d.id} page={1} quote="" label="Open" />
               <select aria-label={`Document type of ${d.filename}`} value={type[d.id] ?? "nda"} onChange={(e) => setType({ ...type, [d.id]: e.target.value })} className="rounded-md border border-line bg-bg px-2 py-1">
                 {TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>

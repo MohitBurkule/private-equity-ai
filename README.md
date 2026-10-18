@@ -67,6 +67,8 @@ Captured from the running UI. The first screens are from a real local run with d
 | IC memo run: steps ok, skipped steps show why | Memo revenue chart, FY2023–25, with source line |
 | ![Memo EBITDA (Adjusted) chart, with source line](docs/screenshots/19-memo-ebitda-chart.png) | ![Memo margins and net debt / EBITDA, derived from cited facts](docs/screenshots/20-memo-margins-leverage-chart.png) |
 | Memo EBITDA (Adjusted) chart, with source line | Memo margins and net debt / EBITDA, derived from cited facts |
+| ![Deal workspace at 390px: documents and extract buttons stack](docs/screenshots/35-phone-workspace.png) | ![IC review at 390px](docs/screenshots/36-phone-ic-review.png) |
+| Deal workspace at phone width | IC review at phone width |
 
 ## What does not work yet
 - Dense retrieval (BM25 recall@10 is 0.57 on the sample set; no model downloads in the build sandbox).
