@@ -3433,19 +3433,43 @@ def legal_clause_library(who: Who):
     return {"terms": terms, "playbook": playbook}
 
 
+def _legal_pages(db: Db, doc_id: str) -> list[tuple[int, str]]:
+    """Text the legal extractors read. A plain HTML exhibit is stored as text blocks, not pages, so each block
+    numbers as one page, the same way the flagship and the red-flag scan read it."""
+    pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc_id).order_by(PageRow.number)]
+    if not pages:
+        pages = [(u.idx + 1, u.text) for u in db.query(HtmlUnit).filter_by(document_id=doc_id).order_by(HtmlUnit.idx)]
+    return pages
+
+
 @app.get("/documents/{doc_id}/legal-terms")
 def legal_terms(doc_id: str, doc_type: str, db: Db, who: Who):
     """Key terms (governing law, term, caps, covenants...) as cited sentences. doc_type: nda | spa | credit."""
     _own_doc(db, who, doc_id)
-    pages = [(p.number, p.text) for p in db.query(PageRow).filter_by(document_id=doc_id).order_by(PageRow.number)]
     try:
-        out = legal_mod.extract(pages, doc_type)
+        out = legal_mod.extract(_legal_pages(db, doc_id), doc_type)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     for f in out["findings"]:
         f["document_id"] = doc_id
     out["red_flags"] = legal_mod.red_flags(out)
     return out
+
+
+@app.get("/documents/{doc_id}/playbook-report")
+def playbook_report_get(doc_id: str, doc_type: str, db: Db, who: Who):
+    """Every firm playbook rule checked against one document: flagged, clear, or not_compared. Never clear for a
+    limit that had no number to test."""
+    _own_doc(db, who, doc_id)
+    pages = _legal_pages(db, doc_id)
+    # With no text, every presence rule would read as clear. Refuse instead of reporting an unchecked document as checked.
+    if not pages:
+        raise HTTPException(422, "document has no text pages to check against the playbook")
+    try:
+        out = legal_mod.extract(pages, doc_type)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"document_id": doc_id, "doc_type": doc_type, "rules": legal_mod.playbook_report(out)}
 
 
 @app.get("/precedents/summary")

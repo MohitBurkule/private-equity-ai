@@ -1,4 +1,12 @@
 export interface ValuationRound { id: number; company: string; round_date: string; round_type: string; post_money: string; currency: string; document_id: string; line: number }
+export interface MarketShares {
+  market: string; metric: string; period: string; derived: boolean;
+  market_fact: { fact_id: number; value: string; unit: string } | null;
+  competitors: { entity: string; value: string; share_pct: string; fact_id: number }[];
+  problems: string[];
+}
+export interface PlaybookRule { rule: string; term: string; severity: string; status: "flagged" | "clear" | "not_compared"; text: string }
+export interface PlaybookReport { document_id: string; doc_type: string; rules: PlaybookRule[] }
 export interface AccessReport { deal: string; events: { ts: string; actor: string; action: string; payload: Record<string, unknown> }[]; by_actor: Record<string, number>; note: string }
 export interface BulkDealOut { moved: string[]; refused: { doc_id: string; reason: string }[] }
 export interface DocumentInfo { id: string; filename: string; n_pages: number; deal?: string | null }
@@ -53,6 +61,12 @@ export const api = {
   memo: (entity: string) =>
     fetch(`/api/memo?entity=${encodeURIComponent(entity)}`, { headers: auth() }).then((r) => j<{ markdown: string }>(r)),
   valuationRounds: () => fetch("/api/valuation-rounds", { headers: auth() }).then((r) => j<ValuationRound[]>(r)),
+  playbookReport: (docId: string, docType: string) =>
+    fetch(`/api/documents/${encodeURIComponent(docId)}/playbook-report?doc_type=${encodeURIComponent(docType)}`, { headers: auth() })
+      .then((r) => j<PlaybookReport>(r)),
+  marketShares: (market: string, metric: string, period: string) =>
+    fetch(`/api/market/shares?${new URLSearchParams({ market, metric, period })}`, { headers: auth() })
+      .then((r) => j<MarketShares>(r)),
   accessReport: (deal: string) =>
     fetch(`/api/compliance/access-report?deal=${encodeURIComponent(deal)}`, { headers: auth() }).then((r) => j<AccessReport>(r)),
   bulkDeal: (docIds: string[], deal: string | null) =>

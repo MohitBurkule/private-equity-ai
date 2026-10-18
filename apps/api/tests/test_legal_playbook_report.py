@@ -40,3 +40,31 @@ def test_a_firm_playbook_with_a_looser_limit_clears_the_same_document():
     assert any(f["rule"] == "leverage_loose" for f in red_flags(result))
     assert not any(f["rule"] == "leverage_loose" for f in red_flags(result, firm))
     assert _by_rule(playbook_report(result, firm))["leverage_loose"] == "clear"
+
+
+def test_playbook_report_endpoint_404s_on_a_document_outside_the_tenant():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from tests.helpers import new_tenant
+
+    c = TestClient(app)
+    h = new_tenant(c, "pbr1")
+    assert c.get("/documents/no-such-doc/playbook-report?doc_type=credit", headers=h).status_code == 404
+
+
+def test_playbook_report_reads_an_html_exhibit_stored_as_text_blocks():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from tests.helpers import new_tenant
+
+    c = TestClient(app)
+    h = new_tenant(c, "pbr2")
+    html = (b"<html><body><p>Section 6.01 Financial Covenant. The Total Net Leverage Ratio shall not exceed "
+            b"6.00 to 1.00 as of any quarter end.</p></body></html>")
+    doc = c.post("/documents", headers=h, files={"file": ("credit.html", html, "text/html")}).json()
+    r = c.get(f"/documents/{doc['id']}/playbook-report?doc_type=credit", headers=h)
+    assert r.status_code == 200
+    report = {x["rule"]: x["status"] for x in r.json()["rules"]}
+    assert report["leverage_loose"] == "flagged"

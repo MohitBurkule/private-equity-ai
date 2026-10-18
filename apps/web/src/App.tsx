@@ -31,6 +31,8 @@ import { ResearchDeck } from "./ResearchDeck";
 import { DocumentAccess } from "./DocumentAccess";
 import { ValuationRounds } from "./ValuationRounds";
 import { AccessReport } from "./AccessReport";
+import { MarketShares } from "./MarketShares";
+import { PlaybookReport } from "./PlaybookReport";
 import { BudgetVsActual } from "./BudgetVsActual";
 import { RollForward } from "./RollForward";
 import { LpReport } from "./LpReport";
@@ -66,6 +68,8 @@ const NAV: { id: string; icon: ReactNode }[] = [
   { id: "Candidates", icon: <Briefcase size={16} /> },
   { id: "Dashboards", icon: <BarChart3 size={16} /> },
   { id: "Targets", icon: <Map size={16} /> },
+  { id: "Market shares", icon: <BarChart3 size={16} /> },
+  { id: "Playbook report", icon: <ShieldCheck size={16} /> },
   { id: "Comps", icon: <Calculator size={16} /> },
   { id: "Integrations", icon: <Plug size={16} /> },
   { id: "Workflows", icon: <Workflow size={16} /> },
@@ -166,6 +170,8 @@ export function App() {
         {tab === "Document access" && <DocumentAccess />}
         {tab === "Valuation history" && <ValuationRounds />}
         {tab === "Deal access report" && <AccessReport />}
+        {tab === "Market shares" && <MarketShares />}
+        {tab === "Playbook report" && <PlaybookReport />}
         {tab === "Budget vs actual" && <BudgetVsActual />}
         {tab === "Roll-forward" && <RollForward />}
         {tab === "LP report" && <LpReport />}
