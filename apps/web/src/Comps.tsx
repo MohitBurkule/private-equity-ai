@@ -23,10 +23,10 @@ export function Comps() {
           e.preventDefault(); setErr("");
           api2.comps({ target, peers: peers.split(",").map((p) => p.trim()).filter(Boolean), period, metrics: ms }).then(setOut).catch((e2) => setErr(String(e2)));
         }}>
-          <label className="text-xs text-mut">Target<Input className="mt-1 w-full" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="Target company" /></label>
-          <label className="text-xs text-mut">Period<Input className="mt-1 w-full" value={period} onChange={(e) => setPeriod(e.target.value)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Target<Input className="w-full" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="Target company" /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Period<Input className="w-full" value={period} onChange={(e) => setPeriod(e.target.value)} /></label>
           <label className="text-xs text-mut sm:col-span-2">Peers, comma separated<Input className="mt-1 w-full" value={peers} onChange={(e) => setPeers(e.target.value)} placeholder="Peer A, Peer B, Peer C" /></label>
-          <label className="text-xs text-mut">Metrics<Input className="mt-1 w-full" value={metrics} onChange={(e) => setMetrics(e.target.value)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Metrics<Input className="w-full" value={metrics} onChange={(e) => setMetrics(e.target.value)} /></label>
           <div className="flex items-end"><Button variant="primary" type="submit" disabled={!target || !peers}>Run comps</Button></div>
         </form>
         <ErrorLine e={err} />

@@ -21,8 +21,8 @@ export function PlaybookReport() {
           api.playbookReport(docId.trim(), docType)
             .then((r) => setRules(r.rules)).catch((x) => { setRules(null); setErr(String(x)); }).finally(() => setBusy(false));
         }}>
-          <label className="text-xs text-mut">Document id<Input className="mt-1" value={docId} onChange={(e) => setDocId(e.target.value)} /></label>
-          <label className="text-xs text-mut">Document type<Input className="mt-1" value={docType} onChange={(e) => setDocType(e.target.value)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Document id<Input value={docId} onChange={(e) => setDocId(e.target.value)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Document type<Input value={docType} onChange={(e) => setDocType(e.target.value)} /></label>
           <Button variant="primary" type="submit" disabled={!docId.trim() || busy}>{busy ? "Loading" : "Run playbook"}</Button>
         </form>
       </Card>
@@ -39,7 +39,10 @@ export function PlaybookReport() {
               <li key={r.rule} className="flex flex-wrap items-start gap-3 px-5 py-2.5">
                 <Badge tone={TONE[r.status]}>{LABEL[r.status]}</Badge>
                 <span className="min-w-[10rem] font-medium">{r.term}</span>
-                <span className="flex-1 text-mut">{r.text}</span>
+                <span className="flex-1">
+                  <span className="block text-mut">{r.text}</span>
+                  <span className="block text-xs text-mut">{r.result}</span>
+                </span>
                 <span className="text-xs text-mut">{r.severity}</span>
               </li>
             ))}

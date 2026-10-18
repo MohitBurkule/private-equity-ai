@@ -5,7 +5,7 @@ export interface MarketShares {
   competitors: { entity: string; value: string; share_pct: string; fact_id: number }[];
   problems: string[];
 }
-export interface PlaybookRule { rule: string; term: string; severity: string; status: "flagged" | "clear" | "not_compared"; text: string }
+export interface PlaybookRule { rule: string; term: string; severity: string; status: "flagged" | "clear" | "not_compared"; text: string; result: string }
 export interface PlaybookReport { document_id: string; doc_type: string; rules: PlaybookRule[] }
 export interface AccessReport { deal: string; events: { ts: string; actor: string; action: string; payload: Record<string, unknown> }[]; by_actor: Record<string, number>; note: string }
 export interface BulkDealOut { moved: string[]; refused: { doc_id: string; reason: string }[] }

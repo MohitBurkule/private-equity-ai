@@ -20,7 +20,7 @@ export function LboTies() {
           setBusy(true); setErr("");
           api2.lboWorkbookTies(file).then(setOut).catch((x) => setErr(String(x))).finally(() => setBusy(false));
         }}>
-          <label className="text-xs text-mut">Excel model<Input type="file" accept=".xlsx" className="mt-1" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Excel model<Input type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
           <Button variant="primary" type="submit" disabled={!file || busy}>{busy ? "Checking" : "Check ties"}</Button>
         </form>
       </Card>

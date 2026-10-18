@@ -68,3 +68,10 @@ def test_playbook_report_reads_an_html_exhibit_stored_as_text_blocks():
     assert r.status_code == 200
     report = {x["rule"]: x["status"] for x in r.json()["rules"]}
     assert report["leverage_loose"] == "flagged"
+
+
+def test_each_rule_says_what_its_status_means_for_the_document():
+    report = playbook_report(extract(CREDIT, "credit"))
+    by_status = {r["status"]: r["result"] for r in report}
+    assert set(by_status) == {"flagged", "clear", "not_compared"}
+    assert by_status["clear"].startswith("Checked against this document")

@@ -26,7 +26,7 @@ export function DDQa() {
       <Card>
         <CardHead title="Deal" />
         <form className="flex flex-wrap items-end gap-3 p-5" onSubmit={(e) => { e.preventDefault(); setErr(""); load(); }}>
-          <label className="text-xs text-mut">Deal name<Input className="mt-1" value={deal} onChange={(e) => setDeal(e.target.value)} placeholder="Deal" /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Deal name<Input value={deal} onChange={(e) => setDeal(e.target.value)} placeholder="Deal" /></label>
           <Button variant="primary" type="submit" disabled={!deal}>Load log</Button>
         </form>
       </Card>

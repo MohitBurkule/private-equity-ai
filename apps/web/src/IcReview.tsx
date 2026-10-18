@@ -25,7 +25,7 @@ export function IcReview() {
             .catch((x) => { setReview(null); setPrecedents(null); setErr(String(x)); })
             .finally(() => setBusy(false));
         }}>
-          <label className="text-xs text-mut">Deal name<Input className="mt-1" value={deal} onChange={(e) => setDeal(e.target.value)} placeholder="Deal" /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Deal name<Input value={deal} onChange={(e) => setDeal(e.target.value)} placeholder="Deal" /></label>
           <Button variant="primary" type="submit" disabled={!deal.trim() || busy}>{busy ? "Loading" : "Load record"}</Button>
         </form>
       </Card>

@@ -26,9 +26,9 @@ export function MarketShares() {
           api.marketShares(market.trim(), metric.trim(), period.trim())
             .then(setResult).catch((x) => { setResult(null); setErr(String(x)); }).finally(() => setBusy(false));
         }}>
-          <label className="text-xs text-mut">Market (entity with the size)<Input className="mt-1" value={market} onChange={(e) => setMarket(e.target.value)} /></label>
-          <label className="text-xs text-mut">Metric<Input className="mt-1" value={metric} onChange={(e) => setMetric(e.target.value)} /></label>
-          <label className="text-xs text-mut">Period<Input className="mt-1" value={period} onChange={(e) => setPeriod(e.target.value)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Market (entity with the size)<Input value={market} onChange={(e) => setMarket(e.target.value)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Metric<Input value={metric} onChange={(e) => setMetric(e.target.value)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Period<Input value={period} onChange={(e) => setPeriod(e.target.value)} /></label>
           <Button variant="primary" type="submit" disabled={!ready || busy}>{busy ? "Loading" : "Compute shares"}</Button>
         </form>
       </Card>

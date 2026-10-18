@@ -36,8 +36,8 @@ export function LpReport() {
       <Card>
         <CardHead title="Periods" />
         <form className="flex flex-wrap items-end gap-3 p-5" onSubmit={(e) => { e.preventDefault(); load(); }}>
-          <label className="text-xs text-mut">Period<Input className="mt-1" value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="2026-09" /></label>
-          <label className="text-xs text-mut">Prior period<Input className="mt-1" value={prior} onChange={(e) => setPrior(e.target.value)} placeholder="2026-08" /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Period<Input value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="2026-09" /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Prior period<Input value={prior} onChange={(e) => setPrior(e.target.value)} placeholder="2026-08" /></label>
           <Button variant="primary" type="submit" disabled={!period.trim() || !prior.trim() || busy}>{busy ? "Loading" : "Build report"}</Button>
           {report && <>
             <Button onClick={() => download("docx")}>Download .docx</Button>
