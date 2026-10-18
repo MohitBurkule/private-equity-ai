@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api2, type ConnectorState } from "./api";
 import { useLoad } from "./hooks";
-import { Badge, Button, Card, CardHead, ErrorLine, Input } from "./ui";
+import { Badge, Button, Card, CardHead, ErrorLine, Input, Loading } from "./ui";
 import { healthView } from "./integrationHealth";
 
 const STATE: Record<ConnectorState, { label: string; tone: "ok" | "warn" | "mut" }> = {
@@ -13,7 +13,7 @@ const STATE: Record<ConnectorState, { label: string; tone: "ok" | "warn" | "mut"
 const LABEL: Record<string, string> = { email: "Email", files: "Files and drives", crm: "CRM", chat: "Chat", dataroom: "Data rooms", "market data": "Market data", people: "People" };
 
 export function Integrations() {
-  const { data, error } = useLoad(api2.connectors);
+  const { data, error, loading } = useLoad(api2.connectors);
   const [open, setOpen] = useState("");
   const [token, setToken] = useState("");
   const [deal, setDeal] = useState("");
@@ -30,6 +30,7 @@ export function Integrations() {
       <div><h1 className="text-xl font-semibold tracking-tight">Integrations</h1>
         <p className="text-sm text-mut">Pull documents and records from the tools your team already uses. Everything imported keeps its source link. Tokens are used once and never stored.</p></div>
       <ErrorLine e={error} />
+      {loading && <Loading />}
       {data && <p className="text-sm text-mut">{counts.join(" · ")}</p>}
       {cats.map((cat) => (
         <Card key={cat}>

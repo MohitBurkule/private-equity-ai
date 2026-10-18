@@ -25,6 +25,7 @@ export function DealWorkspace({ deal }: { deal: string }) {
   const docName = new Map((docs.data ?? []).map((d) => [d.id, d.filename] as const));
   return (
     <>
+    {snap.loading && <Loading />}
     {snap.data && <SnapshotCard s={snap.data} />}
     <Card>
       <CardHead title={`Workspace: ${deal}`} hint="Progress, documents and key legal terms" right={sum.data?.pct_complete != null && <Badge tone="acc">{sum.data.pct_complete}% of requests closed</Badge>} />
