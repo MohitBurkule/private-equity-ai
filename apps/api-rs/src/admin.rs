@@ -1,6 +1,7 @@
 //! Port of the admin reads that take ADMIN_TOKEN (app/main.py admin_list_keys and admin_document_access). The token is
 //! read from the environment per request, as FastAPI does. The write routes stay on FastAPI and are relayed.
 
+use crate::audit::log_event;
 use crate::error::ApiError;
 use crate::AppState;
 use axum::{
@@ -176,4 +177,39 @@ pub async fn revoke_key(
         .await?;
     tx.commit().await?;
     Ok(Json(json!({ "revoked": kid })))
+}
+
+/// PUT /admin/tenants/{tenant_id}/pii-redaction: set the tenant's PII flag. Audited under the tenant as "admin".
+/// The tenant is looked up before the body is read, as FastAPI does: an unknown tenant answers 404 first.
+pub async fn set_pii_redaction(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(tenant): Path<String>,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, ApiError> {
+    if !admin_token_ok(&headers) {
+        return Err(forbidden());
+    }
+    let mut tx = tenant_tx(&s, &tenant).await?;
+    let Some(on) = body.get("on").and_then(Value::as_bool) else {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "body must be {\"on\": true or false}",
+        ));
+    };
+    sqlx::query("UPDATE tenant SET pii_redaction = $2 WHERE id = $1")
+        .bind(&tenant)
+        .bind(on)
+        .execute(&mut *tx)
+        .await?;
+    log_event(
+        &mut tx,
+        &tenant,
+        "admin",
+        "tenant.pii_redaction",
+        &json!({ "on": on }),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(Json(json!({ "tenant_id": tenant, "pii_redaction": on })))
 }

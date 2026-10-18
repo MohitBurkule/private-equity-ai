@@ -311,20 +311,29 @@ def main():
                 requests.append((path, name))
         requests.append((f"DELETE /admin/keys/{REVOKE_KID}", "ADMIN"))
         requests.append(("DELETE /admin/keys/nope", "ADMIN"))
+        for flag in [True, False]:
+            requests.append((f"PUT /admin/tenants/{TENANT_ID}/pii-redaction|{json.dumps({'on': flag})}", "ADMIN"))
+        requests.append((f"PUT /admin/tenants/{TENANT_ID}/pii-redaction|{json.dumps({'on': 'yes'})}", "ADMIN"))
+        requests.append(("PUT /admin/tenants/nope/pii-redaction|{\"on\": true}", "ADMIN"))
+        requests.append((f"PUT /admin/tenants/{TENANT_ID}/pii-redaction|{json.dumps({'on': True})}", "NOTOKEN"))
         requests.append((f"DELETE /admin/keys/{REVOKE_KID}", "NOTOKEN"))
         for route in ["/admin/tenants/{t}/keys", "/admin/tenants/{t}/document-access"]:
             for who, tid in [("ADMIN", TENANT_ID), ("ADMIN", "nope"), ("NOTOKEN", TENANT_ID), ("admin", TENANT_ID)]:
                 requests.append((route.format(t=tid), who))
         failures = 0
         for path, who in requests:
-            method, path = path.split(" ", 1) if path.startswith("DELETE ") else ("GET", path)
+            body = None
+            method, path = path.split(" ", 1) if path.startswith(("DELETE ", "PUT ")) else ("GET", path)
+            if method == "PUT":
+                path, body = path.split("|", 1)
+                body = json.loads(body)
             key = keys.get(who) if who else None
             hdr = {"X-Admin-Token": ADMIN_TOKEN} if who == "ADMIN" else None
             results = {}
             for label, base in [("fastapi", FA), ("rust", RS)]:
                 marker = audit_marker(conn)
-                status, body = call(base, path, key, method=method, headers=hdr)
-                results[label] = (status, body, audit_since(conn, marker))
+                status, resp = call(base, path, key, method=method, body=body, headers=hdr)
+                results[label] = (status, resp, audit_since(conn, marker))
             fa, rs = results["fastapi"], results["rust"]
             same = fa[0] == rs[0] and fa[1] == rs[1] and fa[2] == rs[2]
             label = f"{who or 'anon'} {path}"
