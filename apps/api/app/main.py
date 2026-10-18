@@ -3134,6 +3134,14 @@ def kpi_submissions(period: str, db: Db, who: Who):
             if submitted or missing else None}
 
 
+@app.get("/portfolio/submissions/reminders")
+def kpi_reminders(period: Annotated[str, Query(min_length=1, max_length=64)], db: Db, who: Who):
+    """Draft chasers for the portfolio companies with no KPI filed for the period. Drafts only: nothing is sent."""
+    missing = kpi_submissions(period, db, who)["missing"]
+    return [{"company_id": r["company_id"], "name": r["name"],
+             "text": f"Please send your {period} KPI pack. We have nothing on file for it yet."} for r in missing]
+
+
 class CovenantIn(BaseModel):
     kpi_metric: str
     operator: str
