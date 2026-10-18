@@ -131,7 +131,7 @@ def risk_lines(facts: dict[tuple[str, str], tuple[Decimal, str, int]]) -> list[s
 def build_memo_data(db: Session, tenant_id: str, entity: str, scope: set[str] | None = None) -> Memo:
     memo = Memo(entity)
     facts = (db.query(Fact).filter_by(tenant_id=tenant_id, entity=entity, status="verified")
-             .order_by(Fact.period, Fact.metric).all())
+             .order_by(Fact.period, Fact.metric, Fact.id).all())
     by_key: dict[tuple[str, str], Fact] = {}
     note_no: dict[int, int] = {}
     facts = [f for f in facts if fact_visible(f, scope)]
