@@ -37,3 +37,12 @@ def superseded(filenames: dict[int, str]) -> dict[int, int]:
             if ver < newest_ver:
                 out[doc_id] = newest_id
     return out
+
+
+def same_lineage(filenames: dict[int, str]) -> bool:
+    """True when every document is a versioned file of one model: then a disagreement between them is a restatement
+    to read in order, not two sources to reconcile. A single document or any unversioned name is not a lineage."""
+    if len(filenames) < 2:
+        return False
+    parsed = [split_version(n) for n in filenames.values()]
+    return all(ver is not None for _, ver in parsed) and len({base for base, _ in parsed}) == 1
