@@ -59,7 +59,7 @@ SQL
   DATABASE_URL="postgresql+psycopg://app_user@localhost:$PORT/pe_parity" \
   MIGRATE_DATABASE_URL="postgresql+psycopg://postgres@localhost:$PORT/pe_parity" \
   APP_DB_ROLE=app_user ADMIN_TOKEN=test-admin RATE_LIMIT_PER_MIN=0 SPOOL_DIR="$DIR/spool" \
-  GRAPH_BASE_URL="https://127.0.0.1:$GRAPH_PORT/v1.0" SSL_CERT_FILE="$DIR/graph.pem" \
+  PE_TEST_MODE=1 GRAPH_BASE_URL="https://127.0.0.1:$GRAPH_PORT/v1.0" SSL_CERT_FILE="$DIR/graph.pem" \
     nohup python3 -m uvicorn app.main:app --host 127.0.0.1 --port "$FA_PORT" >"$DIR/fastapi.log" 2>&1 &
   echo $! >"$DIR/fastapi.pid"
 )
@@ -69,7 +69,7 @@ wait_http "http://127.0.0.1:$FA_PORT/health" 120
   cd "$ROOT/apps/api-rs"
   cargo build --release --quiet
   DATABASE_URL="postgres://app_user@localhost:$PORT/pe_parity" ADMIN_TOKEN=test-admin \
-  GRAPH_BASE_URL="https://127.0.0.1:$GRAPH_PORT/v1.0" GRAPH_CA_FILE="$DIR/graph.pem" \
+  PE_TEST_MODE=1 GRAPH_BASE_URL="https://127.0.0.1:$GRAPH_PORT/v1.0" GRAPH_CA_FILE="$DIR/graph.pem" \
   FASTAPI_UPSTREAM="http://127.0.0.1:$FA_PORT" RS_BIND="127.0.0.1:$RS_PORT" RATE_LIMIT_PER_MIN=0 \
     nohup ./target/release/pe-api-rs >"$DIR/rust.log" 2>&1 &
   echo $! >"$DIR/rust.pid"

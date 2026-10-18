@@ -428,12 +428,19 @@ pub async fn create_tenant(
     ))
 }
 
-/// Graph base URL: GRAPH_BASE_URL overrides it for tests and staging, as in connectors/graph.py.
-fn graph_base() -> String {
+/// Test-only override (GRAPH_BASE_URL, honoured solely under PE_TEST_MODE=1), as in connectors/graph.py.
+pub fn graph_override() -> Option<String> {
+    if std::env::var("PE_TEST_MODE").ok().as_deref() != Some("1") {
+        return None;
+    }
     std::env::var("GRAPH_BASE_URL")
         .ok()
         .filter(|u| !u.is_empty())
-        .unwrap_or_else(|| "https://graph.microsoft.com/v1.0".to_string())
+}
+
+/// Graph base URL: the test override when active, else production Graph.
+fn graph_base() -> String {
+    graph_override().unwrap_or_else(|| "https://graph.microsoft.com/v1.0".to_string())
 }
 
 /// Percent-encodes everything but unreserved characters (Python quote(email, safe='')).
