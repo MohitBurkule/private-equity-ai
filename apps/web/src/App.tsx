@@ -121,6 +121,8 @@ export function App() {
   const [state, setState] = useState<"checking" | "need-key" | "ok">(getApiKey() ? "checking" : "need-key");
   const [msg, setMsg] = useState("");
   const [tour, setTour] = useState(() => !tourDone());
+  // Each pick bumps `n`, so the Deals screen remounts and selects that deal even when it is already open.
+  const [pick, setPick] = useState<{ deal: string; n: number } | null>(null);
   const [recent, setRecent] = useState(recentDeals);
   useEffect(() => {
     const onChange = () => setRecent(recentDeals());
@@ -153,7 +155,7 @@ export function App() {
         <button onClick={() => { setApiKey(""); check(); }} className="mt-auto flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-mut hover:bg-sunk"><LogOut size={16} />Sign out</button>
       </nav>
       <CommandPalette items={[
-        ...recent.map((d) => ({ id: `deal-${d}`, label: d, hint: "Recent deal", run: () => setTab("Deals") })),
+        ...recent.map((d) => ({ id: `deal-${d}`, label: d, hint: "Recent deal", run: () => { setPick((p) => ({ deal: d, n: (p?.n ?? 0) + 1 })); setTab("Deals"); } })),
         ...NAV.map((n) => ({ id: `nav-${n.id}`, label: n.id, hint: "Section", run: () => setTab(n.id) })),
         { id: "tour", label: "Start guided tour", hint: "Help", run: () => { setTab("Home"); setTour(true); } },
       ]} />
@@ -168,7 +170,7 @@ export function App() {
           </div>
         )}
         {tab === "Documents" && <Documents />}
-        {tab === "Deals" && <Deals />}
+        {tab === "Deals" && <Deals key={pick?.n ?? 0} initial={pick?.deal} />}
         {tab === "Portfolio" && <PortfolioPanel />}
         {tab === "Covenants" && <Covenants />}
         {tab === "Memo" && <Flagship />}
