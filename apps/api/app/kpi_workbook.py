@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.facts import CitationError, reject_unit_mix
 from app.ingest import ingest_xlsx
+from app.kpi_anomaly import flag_anomaly
 from app.models import Fact, FactSource
 from app.portfolio import PortfolioCompany, record_observation
 
@@ -137,6 +138,8 @@ def ingest_kpi_pack(db: Session, tenant_id: str, company_id: int, data: bytes, f
                                            heading=ws.title, anchor=where.split("!", 1)[1])]
                 db.add(fact)
                 db.commit()
-                out.observations.append(record_observation(db, tenant_id, company_id, fact.id).id)
+                obs = record_observation(db, tenant_id, company_id, fact.id)
+                out.observations.append(obs.id)
+                flag_anomaly(db, obs)
         wb.close()
     return out
