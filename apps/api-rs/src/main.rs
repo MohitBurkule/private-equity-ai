@@ -10,6 +10,7 @@ mod auth;
 mod calc;
 mod checklist;
 mod citations;
+mod compliance;
 mod comps;
 mod comps_calc;
 mod dd;
@@ -94,6 +95,7 @@ pub fn app(state: AppState) -> Router {
         .route("/calc/share-ledger", post(shareledger::calc_share_ledger))
         .route("/calc/comps", post(comps_calc::calc_comps))
         .route("/agent/tools", get(agent_catalog::agent_tools))
+        .route("/compliance/access-report", get(compliance::access_report))
         .route("/agent/workflows", get(agent_catalog::agent_workflows))
         .route("/calc/normalized-ebitda", get(calc::calc_normalized_ebitda))
         .route("/calc/revenue-trend", get(calc::calc_revenue_trend))

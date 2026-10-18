@@ -69,7 +69,7 @@ pub async fn log_event(
     Ok(())
 }
 
-type AuditRow = (i32, String, String, String, String);
+pub(crate) type AuditRow = (i32, String, String, String, String);
 type ChainRow = (i32, String, String, String, String, String, String);
 
 /// FastAPI's `limit: int = Query(100, ge=1, le=500)`, checked before the handler runs.
