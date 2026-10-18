@@ -26,7 +26,7 @@ def submit(h, data=None, name="a.docx", **form):
     return r.json()["job_id"]
 
 
-def wait(h, jid, want=("done", "failed"), timeout=20):
+def wait(h, jid, want=("done", "failed"), timeout=90):  # a cold child parse can take 20 s+ under load
     end = time.time() + timeout
     while time.time() < end:
         j = c.get(f"/jobs/{jid}", headers=h).json()
