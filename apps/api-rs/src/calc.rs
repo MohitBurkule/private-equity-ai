@@ -544,3 +544,254 @@ pub async fn calc_ltm(
     tx.commit().await?;
     Ok(Json(c.to_json()))
 }
+
+/// fact_source rows for one fact, in insertion order.
+async fn sources_of(
+    tx: &mut Transaction<'_, Postgres>,
+    id: i32,
+) -> Result<Vec<SourceRow>, ApiError> {
+    Ok(sqlx::query_as(
+        "SELECT document_id, page, quote, kind, section, heading, anchor FROM fact_source \
+         WHERE fact_id = $1 ORDER BY id",
+    )
+    .bind(id)
+    .fetch_all(&mut **tx)
+    .await?)
+}
+
+/// Citation JSON for a fact's sources, as calc output reports them.
+fn citations(srcs: &[SourceRow]) -> Vec<Value> {
+    srcs.iter()
+        .map(|s| {
+            json!({
+                "document_id": s.0,
+                "page": s.1,
+                "locator": locator_label(s.1, s.4.as_deref(), s.5.as_deref(), &s.3, s.6.as_deref()),
+                "quote": s.2,
+            })
+        })
+        .collect()
+}
+
+/// Python normalized_ebitda's line query: visible USD "ebitda_bridge ..." facts for the period, in id order, with status.
+async fn bridge_lines(
+    tx: &mut Transaction<'_, Postgres>,
+    vis: &Visibility,
+    entity: &str,
+    period: &str,
+) -> Result<Vec<(Found, String)>, ApiError> {
+    let rows: Vec<(i32, String, Decimal, String, String, String)> = sqlx::query_as(
+        "SELECT id, metric, value, unit, basis, status FROM fact \
+         WHERE entity = $1 AND period = $2 AND unit = 'USD' AND metric LIKE 'ebitda_bridge %' ORDER BY id",
+    )
+    .bind(entity)
+    .bind(period)
+    .fetch_all(&mut **tx)
+    .await?;
+    let mut out = Vec::new();
+    for (id, metric, value, unit, basis, status) in rows {
+        let srcs = sources_of(tx, id).await?;
+        let doc_ids: Vec<&str> = srcs.iter().map(|s| s.0.as_str()).collect();
+        if !vis.fact_visible(&doc_ids) {
+            continue;
+        }
+        let fact = Found {
+            id,
+            metric,
+            period: period.into(),
+            value: stored(value),
+            unit,
+            basis,
+            sources: citations(&srcs),
+        };
+        out.push((fact, status));
+    }
+    Ok(out)
+}
+
+/// Python normalized_ebitda(): reported EBITDA + reviewed add-backs - deductions. Withheld while any line is unreviewed.
+async fn normalized_ebitda(
+    tx: &mut Transaction<'_, Postgres>,
+    vis: &Visibility,
+    entity: &str,
+    period: &str,
+) -> Result<Calc, ApiError> {
+    let mut c = Calc::new(
+        "Normalized EBITDA".into(),
+        entity,
+        "reported + add-backs - deductions".into(),
+    );
+    c.unit = Some("USD".into());
+    let lines = bridge_lines(tx, vis, entity, period).await?;
+    let unreviewed: Vec<i32> = lines
+        .iter()
+        .filter(|(_, status)| status != "verified" && status != "rejected")
+        .map(|(f, _)| f.id)
+        .collect();
+    if !unreviewed.is_empty() {
+        c.missing.push(format!(
+            "{} bridge line(s) not yet reviewed: ids {:?}",
+            unreviewed.len(),
+            unreviewed
+        ));
+        return Ok(c);
+    }
+    let reported = lines
+        .iter()
+        .filter(|(f, status)| status == "verified" && f.metric == "ebitda_bridge reported")
+        .count();
+    if reported != 1 {
+        c.missing.push(format!(
+            "reported EBITDA: expected one reviewed line, found {reported}"
+        ));
+        return Ok(c);
+    }
+    for (fact, status) in lines {
+        if status != "verified" {
+            continue;
+        }
+        let (role, sign) = match fact
+            .metric
+            .strip_prefix("ebitda_bridge ")
+            .unwrap_or_default()
+        {
+            "reported" => ("reported", 1),
+            "add_back" => ("add_back", 1),
+            "deduction" => ("deduction", -1),
+            _ => continue, // adjusted totals are not summed: the bridge check compares them, nothing else reads them
+        };
+        c.inputs.push(Input { role, sign, fact });
+    }
+    c.value = Some(c.inputs.iter().fold(Decimal::ZERO, |acc, i| {
+        acc + if i.sign < 0 {
+            -i.fact.value
+        } else {
+            i.fact.value
+        }
+    }));
+    Ok(c)
+}
+
+/// Python _row_label: the row name a bridge quote carries after "row:", or the whole quote.
+fn row_label(quote: &str) -> &str {
+    quote.split_once("row:").map_or(quote, |(_, row)| row)
+}
+
+/// Python one_off_flags(): add-backs above 10% of reported EBITDA, excluding standard EBITDA components.
+fn one_off_flags(c: &Calc) -> Vec<Value> {
+    if c.value.is_none() {
+        return Vec::new();
+    }
+    let Some(reported) = c
+        .inputs
+        .iter()
+        .find(|i| i.role == "reported")
+        .map(|i| i.fact.value)
+    else {
+        return Vec::new();
+    };
+    if reported.is_zero() {
+        return Vec::new();
+    }
+    let limit = reported.abs() * Decimal::from(10) / Decimal::from(100);
+    let standard =
+        fancy_regex::Regex::new(r"(?i)interest|\btax|depreciation|amorti[sz]ation|\bd&a\b")
+            .expect("static pattern");
+    c.inputs
+        .iter()
+        .filter(|i| i.role == "add_back" && i.fact.value > limit)
+        .filter(|i| {
+            let quote = i
+                .fact
+                .sources
+                .first()
+                .and_then(|s| s["quote"].as_str())
+                .unwrap_or_default();
+            !standard.is_match(row_label(quote)).unwrap_or(false)
+        })
+        .map(|i| {
+            let first = i.fact.sources.first();
+            json!({
+                "fact_id": i.fact.id,
+                "amount": i.fact.value.to_string(),
+                "quote": first.map_or(Value::Null, |s| s["quote"].clone()),
+                "locator": first.map_or(Value::Null, |s| s["locator"].clone()),
+            })
+        })
+        .collect()
+}
+
+pub async fn calc_normalized_ebitda(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, ApiError> {
+    let (p, mut tx) = principal(&s, &headers).await?;
+    let (entity, period) = entity_period_query(&q)?;
+    let vis = Visibility::load(&mut tx, &p).await?;
+    let c = normalized_ebitda(&mut tx, &vis, &entity, &period).await?;
+    tx.commit().await?;
+    let mut out = c.to_json();
+    out["one_off_flags"] = Value::Array(one_off_flags(&c));
+    Ok(Json(out))
+}
+
+/// Rounds a percentage to one decimal place, half to even, as Python's quantize(Decimal("0.1")).
+fn one_dp(d: Decimal) -> String {
+    let mut r = d.round_dp_with_strategy(1, RoundingStrategy::MidpointNearestEven);
+    r.rescale(1);
+    r.to_string()
+}
+
+/// Python revenue_trend(): revenue, growth on the prior listed period, and normalized EBITDA margin, per period.
+pub async fn calc_revenue_trend(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, ApiError> {
+    let (p, mut tx) = principal(&s, &headers).await?;
+    let missing: Vec<Value> = ["entity", "periods"]
+        .iter()
+        .filter(|name| !q.contains_key(**name))
+        .map(|name| json!({ "type": "missing", "loc": ["query", name], "msg": "Field required", "input": null }))
+        .collect();
+    if !missing.is_empty() {
+        return Err(ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "validation error".into(),
+            Some(Value::Array(missing)),
+        ));
+    }
+    let entity = q["entity"].clone();
+    let vis = Visibility::load(&mut tx, &p).await?;
+    let mut rows = Vec::new();
+    let mut prev: Option<Decimal> = None;
+    for period in split_periods(&q["periods"]) {
+        let mut row = json!({ "period": period, "revenue": null, "growth_pct": null, "ebitda_margin_pct": null });
+        let mut gaps: Vec<String> = Vec::new();
+        match find(&mut tx, &vis, &entity, "revenue", &period).await? {
+            None => gaps.push(format!("revenue for {period}")),
+            Some(rev) => {
+                row["revenue"] = json!(rev.value.to_string());
+                if let Some(pv) = prev.filter(|pv| !pv.is_zero()) {
+                    row["growth_pct"] =
+                        json!(one_dp((rev.value / pv - Decimal::ONE) * Decimal::from(100)));
+                }
+                prev = Some(rev.value);
+                let ebitda = normalized_ebitda(&mut tx, &vis, &entity, &period).await?;
+                match ebitda.value {
+                    Some(e) if !rev.value.is_zero() => {
+                        row["ebitda_margin_pct"] =
+                            json!(one_dp(e / rev.value * Decimal::from(100)));
+                    }
+                    _ if ebitda.missing.is_empty() => gaps.push("normalized EBITDA".into()),
+                    _ => gaps.extend(ebitda.missing),
+                }
+            }
+        }
+        row["missing"] = json!(gaps);
+        rows.push(row);
+    }
+    tx.commit().await?;
+    Ok(Json(json!({ "entity": entity, "rows": rows })))
+}
