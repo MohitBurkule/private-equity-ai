@@ -245,6 +245,14 @@ export const notesFor = (base: string) => ({
 export const dealNotes = (deal: string) => notesFor(`/deals/${encodeURIComponent(deal)}`);
 export const targetNotes = (tid: number) => notesFor(`/targets/${tid}`);
 
+/** A saved memo draft. Whole-tenant keys only: the saved text keeps every figure the builder saw. */
+export interface MemoVersionRow { id: number; number: number; created_by: string; created_at: string }
+export interface MemoVersionDiff {
+  entity: string; from: number; to: number;
+  figure_changes: { label: string; from: string[]; to: string[]; notes_from: string[]; notes_to: string[] }[];
+  claim_changes: { added: string[]; removed: string[] };
+}
+
 export const api2 = {
   targets: (f: TargetFilter) => {
     const p = new URLSearchParams({ limit: "1000" });
@@ -301,6 +309,9 @@ export const api2 = {
   firmReview: (id: number, status: string) => call<unknown>(`/firm-knowledge/${id}/review`, "POST", { status }),
   ddSummary: (deal: string) => call<DDSummary>(`/dd/summary?deal=${encodeURIComponent(deal)}`),
   snapshot: (deal: string) => call<DealSnapshot>(`/deals/${encodeURIComponent(deal)}/snapshot`),
+  memoVersions: (entity: string) => call<{ items: MemoVersionRow[] }>(`/memo/versions?entity=${encodeURIComponent(entity)}`),
+  saveMemoVersion: (entity: string) => call<{ id: number; entity: string; number: number }>(`/memo/versions?entity=${encodeURIComponent(entity)}`, "POST"),
+  memoVersionDiff: (from: number, to: number) => call<MemoVersionDiff>(`/memo/versions/diff?from_id=${from}&to_id=${to}`),
   similar: (deal: string) => call<SimilarOut>(`/deals/${encodeURIComponent(deal)}/similar-decisions`),
   legalTerms: (docId: string, docType: string) => call<LegalOut>(`/documents/${docId}/legal-terms?doc_type=${docType}`),
   conflicts: () => call<Conflict[]>("/facts/conflicts"),
