@@ -3,6 +3,7 @@
 
 mod admin;
 mod agent;
+mod agent_catalog;
 mod alerts;
 mod audit;
 mod auth;
@@ -92,6 +93,8 @@ pub fn app(state: AppState) -> Router {
         .route("/calc/waterfall", post(waterfall::calc_waterfall))
         .route("/calc/share-ledger", post(shareledger::calc_share_ledger))
         .route("/calc/comps", post(comps_calc::calc_comps))
+        .route("/agent/tools", get(agent_catalog::agent_tools))
+        .route("/agent/workflows", get(agent_catalog::agent_workflows))
         .route("/calc/normalized-ebitda", get(calc::calc_normalized_ebitda))
         .route("/calc/revenue-trend", get(calc::calc_revenue_trend))
         .route("/calc/net-debt-adjusted", get(calc::calc_net_debt_adjusted))
