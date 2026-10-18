@@ -6,7 +6,7 @@ Routes it does not serve are relayed to `FASTAPI_UPSTREAM` unchanged, so one URL
 Parity is checked with `make parity` (`scripts/parity.sh`, `parity/run.py`): status, body and audit rows of each
 request must match FastAPI for every key shape.
 
-## Served natively (33)
+## Served natively (34)
 
 | Method | Path |
 | --- | --- |
@@ -23,6 +23,7 @@ request must match FastAPI for every key shape.
 | GET | `/audit` |
 | GET | `/audit/verify` |
 | GET | `/calc/periods` |
+| GET | `/calc/ltm` |
 | GET | `/dd/questions` |
 | GET | `/dd/requests` |
 | GET | `/dd/summary` |
@@ -44,7 +45,7 @@ request must match FastAPI for every key shape.
 | GET | `/workflows` |
 | GET | `/workflows/{wid}/last` |
 
-## Relayed to FastAPI (199)
+## Relayed to FastAPI (198)
 
 Port these in the order listed, one slice per PR, each gated on `make ci` and `make parity`. Comps and legal red
 flags in `GET /memo` (`peers` with `period`, `legal_doc`) also relay until `comps.py` and `legal.py` are ported.
@@ -65,7 +66,6 @@ flags in `GET /memo` (`peers` with `period`, `legal_doc`) also relay until `comp
 | POST | `/calc/comps.docx` |
 | POST | `/calc/comps.pptx` |
 | POST | `/calc/fund-metrics` |
-| GET | `/calc/ltm` |
 | GET | `/calc/net-debt` |
 | GET | `/calc/net-debt-adjusted` |
 | GET | `/calc/normalized-ebitda` |
