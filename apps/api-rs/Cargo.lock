@@ -1042,9 +1042,11 @@ name = "pe-api-rs"
 version = "0.0.1"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "chrono",
  "fancy-regex",
  "hex",
+ "rand 0.8.8",
  "regex",
  "reqwest",
  "rust_decimal",

@@ -2,9 +2,11 @@
 //! read from the environment per request, as FastAPI does. The write routes stay on FastAPI and are relayed.
 
 use crate::audit::log_event;
+use crate::auth::hash_key;
 use crate::error::ApiError;
 use crate::AppState;
 use axum::{
+    body::Bytes,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     Json,
@@ -212,4 +214,216 @@ pub async fn set_pii_redaction(
     .await?;
     tx.commit().await?;
     Ok(Json(json!({ "tenant_id": tenant, "pii_redaction": on })))
+}
+
+/// Python acl.ROLES, in order.
+const ROLES: [&str; 8] = [
+    "admin",
+    "partner",
+    "vp",
+    "associate",
+    "analyst",
+    "compliance",
+    "ir",
+    "viewer",
+];
+
+/// The tuple repr FastAPI puts in the role error.
+fn roles_repr() -> String {
+    format!(
+        "({})",
+        ROLES
+            .iter()
+            .map(|r| format!("'{r}'"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+/// A new key: "pe_" plus 32 random bytes, URL-safe base64 without padding (Python token_urlsafe(32)).
+fn new_key() -> String {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    use rand::RngCore;
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    format!("pe_{}", URL_SAFE_NO_PAD.encode(bytes))
+}
+
+/// Python format_deals: sorted unique names; an empty list stores "", not null.
+fn format_deals(deals: Option<&[String]>) -> Option<String> {
+    deals.map(|d| {
+        let set: BTreeSet<&str> = d
+            .iter()
+            .map(|x| x.trim())
+            .filter(|x| !x.is_empty())
+            .collect();
+        set.into_iter().collect::<Vec<_>>().join(",")
+    })
+}
+
+/// Python format_deal_roles: each name and role is checked, and an override may only name a deal in scope.
+fn format_deal_roles(
+    roles: Option<&BTreeMap<String, String>>,
+    deals: Option<&[String]>,
+) -> Result<Option<String>, ApiError> {
+    let Some(roles) = roles.filter(|r| !r.is_empty()) else {
+        return Ok(None);
+    };
+    for (deal, role) in roles {
+        if deal.contains(':') || deal.contains(',') || deal.trim().is_empty() {
+            return Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!("deal name '{deal}' cannot contain ':' or ','"),
+            ));
+        }
+        if !ROLES.contains(&role.as_str()) {
+            return Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                format!("role '{role}' must be one of {}", roles_repr()),
+            ));
+        }
+        if let Some(d) = deals {
+            if !d.iter().any(|x| x == deal) {
+                return Err(ApiError::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    format!("deal '{deal}' is outside the key's deal scope"),
+                ));
+            }
+        }
+    }
+    Ok(Some(
+        roles
+            .iter()
+            .map(|(d, r)| format!("{d}:{r}"))
+            .collect::<Vec<_>>()
+            .join(","),
+    ))
+}
+
+/// Python format_groups: lower-cased, split on commas, unique and sorted; nothing left means null.
+fn format_groups(groups: Option<&[String]>) -> Option<String> {
+    let groups = groups.filter(|g| !g.is_empty())?;
+    let set: BTreeSet<String> = groups
+        .join(",")
+        .split(',')
+        .map(|g| g.trim().to_lowercase())
+        .filter(|g| !g.is_empty())
+        .collect();
+    (!set.is_empty()).then(|| set.into_iter().collect::<Vec<_>>().join(","))
+}
+
+/// The JSON body of POST /admin/tenants/{id}/keys. Every field is optional, and a missing body means all defaults.
+#[derive(serde::Deserialize, Default)]
+pub struct KeyBody {
+    role: Option<String>,
+    deals: Option<Vec<String>>,
+    deal_roles: Option<BTreeMap<String, String>>,
+    identity: Option<String>,
+    groups: Option<Vec<String>>,
+}
+
+/// POST /admin/tenants/{tenant_id}/keys: issue a key (201). The plain key is shown once; only its hash is stored.
+pub async fn add_key(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(tenant): Path<String>,
+    body: Bytes,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    if !admin_token_ok(&headers) {
+        return Err(forbidden());
+    }
+    let mut tx = tenant_tx(&s, &tenant).await?;
+    let body: KeyBody = if body.is_empty() {
+        KeyBody::default()
+    } else {
+        serde_json::from_slice(&body)
+            .map_err(|e| ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?
+    };
+    let role = body.role.clone().unwrap_or_else(|| "analyst".into());
+    if !ROLES.contains(&role.as_str()) {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("role must be one of {}", roles_repr()),
+        ));
+    }
+    let deals = format_deals(body.deals.as_deref());
+    let deal_roles = format_deal_roles(body.deal_roles.as_ref(), body.deals.as_deref())?;
+    let identity = body
+        .identity
+        .as_deref()
+        .filter(|i| !i.is_empty())
+        .map(str::to_lowercase);
+    let groups = format_groups(body.groups.as_deref());
+    let key = new_key();
+    let hash = hash_key(&key);
+    sqlx::query(
+        "INSERT INTO api_key (key_hash, tenant_id, revoked, role, deals, deal_roles, identity, groups) \
+         VALUES ($1, $2, false, $3, $4, $5, $6, $7)",
+    )
+    .bind(&hash)
+    .bind(&tenant)
+    .bind(&role)
+    .bind(deals)
+    .bind(deal_roles)
+    .bind(identity)
+    .bind(groups)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "key_id": &hash[..12],
+            "role": role,
+            "deals": body.deals,
+            "deal_roles": body.deal_roles,
+            "api_key": key,
+            "note": "store this key now; it is not shown again",
+        })),
+    ))
+}
+
+#[derive(serde::Deserialize)]
+pub struct TenantBody {
+    name: String,
+}
+
+/// POST /admin/tenants: a new tenant with one admin key (201). The tenant id is 8 random bytes in hex.
+pub async fn create_tenant(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<TenantBody>,
+) -> Result<(StatusCode, Json<Value>), ApiError> {
+    if !admin_token_ok(&headers) {
+        return Err(forbidden());
+    }
+    use rand::RngCore;
+    let mut id_bytes = [0u8; 8];
+    rand::thread_rng().fill_bytes(&mut id_bytes);
+    let id = hex::encode(id_bytes);
+    let key = new_key();
+    let hash = hash_key(&key);
+    let mut tx = s.pool.begin().await?;
+    sqlx::query("INSERT INTO tenant (id, name) VALUES ($1, $2)")
+        .bind(&id)
+        .bind(&body.name)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "INSERT INTO api_key (key_hash, tenant_id, revoked, role) VALUES ($1, $2, false, 'admin')",
+    )
+    .bind(&hash)
+    .bind(&id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "tenant_id": id,
+            "api_key": key,
+            "key_id": &hash[..12],
+            "note": "store this key now; it is not shown again",
+        })),
+    ))
 }
