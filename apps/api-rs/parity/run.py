@@ -139,6 +139,11 @@ def seed(conn):
             ("Levered", "d" * 64, "cash", "FY23", 10),
             ("Levered", "d" * 64, "current_liabilities", "FY23", 18),
             ("Levered", "d" * 64, "short_term_debt", "FY23", 0),
+            ("Levered", "d" * 64, "revenue", "FY23", 200),
+            ("Levered", "d" * 64, "revenue", "FY24", 230),
+            ("Levered", "d" * 64, "ebitda_bridge reported", "FY24", 50),
+            ("Levered", "d" * 64, "ebitda_bridge add_back", "FY24", 8),
+            ("Levered", "d" * 64, "ebitda_bridge deduction", "FY24", 3),
             ("Zeta", "e" * 64, "revenue", "FY24", 500),
             ("PeerA", "d" * 64, "enterprise_value", "FY24", 1200),
             ("PeerA", "d" * 64, "revenue", "FY24", 240),
@@ -158,6 +163,17 @@ def seed(conn):
                 " VALUES (%s, %s, 1, %s, 'pdf')",
                 (fact_id, doc, f"{metric} {period} {value}"),
             )
+        # An unreviewed bridge line: normalized EBITDA is withheld until a person reviews it.
+        cur.execute(
+            "INSERT INTO fact (tenant_id, entity, metric, period, value, unit, basis, status)"
+            " VALUES (%s, 'Levered', 'ebitda_bridge reported', 'FY23', 180, 'USD', 'GAAP', 'auto') RETURNING id",
+            (tenant_id,),
+        )
+        cur.execute(
+            "INSERT INTO fact_source (fact_id, document_id, page, quote, kind)"
+            " VALUES (%s, %s, 1, 'ebitda_bridge reported FY23 180', 'pdf')",
+            (cur.fetchone()[0], "d" * 64),
+        )
         cur.execute(
             "INSERT INTO firm_knowledge (tenant_id, key, value, document_id, page, quote, status)"
             " VALUES (%s, 'lp_reporting_tone', 'formal and plain', %s, 2, 'Formal and plain.', 'accepted')",
@@ -366,6 +382,16 @@ def main():
                 "/calc/nwc-peg?entity=Levered&periods=",
                 "/calc/nwc-peg?entity=Zeta&periods=FY24",
                 "/calc/nwc-peg",
+                "/calc/revenue-trend?entity=Levered&periods=FY23,FY24",
+                "/calc/revenue-trend?entity=Levered&periods=FY22,FY24",
+                "/calc/revenue-trend?entity=Zeta&periods=FY24",
+                "/calc/revenue-trend?entity=Levered&periods=",
+                "/calc/revenue-trend",
+                "/calc/normalized-ebitda?entity=Levered&period=FY24",
+                "/calc/normalized-ebitda?entity=Levered&period=FY23",
+                "/calc/normalized-ebitda?entity=Levered&period=FY22",
+                "/calc/normalized-ebitda?entity=Zeta&period=FY24",
+                "/calc/normalized-ebitda",
                 "/calc/net-debt-adjusted?entity=Levered&period=FY24",
                 "/calc/net-debt-adjusted?entity=Levered&period=FY24&include_leases=0",
                 "/calc/net-debt-adjusted?entity=Levered&period=FY23",
