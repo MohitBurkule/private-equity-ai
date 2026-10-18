@@ -246,6 +246,7 @@ from app.report import build_report, build_report_docx
 from app.rls import apply_rls, bind_tenant, install_tenant_hook, verify_app_role
 from app.shareledger import Event as LedgerEvent
 from app.shareledger import reconcile as reconcile_shares
+from app.similar_deals import similar_decisions
 from app.stage_sync import stage_sync as run_stage_sync
 from app.sumcheck import sum_check
 from app.tracing import render_metrics, tracing_middleware
@@ -1518,6 +1519,17 @@ def ic_review(deal: str, db: Db, who: Who):
     return {"deal": deal, "latest": _decision_out(latest) if latest else None,
             "dissents": [_decision_out(d) for d in rows if d.dissent],
             "changed_since_ic": since, "ic_recorded": latest is not None}
+
+
+@app.get("/deals/{name}/similar-decisions")
+def deal_similar_decisions(name: str, db: Db, who: Who):
+    """Past IC decisions on deals with the same SIC division or sponsor. Each row cites its decision id and the rule
+    that matched it. Dissent is listed first. Only deals this key may see are considered."""
+    _visible_deal_or_404(db, who, name)
+    try:
+        return similar_decisions(db, who.tenant, name, deal_scope(db, who))
+    except ValueError as e:
+        raise HTTPException(404, str(e)) from e
 
 
 @app.get("/deals/{name}/snapshot")
