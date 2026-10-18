@@ -6,6 +6,7 @@ server side: the caller sends the previous text. Lines are kept verbatim, includ
 from __future__ import annotations
 
 import difflib
+import re
 
 
 def diff_memos(previous: str, current: str) -> dict:
@@ -19,3 +20,48 @@ def diff_memos(previous: str, current: str) -> dict:
         added += b[j1:j2]
     return {"unchanged": same, "added": [ln for ln in added if ln.strip()],
             "removed": [ln for ln in removed if ln.strip()], "changed": bool(added or removed)}
+
+
+_NUMBER = re.compile(r"[-+(]?[$£€]?\d[\d,]*(?:\.\d+)?%?\)?")
+_NOTE = re.compile(r"\[(\d+)\]")
+
+
+def _body(line: str) -> str:
+    """The line without its [n] source notes, so a note number is never read as a figure."""
+    return _NOTE.sub("", line)
+
+
+def _label(line: str) -> str:
+    return " ".join(_NUMBER.sub(" # ", _body(line)).split())
+
+
+def _numbers(line: str) -> list[str]:
+    return _NUMBER.findall(_body(line))
+
+
+def figure_changes(previous: str, current: str) -> dict:
+    """What changed in figures and claims between two drafts, with the source notes on each side.
+
+    A figure change is a line whose wording is the same once its numbers are masked, but whose numbers differ.
+    Anything else that was added or removed is a claim change. Both sides keep their [n] note references, so a
+    reader can open the source a changed number came from."""
+    d = diff_memos(previous, current)
+    removed = [ln for ln in d["removed"]]
+    added = [ln for ln in d["added"]]
+    figures, claim_removed = [], []
+    unmatched_added = list(added)
+    for old in removed:
+        same_body = next((new for new in unmatched_added if _body(new) == _body(old)), None)
+        if same_body is not None:  # only the source note moved: neither a figure nor a claim change
+            unmatched_added.remove(same_body)
+            continue
+        match = next((new for new in unmatched_added
+                      if _label(new) == _label(old) and _numbers(new) != _numbers(old)), None)
+        if match is None:
+            claim_removed.append(old)
+            continue
+        unmatched_added.remove(match)
+        figures.append({"label": _label(old), "from": _numbers(old), "to": _numbers(match),
+                        "notes_from": _NOTE.findall(old), "notes_to": _NOTE.findall(match)})
+    return {"figure_changes": figures,
+            "claim_changes": {"added": unmatched_added, "removed": claim_removed}}

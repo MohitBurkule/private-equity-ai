@@ -2318,7 +2318,8 @@ def memo_versions_diff(from_id: int, to_id: int, db: Db, who: Who):
     if a is None or b is None or a.tenant_id != who.tenant or b.tenant_id != who.tenant or a.entity != b.entity:
         raise HTTPException(404, "version not found")
     return {"entity": a.entity, "from": a.number, "to": b.number,
-            **memo_diff_mod.diff_memos(a.markdown, b.markdown)}
+            **memo_diff_mod.diff_memos(a.markdown, b.markdown),
+            **memo_diff_mod.figure_changes(a.markdown, b.markdown)}
 
 
 @app.get("/memo/versions/{version_id}")
