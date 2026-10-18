@@ -57,7 +57,7 @@ def extract_pages(path: Path, ocr: bool = False) -> list[Page]:
         if ocr and len(text.strip()) < MIN_TEXT_CHARS:
             from app.parse import ocr as ocr_mod
             if ocr_mod.available():
-                t, conf = ocr_mod.ocr_page(path, i - 1)
+                t, conf, _turn = ocr_mod.ocr_page_oriented(path, i - 1)
                 pages.append(Page(doc_id, i, t, "ocr", conf))
                 continue
             log.warning("page %d has no text layer and OCR is not installed", i)

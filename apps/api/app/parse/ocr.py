@@ -38,7 +38,23 @@ def group_lines(boxes: list[tuple[list[list[float]], str, float]]) -> tuple[str,
     return text, conf
 
 
-def ocr_page(path: Path, index0: int, scale: float = 2.0) -> tuple[str, float]:
+# A page with fewer words than this, read as printed, is tried again turned. Scanned landscape pages and
+# sideways tables come back as near-nothing or as junk; the right turn gives real words.
+MIN_WORDS_UPRIGHT = 15
+TURNS = (90, 270, 180)
+
+
+def word_count(text: str) -> int:
+    return sum(1 for w in text.split() if any(ch.isalnum() for ch in w))
+
+
+def pick_turn(results: dict[int, tuple[str, float]]) -> int:
+    """Given OCR text per turn in degrees, the turn with the most words. Ties keep the earlier turn, so an upright
+    page wins over a turn that reads the same."""
+    return max(results, key=lambda t: (word_count(results[t][0]), -list(results).index(t)))
+
+
+def ocr_page(path: Path, index0: int, scale: float = 2.0, turn: int = 0) -> tuple[str, float]:
     global _engine
     import numpy as np
     import pypdfium2 as pdfium
@@ -46,5 +62,20 @@ def ocr_page(path: Path, index0: int, scale: float = 2.0) -> tuple[str, float]:
     if _engine is None:
         _engine = RapidOCR()
     img = pdfium.PdfDocument(str(path))[index0].render(scale=scale).to_pil()
+    if turn:
+        img = img.rotate(turn, expand=True)
     res, _ = _engine(np.array(img))
     return group_lines(res or [])
+
+
+def ocr_page_oriented(path: Path, index0: int) -> tuple[str, float, int]:
+    """OCR one page, trying the other three turns only when the upright read is nearly empty. Returns the text,
+    its confidence and the turn that was used, so the caller can record it."""
+    text, conf = ocr_page(path, index0)
+    if word_count(text) >= MIN_WORDS_UPRIGHT:
+        return text, conf, 0
+    results = {0: (text, conf)}
+    for t in TURNS:
+        results[t] = ocr_page(path, index0, turn=t)
+    best = pick_turn(results)
+    return results[best][0], results[best][1], best
