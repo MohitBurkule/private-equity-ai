@@ -5,52 +5,9 @@ AI platform for private equity teams: ingest data-room documents, answer questio
 Status: early but running. Private repo, planned to be open-sourced. Architecture, measured results and known gaps: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); diagrams (database, components, deployment): [docs/DIAGRAMS.md](docs/DIAGRAMS.md). Setup and operations: [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
 ## What it does
-An analyst loads deal documents, searches them, and every number in the output links to a quote on a source page. Facts that cannot be verified are refused. Screenshots below are from a real local run with demo data (Apple Q3 FY23 10-Q).
+An analyst loads deal documents, searches them, and every number in the output links to a quote on a source page. Facts that cannot be verified are refused. 
 
-| | |
-|---|---|
-| ![Home](docs/screenshots/03-chat-answer.png) | ![Source drawer](docs/screenshots/04-chat-source-drawer.png) |
-| Chat home with a proactive inbox | Click any citation to read the source page |
-| ![Dashboards](docs/screenshots/08-dashboards.png) | ![Deals](docs/screenshots/06-deals.png) |
-| Interactive dashboards | Deals and diligence tracker |
-| ![Portfolio](docs/screenshots/07-portfolio.png) | ![Documents](docs/screenshots/05-documents.png) |
-| Covenant breach from cited facts | Documents, search, memo |
-| ![Comps](docs/screenshots/11-comps.png) | ![Integrations](docs/screenshots/12-integrations.png) |
-| Comps with a cited implied range | Integrations catalog and import |
-| ![Firm profile](docs/screenshots/13-firm-profile.png) | ![Workflows](docs/screenshots/14-workflows.png) |
-| Firm profile: rules found in your documents | Workflows built from the agent tools |
-| ![Targets](docs/screenshots/15-targets.png) | |
-| Acquisition target map, filter by sector, country, revenue | |
-
-<details>
-<summary>More screens</summary>
-
-| | |
-|---|---|
-| ![Key screen](docs/screenshots/01-key-screen.png) | ![Chat home](docs/screenshots/02-home-chat-inbox.png) |
-| API key sign-in | Chat home |
-| ![Review](docs/screenshots/09-review.png) | ![Evals](docs/screenshots/10-evals.png) |
-| Review queue for unverified facts | Answer evals |
-| ![Deck upload](docs/screenshots/17-deck-upload.png) | ![Memo](docs/screenshots/18-memo-deck-3m.png) |
-| Deck upload | IC memo draft |
-| ![Source page highlight](docs/screenshots/21-source-page-highlight.png) | ![Filing page highlight](docs/screenshots/22-filing-page-highlight.png) |
-| Highlighted source page | Highlighted filing page |
-| ![Dark home](docs/screenshots/23-home-brief-dark.png) | ![Light home](docs/screenshots/24-home-brief-light.png) |
-| Home brief, dark theme | Home brief, light theme |
-| ![Command palette](docs/screenshots/25-command-palette-dark.png) | ![Dark portfolio](docs/screenshots/26-portfolio-dark.png) |
-| Command palette | Portfolio, dark theme |
-| ![Review queue](docs/screenshots/27-review-queue.png) | ![Covenant tracker](docs/screenshots/28-covenant-tracker.png) |
-| Review queue | Covenant tracker |
-| ![LBO returns](docs/screenshots/29-lbo-returns.png) | ![LBO history](docs/screenshots/33-lbo-history.png) |
-| LBO returns | LBO history |
-| ![Integrations status](docs/screenshots/30-integrations-status.png) | ![Sourcing search](docs/screenshots/31-sourcing-search.png) |
-| Integration status | Sourcing search |
-| ![Candidate watch](docs/screenshots/32-candidate-watch.png) | ![Memo screen](docs/screenshots/34-memo-screen.png) |
-| Candidate watch | Memo screen |
-| ![Mailpit inbox](docs/screenshots/16-mailpit-inbox.png) | ![Dashboards seeded](docs/screenshots/19-dashboards-seeded.png) |
-| Alert emails in the local inbox | Dashboards with seeded demo data |
-
-</details>
+Screenshots are in the gallery under [Screenshots](#screenshots).
 
 Known rough edges: `/ask` and auto-extraction need an LLM key and have not run against a real model.
 
@@ -65,26 +22,51 @@ Known rough edges: `/ask` and auto-extraction need an LLM key and have not run a
 - Eval dashboard in the UI; React UI for all of the above.
 
 ## Screenshots
-Captured from the running UI.
+
+Captured from the running UI. The first screens are from a real local run with demo data (Apple Q3 FY23 10-Q). The walkthrough screens (valuation, access report, memo charts, snapshot) use SYNTHETIC demo data, plus XPO facts cited from its FY2025 10-K.
 
 | | |
-| --- | --- |
-| ![Key screen](docs/screenshots/01-key-screen.png) | ![Chat inbox](docs/screenshots/02-home-chat-inbox.png) |
-| API key sign-in | Home: chat and inbox |
-| ![Cited answer](docs/screenshots/03-chat-answer.png) | ![Source drawer](docs/screenshots/04-chat-source-drawer.png) |
-| Answer with citations | Source drawer: quote on the cited page |
-| ![Documents](docs/screenshots/05-documents.png) | ![Deals](docs/screenshots/06-deals.png) |
-| Document library | Deals pipeline |
-| ![Portfolio](docs/screenshots/07-portfolio.png) | ![Dashboards](docs/screenshots/08-dashboards.png) |
-| Portfolio KPIs | Dashboards |
-| ![Review queue](docs/screenshots/09-review.png) | ![Evals](docs/screenshots/10-evals.png) |
-| Reviewer queue for unverified facts | Eval dashboard |
-| ![Comps](docs/screenshots/11-comps.png) | ![Integrations](docs/screenshots/12-integrations.png) |
-| Comparable companies | Data source integrations |
-| ![Firm profile](docs/screenshots/13-firm-profile.png) | ![Workflows](docs/screenshots/14-workflows.png) |
-| Firm profile and rules | Workflows |
-| ![Targets](docs/screenshots/15-targets.png) | |
-| Targets | |
+|---|---|
+| ![Chat home with a proactive inbox](docs/screenshots/03-chat-answer.png) | ![Click any citation to read the source page](docs/screenshots/04-chat-source-drawer.png) |
+| Chat home with a proactive inbox | Click any citation to read the source page |
+| ![Interactive dashboards](docs/screenshots/08-dashboards.png) | ![Deals and diligence tracker](docs/screenshots/06-deals.png) |
+| Interactive dashboards | Deals and diligence tracker |
+| ![Covenant breach from cited facts](docs/screenshots/07-portfolio.png) | ![Documents, search, memo](docs/screenshots/05-documents.png) |
+| Covenant breach from cited facts | Documents, search, memo |
+| ![Comps with a cited implied range](docs/screenshots/11-comps.png) | ![Integrations catalog and import](docs/screenshots/12-integrations.png) |
+| Comps with a cited implied range | Integrations catalog and import |
+| ![Firm profile: rules found in your documents](docs/screenshots/13-firm-profile.png) | ![Workflows built from the agent tools](docs/screenshots/14-workflows.png) |
+| Firm profile: rules found in your documents | Workflows built from the agent tools |
+| ![Acquisition target map, filter by sector, country, revenue](docs/screenshots/15-targets.png) | ![API key sign-in](docs/screenshots/01-key-screen.png) |
+| Acquisition target map, filter by sector, country, revenue | API key sign-in |
+| ![Chat home](docs/screenshots/02-home-chat-inbox.png) | ![Review queue for unverified facts](docs/screenshots/09-review.png) |
+| Chat home | Review queue for unverified facts |
+| ![Answer evals](docs/screenshots/10-evals.png) | ![Deck upload](docs/screenshots/17-deck-upload.png) |
+| Answer evals | Deck upload |
+| ![IC memo draft](docs/screenshots/18-memo-deck-3m.png) | ![Highlighted source page](docs/screenshots/21-source-page-highlight.png) |
+| IC memo draft | Highlighted source page |
+| ![Highlighted filing page](docs/screenshots/22-filing-page-highlight.png) | ![Home brief, dark theme](docs/screenshots/23-home-brief-dark.png) |
+| Highlighted filing page | Home brief, dark theme |
+| ![Home brief, light theme](docs/screenshots/24-home-brief-light.png) | ![Command palette](docs/screenshots/25-command-palette-dark.png) |
+| Home brief, light theme | Command palette |
+| ![Portfolio, dark theme](docs/screenshots/26-portfolio-dark.png) | ![Review queue](docs/screenshots/27-review-queue.png) |
+| Portfolio, dark theme | Review queue |
+| ![Covenant tracker](docs/screenshots/28-covenant-tracker.png) | ![LBO returns](docs/screenshots/29-lbo-returns.png) |
+| Covenant tracker | LBO returns |
+| ![LBO history](docs/screenshots/33-lbo-history.png) | ![Integration status](docs/screenshots/30-integrations-status.png) |
+| LBO history | Integration status |
+| ![Sourcing search](docs/screenshots/31-sourcing-search.png) | ![Candidate watch](docs/screenshots/32-candidate-watch.png) |
+| Sourcing search | Candidate watch |
+| ![Memo screen](docs/screenshots/34-memo-screen.png) | ![Alert emails in the local inbox](docs/screenshots/16-mailpit-inbox.png) |
+| Memo screen | Alert emails in the local inbox |
+| ![Dashboards with seeded demo data](docs/screenshots/19-dashboards-seeded.png) | ![Deal snapshot card above the workspace](docs/screenshots/21-deal-snapshot.png) |
+| Dashboards with seeded demo data | Deal snapshot card above the workspace |
+| ![Valuation rounds, each linked to its source line](docs/screenshots/16-valuation-history.png) | ![Admin report of logged actions on one deal](docs/screenshots/17-deal-access-report.png) |
+| Valuation rounds, each linked to its source line | Admin report of logged actions on one deal |
+| ![IC memo run: steps ok, skipped steps show why](docs/screenshots/22-memo-run.png) | ![Memo revenue chart, FY2023–25, with source line](docs/screenshots/18-memo-revenue-chart.png) |
+| IC memo run: steps ok, skipped steps show why | Memo revenue chart, FY2023–25, with source line |
+| ![Memo EBITDA (Adjusted) chart, with source line](docs/screenshots/19-memo-ebitda-chart.png) | ![Memo margins and net debt / EBITDA, derived from cited facts](docs/screenshots/20-memo-margins-leverage-chart.png) |
+| Memo EBITDA (Adjusted) chart, with source line | Memo margins and net debt / EBITDA, derived from cited facts |
 
 ## What does not work yet
 - Dense retrieval (BM25 recall@10 is 0.57 on the sample set; no model downloads in the build sandbox).
