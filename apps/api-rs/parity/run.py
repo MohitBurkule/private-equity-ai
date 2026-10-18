@@ -6,6 +6,7 @@ Each request is diffed on status, body (key order ignored) and the audit rows it
 Write routes are not replayed: the Rust API relays them to FastAPI, so they match by construction.
 Exits 1 on any difference."""
 
+import hashlib
 import json
 import os
 import sys
@@ -18,6 +19,7 @@ FA = os.environ["PARITY_FASTAPI"]
 RS = os.environ["PARITY_RUST"]
 ADMIN_TOKEN = os.environ["PARITY_ADMIN_TOKEN"]
 TENANT_ID = None
+REVOKE_KID = None
 DSN = os.environ["PARITY_DB_URL"]
 
 
@@ -195,6 +197,11 @@ def seed(conn):
         status, out = call(FA, f"/admin/tenants/{tenant_id}/keys", method="POST", body=body, headers=admin_hdr)
         assert status == 201, out
         keys[name] = out["api_key"]
+    status, out = call(FA, f"/admin/tenants/{tenant_id}/keys", method="POST",
+                       body={"role": "analyst", "deals": None}, headers=admin_hdr)
+    assert status == 201, out
+    global REVOKE_KID
+    REVOKE_KID = hashlib.sha256(out["api_key"].encode()).hexdigest()[:12]
     a = keys["admin"]
     for body in [{"name": "Other"}, {"name": "Zeta", "mnpi": True}]:
         status, out = call(FA, "/deals", a, "POST", body)
@@ -302,17 +309,21 @@ def main():
                 "/memo/versions/1",
             ]:
                 requests.append((path, name))
+        requests.append((f"DELETE /admin/keys/{REVOKE_KID}", "ADMIN"))
+        requests.append(("DELETE /admin/keys/nope", "ADMIN"))
+        requests.append((f"DELETE /admin/keys/{REVOKE_KID}", "NOTOKEN"))
         for route in ["/admin/tenants/{t}/keys", "/admin/tenants/{t}/document-access"]:
             for who, tid in [("ADMIN", TENANT_ID), ("ADMIN", "nope"), ("NOTOKEN", TENANT_ID), ("admin", TENANT_ID)]:
                 requests.append((route.format(t=tid), who))
         failures = 0
         for path, who in requests:
+            method, path = path.split(" ", 1) if path.startswith("DELETE ") else ("GET", path)
             key = keys.get(who) if who else None
             hdr = {"X-Admin-Token": ADMIN_TOKEN} if who == "ADMIN" else None
             results = {}
             for label, base in [("fastapi", FA), ("rust", RS)]:
                 marker = audit_marker(conn)
-                status, body = call(base, path, key, headers=hdr)
+                status, body = call(base, path, key, method=method, headers=hdr)
                 results[label] = (status, body, audit_since(conn, marker))
             fa, rs = results["fastapi"], results["rust"]
             same = fa[0] == rs[0] and fa[1] == rs[1] and fa[2] == rs[2]
