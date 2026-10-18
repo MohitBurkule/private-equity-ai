@@ -293,6 +293,13 @@ def main():
             ("/agent/tools", None),
             ("/agent/workflows", "admin"),
             ("/agent/workflows", "zeta"),
+            ("/compliance/access-report?deal=Atlas", "admin"),
+            ("/compliance/access-report?deal=Atlas", "analyst"),
+            ("/compliance/access-report?deal=Atlas", "scoped_other"),
+            ("/compliance/access-report?deal=Atlas&limit=1", "admin"),
+            ("/compliance/access-report?deal=Atlas&limit=0", "admin"),
+            ("/compliance/access-report?deal=Atlas&limit=5001", "admin"),
+            ("/compliance/access-report", "admin"),
         ]
         for name in ["admin", "scoped_other", "zeta", "analyst"]:
             for path in ["/alerts/brief", "/dd/summary", "/dd/requests", "/dd/requests?deal=Other", "/dd/requests?status=open",
