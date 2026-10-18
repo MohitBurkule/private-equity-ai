@@ -13,6 +13,7 @@ mod citations;
 mod compliance;
 mod comps;
 mod comps_calc;
+mod connectors_list;
 mod dd;
 mod deals;
 mod derived;
@@ -96,6 +97,7 @@ pub fn app(state: AppState) -> Router {
         .route("/calc/comps", post(comps_calc::calc_comps))
         .route("/agent/tools", get(agent_catalog::agent_tools))
         .route("/compliance/access-report", get(compliance::access_report))
+        .route("/connectors", get(connectors_list::list_connectors))
         .route("/agent/workflows", get(agent_catalog::agent_workflows))
         .route("/calc/normalized-ebitda", get(calc::calc_normalized_ebitda))
         .route("/calc/revenue-trend", get(calc::calc_revenue_trend))

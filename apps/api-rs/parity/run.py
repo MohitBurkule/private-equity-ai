@@ -300,6 +300,9 @@ def main():
             ("/compliance/access-report?deal=Atlas&limit=0", "admin"),
             ("/compliance/access-report?deal=Atlas&limit=5001", "admin"),
             ("/compliance/access-report", "admin"),
+            ("/connectors", "admin"),
+            ("/connectors", "analyst"),
+            ("/connectors", "zeta"),
         ]
         for name in ["admin", "scoped_other", "zeta", "analyst"]:
             for path in ["/alerts/brief", "/dd/summary", "/dd/requests", "/dd/requests?deal=Other", "/dd/requests?status=open",

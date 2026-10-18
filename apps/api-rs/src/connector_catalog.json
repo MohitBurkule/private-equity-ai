@@ -1,0 +1,221 @@
+{
+ "catalog": [
+  {
+   "name": "outlook-calendar",
+   "label": "Outlook calendar",
+   "category": "calendar",
+   "auth": "OAuth2 (Graph)"
+  },
+  {
+   "name": "google-calendar",
+   "label": "Google Calendar",
+   "category": "calendar",
+   "auth": "OAuth2"
+  },
+  {
+   "name": "gmail",
+   "label": "Gmail",
+   "category": "email",
+   "auth": "OAuth2"
+  },
+  {
+   "name": "mailpit",
+   "label": "Mailpit (dev inbox)",
+   "category": "email",
+   "auth": "none, local only"
+  },
+  {
+   "name": "imap",
+   "label": "Any IMAP mailbox",
+   "category": "email",
+   "auth": "password / app password"
+  },
+  {
+   "name": "outlook",
+   "label": "Outlook / Exchange",
+   "category": "email",
+   "auth": "OAuth2 (Graph)"
+  },
+  {
+   "name": "gdrive",
+   "label": "Google Drive",
+   "category": "files",
+   "auth": "OAuth2"
+  },
+  {
+   "name": "gsheets",
+   "label": "Google Sheets (two-way)",
+   "category": "files",
+   "auth": "OAuth2"
+  },
+  {
+   "name": "sharepoint",
+   "label": "SharePoint / OneDrive",
+   "category": "files",
+   "auth": "OAuth2 (Graph)"
+  },
+  {
+   "name": "box",
+   "label": "Box",
+   "category": "files",
+   "auth": "OAuth2"
+  },
+  {
+   "name": "dropbox",
+   "label": "Dropbox",
+   "category": "files",
+   "auth": "OAuth2"
+  },
+  {
+   "name": "salesforce",
+   "label": "Salesforce",
+   "category": "crm",
+   "auth": "OAuth2"
+  },
+  {
+   "name": "dealcloud",
+   "label": "DealCloud",
+   "category": "crm",
+   "auth": "OAuth2 client credentials"
+  },
+  {
+   "name": "affinity",
+   "label": "Affinity",
+   "category": "crm",
+   "auth": "API key"
+  },
+  {
+   "name": "hubspot",
+   "label": "HubSpot",
+   "category": "crm",
+   "auth": "OAuth2 / private app token"
+  },
+  {
+   "name": "slack",
+   "label": "Slack",
+   "category": "chat",
+   "auth": "OAuth2"
+  },
+  {
+   "name": "intralinks",
+   "label": "Intralinks",
+   "category": "dataroom",
+   "auth": "bulk export URL"
+  },
+  {
+   "name": "s3",
+   "label": "S3 / object store",
+   "category": "dataroom",
+   "auth": "access key"
+  },
+  {
+   "name": "sftp",
+   "label": "SFTP data room",
+   "category": "dataroom",
+   "auth": "password + pinned host key"
+  },
+  {
+   "name": "datasite",
+   "label": "Datasite",
+   "category": "dataroom",
+   "auth": "bulk export URL"
+  },
+  {
+   "name": "fundadmin",
+   "label": "Fund administrator API",
+   "category": "fund admin",
+   "auth": "bearer token"
+  },
+  {
+   "name": "accounting",
+   "label": "Portfolio-company accounting (ledger API)",
+   "category": "accounting",
+   "auth": "bearer token"
+  },
+  {
+   "name": "carta",
+   "label": "Carta cap table",
+   "category": "cap table",
+   "auth": "bearer token"
+  },
+  {
+   "name": "docusign",
+   "label": "DocuSign envelopes",
+   "category": "signature",
+   "auth": "bearer token"
+  },
+  {
+   "name": "imanage",
+   "label": "iManage Work",
+   "category": "dms",
+   "auth": "bearer token"
+  },
+  {
+   "name": "netdocuments",
+   "label": "NetDocuments",
+   "category": "dms",
+   "auth": "bearer token"
+  },
+  {
+   "name": "capiq",
+   "label": "S&P Capital IQ",
+   "category": "market data",
+   "auth": "licensed API"
+  },
+  {
+   "name": "factset",
+   "label": "FactSet",
+   "category": "market data",
+   "auth": "licensed API"
+  },
+  {
+   "name": "pitchbook",
+   "label": "PitchBook",
+   "category": "market data",
+   "auth": "licensed API / export"
+  },
+  {
+   "name": "linkedin",
+   "label": "LinkedIn",
+   "category": "people",
+   "auth": "member data export (upload)"
+  },
+  {
+   "name": "linkedin-enrichment",
+   "label": "LinkedIn enrichment",
+   "category": "people",
+   "auth": "licence key"
+  }
+ ],
+ "implemented": [
+  "gmail",
+  "outlook",
+  "sharepoint",
+  "gdrive",
+  "box",
+  "dropbox",
+  "gsheets",
+  "imap",
+  "mailpit",
+  "salesforce",
+  "hubspot",
+  "affinity",
+  "dealcloud",
+  "slack",
+  "intralinks",
+  "datasite",
+  "s3",
+  "sftp",
+  "outlook-calendar",
+  "google-calendar",
+  "fundadmin",
+  "accounting",
+  "carta",
+  "docusign",
+  "imanage",
+  "netdocuments"
+ ],
+ "imports": [
+  "linkedin"
+ ]
+}
