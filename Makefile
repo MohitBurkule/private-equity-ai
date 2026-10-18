@@ -23,6 +23,7 @@ ci:  ## Local merge gate (Actions is blocked): ruff, alembic heads, pytest on SQ
 	cd apps/api && python3 -m ruff check . && python3 -m pytest -q tests/test_alembic_heads.py && python3 -m pytest -q
 	bash scripts/test_postgres.sh
 	cd apps/web && npm ci --no-audit --no-fund && npx tsc --noEmit && npx vitest run
+	bash scripts/smoke_ci.sh
 	cd apps/api-rs && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
 	@if command -v helm >/dev/null; then helm lint deploy/helm/pe-platform && helm template pe deploy/helm/pe-platform >/dev/null; \
 	else echo "!!! WARNING: helm not on PATH, SKIPPED helm lint/template for deploy/helm/pe-platform (install helm 3 to run it) !!!" >&2; fi
