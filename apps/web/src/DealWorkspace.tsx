@@ -70,7 +70,7 @@ export function DealWorkspace({ deal }: { deal: string }) {
       {redFlags.length > 0 && (
         <div className="border-t border-line p-5">
           <p className="mb-2 text-sm font-medium">Red flags to review</p>
-          <table className="w-full text-sm"><thead className="text-left text-xs text-mut"><tr><th className="pb-1">Document</th><th>Term</th><th>Value</th><th className="text-right">Page</th></tr></thead>
+          <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-xs text-mut"><tr><th className="pb-1">Document</th><th>Term</th><th>Value</th><th className="text-right">Page</th></tr></thead>
             <tbody>{redFlags.map((f, i) => (
               <tr key={`${f.document_id}-${f.term}-${i}`} className="border-t border-line">
                 <td className="py-1.5">{docName.get(f.document_id) ?? f.document_id.slice(0, 8)}</td>
@@ -78,7 +78,7 @@ export function DealWorkspace({ deal }: { deal: string }) {
                 <td className="tnum">{f.value}</td>
                 <td className="tnum text-right">{f.page}</td>
               </tr>
-            ))}</tbody></table>
+            ))}</tbody></table></div>
         </div>
       )}
     </Card>
@@ -104,7 +104,7 @@ function SnapshotCard({ s }: { s: DealSnapshot }) {
       <CardHead title="Snapshot" hint="Where this deal stands, from the same records as the sections below" right={s.legal_hold && <Badge tone="warn">legal hold</Badge>} />
       <dl className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-4">
         {cells.map(([k, v]) => (
-          <div key={k} className="min-w-0"><dt className="text-xs text-mut">{k}</dt><dd className="truncate text-sm font-medium capitalize">{v}</dd></div>
+          <div key={k} className="min-w-0"><dt className="text-xs text-mut">{k}</dt><dd className="break-words text-sm font-medium capitalize">{v}</dd></div>
         ))}
       </dl>
       {s.ic.changed_documents.length > 0 && (

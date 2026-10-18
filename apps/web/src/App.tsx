@@ -131,8 +131,8 @@ export function App() {
   if (state === "checking") return <p className="p-8 text-mut">Connecting...</p>;
   if (state === "need-key") return <KeyGate onOk={check} message={msg} />;
   return (
-    <div className="flex h-screen">
-      <nav aria-label="Sections" className="flex w-52 shrink-0 flex-col border-r border-line bg-panel p-3">
+    <div className="flex h-screen flex-col md:flex-row">
+      <nav aria-label="Sections" className="flex max-h-44 w-full shrink-0 flex-col overflow-y-auto border-b border-line bg-panel p-3 md:max-h-none md:w-52 md:border-b-0 md:border-r">
         <div className="mb-4 flex items-center gap-2 px-2 py-1"><div className="grid h-7 w-7 place-items-center rounded-lg bg-acc text-bg"><ShieldCheck size={15} /></div><span className="font-semibold tracking-tight">PE Platform</span></div>
         {NAV.map((n) => (
           <button key={n.id} onClick={() => setTab(n.id)} aria-current={tab === n.id ? "page" : undefined}

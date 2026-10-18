@@ -48,7 +48,7 @@ export function IcReview() {
               <ul className="divide-y divide-line text-sm">
                 {review.changed_since_ic.map((d) => (
                   <li key={d.document_id} className="flex justify-between gap-3 p-3">
-                    <span>{d.filename}</span>
+                    <span className="min-w-0 break-words">{d.filename}</span>
                     <span className="text-xs text-mut">{d.created_at ?? ""}</span>
                   </li>
                 ))}
@@ -64,7 +64,7 @@ export function IcReview() {
                 <ul className="divide-y divide-line text-sm">
                   {precedents.precedents.map((p) => (
                     <li key={p.id} className="space-y-1 p-3">
-                      <div className="flex items-center gap-2"><span>{p.deal}</span><Badge tone={TONE[p.outcome as keyof typeof TONE] ?? "mut"}>{p.outcome.replace("_", " ")}</Badge></div>
+                      <div className="flex flex-wrap items-center gap-2"><span className="break-words">{p.deal}</span><Badge tone={TONE[p.outcome as keyof typeof TONE] ?? "mut"}>{p.outcome.replace("_", " ")}</Badge></div>
                       <p className="text-xs text-mut">{p.rationale}</p>
                     </li>
                   ))}
