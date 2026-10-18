@@ -2,10 +2,12 @@
 //! builder makes from cited facts and firm rules. A request that asks for trading comps (peers with a period) or a
 //! legal review (legal_doc) needs modules the Rust API does not have yet, so it is relayed to FastAPI unchanged.
 
+use crate::audit::log_event;
 use crate::auth::principal;
 use crate::citations::locator_label;
 use crate::comps;
 use crate::error::ApiError;
+use crate::legal;
 use crate::memo::BUILT_IN;
 use crate::proxy;
 use crate::visibility::Visibility;
@@ -140,6 +142,7 @@ struct Memo {
     rules: Vec<Rule>,
     risks: Vec<String>,
     comps: Vec<String>,
+    legal: Vec<String>,
 }
 
 /// Python memo.build_memo_data, for a caller whose visible facts are `vis`.
@@ -397,6 +400,11 @@ fn render_memo(entity: &str, m: &Memo) -> String {
         out.push("Trading comps (peers, each cited):".into());
         out.extend(m.comps.iter().map(|c| format!("- {c}")));
     }
+    if !m.legal.is_empty() {
+        out.push(String::new());
+        out.push("Legal red flags (rules, cited):".into());
+        out.extend(m.legal.iter().map(|x| format!("- {x}")));
+    }
     out.push(String::new());
     out.push("Sources:".into());
     out.extend(m.notes.iter().cloned());
@@ -453,11 +461,6 @@ fn render_sections(
     out.push("Sources:".into());
     out.extend(m.notes.iter().cloned());
     out.join("\n") + "\n"
-}
-
-/// _memo_legal needs the legal module: a request that names a legal_doc goes to FastAPI unchanged.
-fn needs_relay(q: &HashMap<String, String>) -> bool {
-    q.get("legal_doc").is_some_and(|v| !v.is_empty())
 }
 
 /// Python `_memo_comps`: peers and a period, or no comps section at all.
@@ -597,11 +600,128 @@ async fn doc_name(
     Ok(row.map(|r| r.0))
 }
 
+/// The memo text for get_memo: facts, comps, then the legal section when a legal_doc is named.
+async fn memo_body(
+    tx: &mut Transaction<'_, Postgres>,
+    p: &crate::auth::Principal,
+    vis: &Visibility,
+    entity: &str,
+    q: &HashMap<String, String>,
+) -> Result<String, ApiError> {
+    let mut m = build_data(tx, vis, entity).await?;
+    memo_comps(tx, vis, &mut m, entity, q).await?;
+    if let Some(doc_id) = q.get("legal_doc").filter(|d| !d.is_empty()) {
+        let flags = memo_legal(tx, p, vis, doc_id).await?;
+        m.legal = legal_lines(doc_id, &flags)?;
+    }
+    Ok(render_memo(entity, &m))
+}
+
+/// Python memo._memo_legal: the document must be visible (404 otherwise), then its type must be recognised (400).
+async fn memo_legal(
+    tx: &mut Transaction<'_, Postgres>,
+    p: &crate::auth::Principal,
+    vis: &Visibility,
+    doc_id: &str,
+) -> Result<Vec<legal::Flag>, ApiError> {
+    own_doc(tx, p, vis, doc_id).await?;
+    let mut pages: Vec<(i32, String)> =
+        sqlx::query_as("SELECT number, text FROM page WHERE document_id = $1 ORDER BY number")
+            .bind(doc_id)
+            .fetch_all(&mut **tx)
+            .await?;
+    if pages.is_empty() {
+        let units: Vec<(i32, String)> =
+            sqlx::query_as("SELECT idx, text FROM html_unit WHERE document_id = $1 ORDER BY idx")
+                .bind(doc_id)
+                .fetch_all(&mut **tx)
+                .await?;
+        pages = units
+            .into_iter()
+            .map(|(idx, text)| (idx + 1, text))
+            .collect();
+    }
+    let Some(doc_type) = legal::detect_doc_type(&pages) else {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "legal_doc is not a recognised nda, spa, credit, lease or employment document",
+        ));
+    };
+    Ok(legal::red_flags(&legal::extract(&pages, doc_type)))
+}
+
+/// Python memo.add_legal: each flag with its playbook text and the quote it cites. An empty list is said out loud.
+fn legal_lines(doc_id: &str, flags: &[legal::Flag]) -> Result<Vec<String>, ApiError> {
+    if flags.is_empty() {
+        return Ok(vec![
+            "No legal red flags in this document under the playbook (rules only).".into(),
+        ]);
+    }
+    let mut out = Vec::new();
+    for f in flags {
+        // An absent-term flag has no quote; Python's .strip() on None raises there, so the whole memo fails.
+        let Some(quote) = &f.quote else {
+            return Err(ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal Server Error",
+            ));
+        };
+        let page = f.page.map_or("None".to_string(), |p| p.to_string());
+        out.push(format!(
+            "{} [{} p.{page}: \"{}\"]",
+            f.text,
+            &doc_id[..8.min(doc_id.len())],
+            quote.trim()
+        ));
+    }
+    Ok(out)
+}
+
+/// Python _own_doc: missing, other-tenant, walled and ACL-hidden documents all answer 404; each read leaves a line.
+async fn own_doc(
+    tx: &mut Transaction<'_, Postgres>,
+    p: &crate::auth::Principal,
+    vis: &Visibility,
+    doc_id: &str,
+) -> Result<(), ApiError> {
+    let doc: Option<(String, Option<String>)> =
+        sqlx::query_as("SELECT id, deal FROM document WHERE id = $1")
+            .bind(doc_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+    let Some((_, deal)) = doc else {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "document not found"));
+    };
+    if !vis.deal_allows(deal.as_deref()) || !vis.acl_allows(doc_id) {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "document not found"));
+    }
+    let actor = format!("key:{}", p.key_id);
+    if let Some(d) = deal.as_deref().filter(|d| vis.visible_mnpi.contains(*d)) {
+        log_event(
+            tx,
+            &p.tenant,
+            &actor,
+            "document.mnpi_access",
+            &json!({ "doc_id": doc_id, "deal": d }),
+        )
+        .await?;
+    }
+    log_event(
+        tx,
+        &p.tenant,
+        &actor,
+        "document.read",
+        &json!({ "doc_id": doc_id, "deal": deal }),
+    )
+    .await?;
+    Ok(())
+}
+
 pub async fn get_memo(State(s): State<AppState>, req: Request) -> Result<Response, ApiError> {
     let query = axum::extract::Query::<HashMap<String, String>>::try_from_uri(req.uri()).ok();
     let q = match query {
-        Some(Query(q)) if !needs_relay(&q) => q,
-        _ => return Ok(proxy::forward(State(s), req).await),
+        Some(Query(q)) => q,
+        None => return Ok(proxy::forward(State(s), req).await),
     };
     let headers: HeaderMap = req.headers().clone();
     let (p, mut tx) = principal(&s, &headers).await?;
@@ -610,10 +730,10 @@ pub async fn get_memo(State(s): State<AppState>, req: Request) -> Result<Respons
         .cloned()
         .ok_or_else(|| ApiError::missing_query("entity"))?;
     let vis = Visibility::load(&mut tx, &p).await?;
-    let mut m = build_data(&mut tx, &vis, &entity).await?;
-    memo_comps(&mut tx, &vis, &mut m, &entity, &q).await?;
+    let out = memo_body(&mut tx, &p, &vis, &entity, &q).await;
+    // _own_doc commits its read trail before a later refusal, so the audit rows stay even when the memo fails.
     tx.commit().await?;
-    let markdown = render_memo(&entity, &m);
+    let markdown = out?;
     Ok(Json(json!({ "entity": entity, "markdown": markdown })).into_response())
 }
 

@@ -13,6 +13,7 @@ mod derived;
 mod documents;
 mod error;
 mod facts;
+mod legal;
 mod memo;
 mod memo_text;
 mod names;
