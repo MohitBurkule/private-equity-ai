@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import tempfile
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -30,6 +31,15 @@ PEER_COUNT = 5
 YEARS = 3
 
 
+def _full_year(r: dict) -> bool:
+    """A 10-K row is a full year only if its period runs about 12 months. A stub (a quarter or a transition
+    period filed in the 10-K) also carries fp FY, so it would otherwise pass as the annual figure."""
+    if not r.get("start"):
+        return True  # instant balance-sheet values have no start date
+    days = (date.fromisoformat(r["end"]) - date.fromisoformat(r["start"])).days
+    return 350 <= days <= 380
+
+
 def annual(facts: dict, tags: tuple[str, ...]) -> list[dict]:
     """Latest full-year 10-K value per period end. Tags are merged in order: a later tag only fills
     period ends the earlier tags do not report, so a company that changed its revenue tag keeps every year."""
@@ -37,7 +47,7 @@ def annual(facts: dict, tags: tuple[str, ...]) -> list[dict]:
     for tag in tags:
         rows = facts.get("facts", {}).get("us-gaap", {}).get(tag, {}).get("units", {}).get("USD", [])
         for r in rows:
-            if r.get("form") != "10-K" or r.get("fp") != "FY" or not r.get("end"):
+            if r.get("form") != "10-K" or r.get("fp") != "FY" or not r.get("end") or not _full_year(r):
                 continue
             if r["end"] not in by_end or (tag == tags[0] and by_end[r["end"]].get("_tag") != tags[0]) or (
                     by_end[r["end"]].get("_tag") == tag and r.get("filed", "") > by_end[r["end"]].get("filed", "")):
