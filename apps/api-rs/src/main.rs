@@ -123,11 +123,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter(|u| !u.is_empty());
     let addr = std::env::var("RS_BIND").unwrap_or_else(|_| "0.0.0.0:8001".into());
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    // GRAPH_CA_FILE trusts an extra CA (tests point the directory calls at a local server with its own certificate).
+    // GRAPH_CA_FILE trusts an extra CA, honoured only under PE_TEST_MODE=1 (tests use a local Graph with its own certificate).
     let mut builder = reqwest::Client::builder();
-    if let Ok(path) = std::env::var("GRAPH_CA_FILE") {
-        let pem = std::fs::read(&path)?;
-        builder = builder.add_root_certificate(reqwest::Certificate::from_pem(&pem)?);
+    if std::env::var("PE_TEST_MODE").ok().as_deref() == Some("1") {
+        if let Ok(path) = std::env::var("GRAPH_CA_FILE") {
+            let pem = std::fs::read(&path)?;
+            builder = builder.add_root_certificate(reqwest::Certificate::from_pem(&pem)?);
+        }
+    }
+    if let Some(base) = admin::graph_override() {
+        eprintln!("warning: GRAPH_BASE_URL override active under PE_TEST_MODE=1: {base}");
     }
     let http = builder.build()?;
     let per_minute = std::env::var("RATE_LIMIT_PER_MIN")

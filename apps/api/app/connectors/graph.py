@@ -1,13 +1,26 @@
 """Microsoft Graph: Outlook mail, plus OneDrive/SharePoint document libraries (one API, one token)."""
 from __future__ import annotations
 
+import logging
 import os
 from urllib.parse import quote
 
 from app.connectors.base import Connector, Item
 
-# GRAPH_BASE_URL is an operator override for tests and staging; production leaves it unset.
-G = os.environ.get("GRAPH_BASE_URL") or "https://graph.microsoft.com/v1.0"
+log = logging.getLogger(__name__)
+PROD_GRAPH = "https://graph.microsoft.com/v1.0"
+
+
+def _graph_base() -> str:
+    # GRAPH_BASE_URL is honoured only under PE_TEST_MODE=1 (parity and local tests); anything else is production Graph.
+    override = os.environ.get("GRAPH_BASE_URL")
+    if override and os.environ.get("PE_TEST_MODE") == "1":
+        log.warning("GRAPH_BASE_URL override active under PE_TEST_MODE=1: %s", override)
+        return override
+    return PROD_GRAPH
+
+
+G = _graph_base()
 
 
 class Outlook(Connector):
