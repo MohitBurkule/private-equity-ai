@@ -2242,6 +2242,12 @@ def _whole_tenant(who: Principal) -> None:
 
 class MemoCommentBody(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
+    assignee: str | None = Field(default=None, max_length=64)
+
+
+class MemoCommentPatch(BaseModel):
+    assignee: str | None = Field(default=None, max_length=64)
+    status: Literal["open", "resolved"] | None = None
 
 
 @app.post("/memo/versions", status_code=201)
@@ -2285,7 +2291,12 @@ def memo_version_get(version_id: int, db: Db, who: Who):
     comments = db.query(MemoComment).filter_by(tenant_id=who.tenant, version_id=v.id).order_by(MemoComment.id).all()
     return {"id": v.id, "entity": v.entity, "number": v.number, "markdown": v.markdown, "created_by": v.created_by,
             "created_at": v.created_at,
-            "comments": [{"id": c.id, "author": c.author, "body": c.body, "created_at": c.created_at} for c in comments]}
+            "comments": [_memo_comment_out(c) for c in comments]}
+
+
+def _memo_comment_out(c: MemoComment) -> dict:
+    return {"id": c.id, "author": c.author, "body": c.body, "created_at": c.created_at,
+            "assignee": c.assignee, "status": c.status}
 
 
 @app.post("/memo/versions/{version_id}/comments", status_code=201)
@@ -2295,10 +2306,26 @@ def memo_version_comment(version_id: int, body: MemoCommentBody, db: Db, who: Wr
     if v is None or v.tenant_id != who.tenant:
         raise HTTPException(404, "version not found")
     c = MemoComment(tenant_id=who.tenant, version_id=v.id, author=actor(who), body=body.body,
-                    created_at=datetime.now(UTC).isoformat(timespec="seconds"))
+                    created_at=datetime.now(UTC).isoformat(timespec="seconds"), assignee=body.assignee,
+                    status="open")
     db.add(c)
     db.commit()
     return {"id": c.id}
+
+
+@app.patch("/memo/comments/{cid}")
+def memo_comment_update(cid: int, body: MemoCommentPatch, db: Db, who: Writer):
+    """Assign a memo comment to someone, or mark it resolved or open again. Fields left out are kept."""
+    _whole_tenant(who)
+    c = db.get(MemoComment, cid)
+    if c is None or c.tenant_id != who.tenant:
+        raise HTTPException(404, "comment not found")
+    if "assignee" in body.model_fields_set:
+        c.assignee = body.assignee
+    if body.status is not None:
+        c.status = body.status
+    db.commit()
+    return _memo_comment_out(c)
 
 
 def get_sec_fetch():
