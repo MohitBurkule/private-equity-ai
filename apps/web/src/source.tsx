@@ -1,8 +1,8 @@
 import { FileText, Minus, Plus, X } from "lucide-react";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { api, PageData } from "./api";
-import { splitAtQuote } from "./highlight";
+import { quotePreview, splitAtQuote } from "./highlight";
 import { Badge, Button } from "./ui";
 
 /** A citation's target: the quote, or an element id (`anchor`) or character offset (`offset`) in an HTML filing. */
@@ -113,12 +113,35 @@ export function SourceProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * A citation chip. Hovering or focusing it shows the quote inline, so a reader can check the claim without
+ * opening the drawer. The drawer is desktop-only, so a tap pins the preview on narrow screens and opens the drawer.
+ */
 export function SourceChip({ docId, page, quote, anchor, offset, label }: Ref & { label?: string }) {
   const open = useOpenSource();
+  const tipId = useId();
+  const [hover, setHover] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const preview = quote ? quotePreview(quote) : "";
+  const showing = preview !== "" && (hover || pinned);
   return (
-    <button onClick={() => open({ docId, page, quote, anchor, offset })}
-      className="inline-flex items-center gap-1 rounded-md border border-acc/40 bg-acc-soft px-1.5 py-0.5 text-[11px] font-medium text-acc hover:border-acc">
-      <FileText size={11} />{label ?? `p.${page}`}
-    </button>
+    <span className="relative inline-flex"
+      onKeyDown={(e) => { if (e.key === "Escape") { setPinned(false); setHover(false); } }}>
+      <button
+        onClick={() => { setPinned(true); open({ docId, page, quote, anchor, offset }); }}
+        onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+        onFocus={() => setHover(true)} onBlur={() => { setHover(false); setPinned(false); }}
+        aria-describedby={showing ? tipId : undefined}
+        className="inline-flex items-center gap-1 rounded-md border border-acc/40 bg-acc-soft px-1.5 py-0.5 text-[11px] font-medium text-acc hover:border-acc">
+        <FileText size={11} />{label ?? `p.${page}`}
+      </button>
+      {showing && (
+        <span id={tipId} role="tooltip"
+          className="absolute bottom-full left-0 z-20 mb-1.5 w-72 max-w-[min(18rem,calc(100vw-32px))] rounded-lg border border-line bg-panel p-2.5 text-left text-xs leading-snug text-fg shadow-lg">
+          <span className="block font-medium text-mut">Page {page}</span>
+          <span className="mt-1 block">&ldquo;{preview}&rdquo;</span>
+        </span>
+      )}
+    </span>
   );
 }
