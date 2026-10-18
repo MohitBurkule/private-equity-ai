@@ -64,6 +64,7 @@ if [ -f "$DATA_DIR/filings/3M_2019_10K.htm" ]; then
   # SYNTHETIC peer EVs and FY2025 revenue so the comps screen has usable peers; no real prices offline.
   python3 scripts/seed_peer_ev_synthetic.py "$DATABASE_URL" | sed 's/^/synthetic peers: /'
   python3 scripts/seed_similar_synthetic.py "http://localhost:$API_PORT" "$KEY" | sed 's/^/synthetic similar: /'
+  python3 scripts/seed_memo_synthetic.py "http://localhost:$API_PORT" "$KEY" | sed 's/^/synthetic memo: /'
   echo "Dated EDGAR cache: data/demo/cache (captured 2026-10-17). Firm rule is synthetic demo text."
 else
   echo "No seed data at $DATA_DIR; the UI starts empty. Add a tenant with POST /admin/tenants."
