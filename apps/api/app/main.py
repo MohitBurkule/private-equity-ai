@@ -255,6 +255,8 @@ apply_rls(_owner, os.environ.get("APP_DB_ROLE"))
 verify_app_role(engine)
 
 jobs_mod.requeue_pending(SessionLocal)
+if os.environ.get("WEBHOOK_DRAIN", "1") != "0":
+    webhooks.start_drainer(SessionLocal)
 notify.start_periodic_scan(SessionLocal)
 MAX_UPLOAD = int(os.environ.get("MAX_UPLOAD_BYTES", str(100 * 1024 * 1024)))
 
@@ -598,14 +600,14 @@ def documents_bulk_deal(body: BulkDealIn, db: Db, who: Writer):
                    "deals": [d for d in (before, body.deal) if d]})  # the deal report matches on these
         moved.append(doc_id)
         moves.append((doc_id, before))
-    db.commit()
-    # Queued after the commit, so a slow or failing receiver cannot undo a move. One post per source deal.
+    # Queued in the same transaction as the moves, so a notice exists exactly when its move does.
     pii = outbound.pii_on(db, who.tenant)
     by_source: dict[str | None, list[str]] = {}
     for doc_id, before in moves:
         by_source.setdefault(before, []).append(doc_id)
     for before, ids in by_source.items():
-        webhooks.enqueue(SessionLocal, who.tenant, "document.moved", ids, before, body.deal, pii=pii)
+        webhooks.queue(db, who.tenant, "document.moved", ids, before, body.deal, pii=pii)
+    db.commit()
     return {"moved": moved, "refused": refused}
 
 
