@@ -146,6 +146,8 @@ export function App() {
       <CommandPalette items={[
         ...NAV.map((n) => ({ id: `nav-${n.id}`, label: n.id, hint: "Section", run: () => setTab(n.id) })),
       ]} />
+      {/* display: contents keeps the screens' own flex layout; the element gives screen readers a main landmark. */}
+      <main className="contents">
       <SourceProvider>
         {tab === "Home" && (
           <div className="flex h-full flex-col overflow-y-auto">
@@ -188,6 +190,7 @@ export function App() {
         {tab === "Review" && <ReviewQueue />}
         {tab === "Evals" && <EvalDashboard />}
       </SourceProvider>
+      </main>
     </div>
   );
 }

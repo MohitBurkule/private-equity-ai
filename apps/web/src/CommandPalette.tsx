@@ -34,7 +34,7 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-[15vh]" onMouseDown={() => setOpen(false)}>
       <div role="dialog" aria-label="Command palette" className="w-full max-w-lg overflow-hidden rounded-2xl border border-line bg-panel shadow-xl" onMouseDown={(e) => e.stopPropagation()}>
-        <form className="flex items-center gap-2 border-b border-line px-4" onSubmit={(e) => { e.preventDefault(); if (shown[sel]) pick(shown[sel]); }}>
+        <form className="flex items-center gap-2 border-b border-line px-4 focus-within:ring-2 focus-within:ring-inset focus-within:ring-acc" onSubmit={(e) => { e.preventDefault(); if (shown[sel]) pick(shown[sel]); }}>
           <Search size={15} className="text-mut" />
           <input ref={input} value={q} onChange={(e) => { setQ(e.target.value); setSel(0); }}
             onKeyDown={(e) => {
