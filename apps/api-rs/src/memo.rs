@@ -13,7 +13,7 @@ use axum::{
 use serde_json::{json, Value};
 
 /// Built-in templates (app/memo_templates.py TEMPLATES), in the order FastAPI lists them.
-const BUILT_IN: &[(&str, &[&str])] = &[
+pub const BUILT_IN: &[(&str, &[&str])] = &[
     ("ic", &["financial", "derived", "risks", "rules"]),
     ("snapshot", &["derived", "risks"]),
 ];

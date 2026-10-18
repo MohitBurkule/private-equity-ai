@@ -88,6 +88,54 @@ def seed(conn):
             " VALUES (%s, 'Other', 'Software peers', 1, %s, '[]', '2026-10-17T12:00:00+00:00', 'seed', '2026-10-17T12:00:00+00:00')",
             (tenant_id, '[{"cik": "1", "name": "Peer A", "revenue": "100", "period": "FY24", "source_url": "https://example.test/a"}]'),
         )
+        cur.execute(
+            "INSERT INTO document (id, tenant_id, sha256, filename, n_pages, kind, deal, created_at)"
+            " VALUES (%s, %s, %s, 'other-10k.pdf', 3, 'pdf', 'Other', '2026-10-17T10:00:00+00:00')",
+            ("d" * 64, tenant_id, "b" * 64),
+        )
+        cur.execute(
+            "INSERT INTO document (id, tenant_id, sha256, filename, n_pages, kind, deal, created_at)"
+            " VALUES (%s, %s, %s, 'zeta-cim.pdf', 3, 'pdf', 'Zeta', '2026-10-17T10:00:00+00:00')",
+            ("e" * 64, tenant_id, "c" * 64),
+        )
+        for entity, doc, metric, period, value in [
+            ("Other", "d" * 64, "revenue", "FY23", 100),
+            ("Other", "d" * 64, "revenue", "FY24", 120),
+            ("Other", "d" * 64, "gross_profit", "FY24", 60),
+            ("Other", "d" * 64, "net_income", "FY24", -5),
+            ("Other", "d" * 64, "operating_cash_flow", "FY24", 30),
+            ("Other", "d" * 64, "capex", "FY24", -10),
+            ("Other", "d" * 64, "long_term_debt", "FY24", 50),
+            ("Other", "d" * 64, "cash", "FY24", 20),
+            ("Zeta", "e" * 64, "revenue", "FY24", 500),
+        ]:
+            cur.execute(
+                "INSERT INTO fact (tenant_id, entity, metric, period, value, unit, basis, status)"
+                " VALUES (%s, %s, %s, %s, %s, 'USD', 'GAAP', 'verified') RETURNING id",
+                (tenant_id, entity, metric, period, value),
+            )
+            fact_id = cur.fetchone()[0]
+            cur.execute(
+                "INSERT INTO fact_source (fact_id, document_id, page, quote, kind)"
+                " VALUES (%s, %s, 1, %s, 'pdf')",
+                (fact_id, doc, f"{metric} {period} {value}"),
+            )
+        cur.execute(
+            "INSERT INTO firm_knowledge (tenant_id, key, value, document_id, page, quote, status)"
+            " VALUES (%s, 'lp_reporting_tone', 'formal and plain', %s, 2, 'Formal and plain.', 'accepted')",
+            (tenant_id, "d" * 64),
+        )
+        cur.execute(
+            "INSERT INTO firm_knowledge (tenant_id, key, value, document_id, page, quote, status)"
+            " VALUES (%s, 'board_meeting_frequency', 'monthly', %s, 1, 'Board meets monthly.', 'accepted')",
+            (tenant_id, "e" * 64),
+        )
+        cur.execute(
+            "INSERT INTO memo_template (tenant_id, name, sections, headings, intro, created_by, created_at)"
+            " VALUES (%s, 'board', '[\"financial\", \"risks\", \"rules\"]', '{\"financial\": \"Numbers\"}',"
+            " 'Draft for the board.', 'seed', '2026-10-17T10:00:00+00:00')",
+            (tenant_id,),
+        )
     for name, body in [
         ("scoped_other", {"role": "analyst", "deals": ["Other"]}),
         ("zeta", {"role": "analyst", "deals": ["Zeta"]}),
@@ -151,6 +199,17 @@ def main():
                 "/deals/Other/peer-sets",
                 "/deals/Zeta/peer-sets",
                 "/deals/Nope/peer-sets",
+                "/memo?entity=Other",
+                "/memo?entity=Zeta",
+                "/memo?entity=Nope",
+                "/memo",
+                "/memo?entity=Other&peers=A,B&period=FY24",
+                "/memo/sections?entity=Other",
+                "/memo/sections?entity=Zeta&template=snapshot",
+                "/memo/sections?entity=Other&template=board",
+                "/memo/sections?entity=Other&template=nope",
+                "/memo/sections?entity=Nope",
+                "/memo/sections",
                 "/documents",
                 "/memo/versions?entity=Other",
                 "/memo/versions/1",
