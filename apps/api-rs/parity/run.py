@@ -17,6 +17,7 @@ import psycopg
 FA = os.environ["PARITY_FASTAPI"]
 RS = os.environ["PARITY_RUST"]
 ADMIN_TOKEN = os.environ["PARITY_ADMIN_TOKEN"]
+TENANT_ID = None
 DSN = os.environ["PARITY_DB_URL"]
 
 
@@ -49,6 +50,8 @@ def seed(conn):
     assert status == 201, out
     keys["admin"] = out["api_key"]
     tenant_id = out["tenant_id"]
+    global TENANT_ID
+    TENANT_ID = tenant_id
     with conn.cursor() as cur:
         for kind, severity, title, created in [
             ("sec_filings", "info", "New 10-Q", "2026-10-15T08:00:00+00:00"),
@@ -155,6 +158,11 @@ def seed(conn):
                 "INSERT INTO page (document_id, number, text) VALUES (%s, 1, %s)",
                 (doc_id, text),
             )
+        cur.execute(
+            "INSERT INTO document_source (tenant_id, document_id, connector, external_id, version, url, acl)"
+            " VALUES (%s, %s, 'sharepoint', 'sp-1', 'v1', 'https://example.test/nda', '[\"alice\"]')",
+            (tenant_id, "f" * 64),
+        )
         cur.execute(
             "INSERT INTO agent_run (id, tenant_id, kind, name, goal, status, steps, result, error, created_at)"
             " VALUES (8001, %s, 'workflow', 'build_firm_profile', NULL, 'done',"
@@ -294,13 +302,17 @@ def main():
                 "/memo/versions/1",
             ]:
                 requests.append((path, name))
+        for route in ["/admin/tenants/{t}/keys", "/admin/tenants/{t}/document-access"]:
+            for who, tid in [("ADMIN", TENANT_ID), ("ADMIN", "nope"), ("NOTOKEN", TENANT_ID), ("admin", TENANT_ID)]:
+                requests.append((route.format(t=tid), who))
         failures = 0
         for path, who in requests:
             key = keys.get(who) if who else None
+            hdr = {"X-Admin-Token": ADMIN_TOKEN} if who == "ADMIN" else None
             results = {}
             for label, base in [("fastapi", FA), ("rust", RS)]:
                 marker = audit_marker(conn)
-                status, body = call(base, path, key)
+                status, body = call(base, path, key, headers=hdr)
                 results[label] = (status, body, audit_since(conn, marker))
             fa, rs = results["fastapi"], results["rust"]
             same = fa[0] == rs[0] and fa[1] == rs[1] and fa[2] == rs[2]
