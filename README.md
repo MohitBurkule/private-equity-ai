@@ -22,6 +22,19 @@ An analyst loads deal documents, searches them, and every number in the output l
 | ![Targets](docs/screenshots/15-targets.png) | |
 | Acquisition target map, filter by sector, country, revenue | |
 
+Walkthrough screens from the demo run (SYNTHETIC demo data, plus XPO facts cited from its FY2025 10-K):
+
+| | |
+|---|---|
+| ![Partner snapshot card](docs/screenshots/21-deal-snapshot.png) | ![Valuation history](docs/screenshots/16-valuation-history.png) |
+| Deal snapshot card above the workspace | Valuation rounds, each linked to its source line |
+| ![Deal access report](docs/screenshots/17-deal-access-report.png) | ![Memo run](docs/screenshots/22-memo-run.png) |
+| Admin report of logged actions on one deal | IC memo run: steps ok, skipped steps show why |
+| ![Memo revenue trend](docs/screenshots/18-memo-revenue-chart.png) | ![Memo EBITDA trend](docs/screenshots/19-memo-ebitda-chart.png) |
+| Memo revenue chart, FY2023–25, with source line | Memo EBITDA (Adjusted) chart, with source line |
+| ![Memo margins and leverage](docs/screenshots/20-memo-margins-leverage-chart.png) | |
+| Memo margins and net debt / EBITDA, derived from cited facts | |
+
 Known rough edges: `/ask` and auto-extraction need an LLM key and have not run against a real model.
 
 ## What works today
