@@ -37,3 +37,49 @@ class Intralinks(DataRoomExport):
 
 class Datasite(DataRoomExport):
     name, label = "datasite", "Datasite"
+
+
+# Room API (listing, permissions). Off unless DATAROOM_API=1: the endpoint paths and JSON shape below are NOT
+# verified against either vendor's documentation, so they are a mock contract for tests and offline demos until a
+# real account confirms them. The export path above is unaffected.
+API_BASE = {"intralinks": "https://api.intralinks.com", "datasite": "https://api.datasite.com"}
+
+
+class DataRoomApi(DataRoomExport):
+    """opts: room_id (required), vendor is taken from the class name. Lists files and permissions for one room."""
+
+    def _api_on(self) -> None:
+        import os
+        if os.environ.get("DATAROOM_API") != "1":
+            raise ConnectorError("data room API is off (set DATAROOM_API=1; endpoint shape unverified)")
+
+    def _get_json(self, path: str):
+        import json
+        base = API_BASE[self.name]
+        return json.loads(self.http(f"{base}{path}", {"Authorization": f"Bearer {self.token}",
+                                                      "Accept": "application/json"}))
+
+    def list_files(self, limit: int = 200) -> list[dict]:
+        self._api_on()
+        room = self.opts.get("room_id", "")
+        if not room:
+            raise ConnectorError("room_id is required")
+        page = self._get_json(f"/rooms/{room}/files?limit={min(limit, 500)}")
+        return [{"path": f.get("path") or f.get("name", ""), "size": int(f.get("size") or 0),
+                 "modified": f.get("modified") or ""} for f in page.get("files", [])]
+
+    def permissions(self) -> list[dict]:
+        self._api_on()
+        room = self.opts.get("room_id", "")
+        if not room:
+            raise ConnectorError("room_id is required")
+        page = self._get_json(f"/rooms/{room}/permissions")
+        return [{"user": p.get("user", ""), "role": p.get("role", "")} for p in page.get("permissions", [])]
+
+
+class IntralinksApi(DataRoomApi):
+    name, label = "intralinks", "Intralinks room API"
+
+
+class DatasiteApi(DataRoomApi):
+    name, label = "datasite", "Datasite room API"
