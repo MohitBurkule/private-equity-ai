@@ -8,6 +8,7 @@ mod checklist;
 mod citations;
 mod dd;
 mod deals;
+mod derived;
 mod documents;
 mod error;
 mod facts;
@@ -68,6 +69,7 @@ pub fn app(state: AppState) -> Router {
         .route("/deals/:name/notes", get(notes::list_deal_notes))
         .route("/deals/:name/peer-sets", get(peer_sets::list_peer_sets))
         .route("/targets/:tid/notes", get(notes::list_target_notes))
+        .route("/facts/derived", get(derived::fact_derived))
         .route("/memo", get(memo_text::get_memo))
         .route("/workflows", get(workflows::list_workflows))
         .route("/workflows/:wid/last", get(workflows::workflow_last))
