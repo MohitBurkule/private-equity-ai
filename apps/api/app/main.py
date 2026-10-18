@@ -142,6 +142,7 @@ from app.edgar import fetch_companyfacts
 from app.email_links import EMAIL_CONNECTORS, links_for
 from app.email_routing import unattached_emails
 from app.envelope_stage import advance, deal_for_subject, parse_connect
+from app.exit_readiness import readiness as exit_readiness
 from app.expert_calls import flags, parse
 from app.extract.rows import _ROWS as ROW_SCHEMAS
 from app.extract.rows import _blocks, extract_rows
@@ -3145,6 +3146,13 @@ def kpis(company_id: int, db: Db, who: Who):
     return [{"metric": o.metric, "period": o.period, "value": str(o.value), "unit": o.unit,
              "fact_id": o.fact_id} for o in current_kpis(db, who.tenant, company_id)
             if fact_visible(db.get(Fact, o.fact_id), scope)]
+
+
+@app.get("/portfolio/companies/{company_id}/exit-readiness")
+def exit_readiness_checks(company_id: int, db: Db, who: Who):
+    """Checks a buyer's diligence would run on the firm's own records: KPI history, current EBITDA and covenant
+    headroom. Each check cites its facts; a check with no data says not_set rather than passing."""
+    return {"checks": exit_readiness(db, who.tenant, company_id, visible_doc_ids(db, who))}
 
 
 @app.get("/portfolio/companies/{company_id}/budget-vs-actual")
