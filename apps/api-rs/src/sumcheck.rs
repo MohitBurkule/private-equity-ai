@@ -3,16 +3,12 @@
 
 use crate::auth::principal;
 use crate::error::ApiError;
-use crate::facts::de_decimal;
+use crate::facts::{de_decimal, Dec};
 use crate::AppState;
 use axum::{extract::State, http::HeaderMap, Json};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{json, Value};
-
-/// One printed part, read the way pydantic reads a Decimal.
-#[derive(Deserialize)]
-struct Part(#[serde(deserialize_with = "de_decimal")] Decimal);
 
 fn zero() -> Decimal {
     Decimal::ZERO
@@ -20,7 +16,7 @@ fn zero() -> Decimal {
 
 #[derive(Deserialize)]
 pub struct SumCheckIn {
-    parts: Vec<Part>,
+    parts: Vec<Dec>,
     #[serde(deserialize_with = "de_decimal")]
     stated: Decimal,
     #[serde(default = "zero", deserialize_with = "de_decimal")]
