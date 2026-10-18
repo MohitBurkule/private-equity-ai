@@ -171,6 +171,7 @@ from app.memo import build_memo, build_memo_docx, build_memo_pptx
 from app.memo_templates import TEMPLATES, build_memo_sections
 from app.migrate import migrate
 from app.model_audit import audit
+from app.model_graph import graph as model_graph
 from app.models import (
     STAGES,
     AgentRun,
@@ -1416,6 +1417,12 @@ async def lbo_workbook_ties(file: Annotated[UploadFile, File()], db: Db, who: Wh
 async def model_audit(file: Annotated[UploadFile, File()], who: Who):
     """Hardcodes in formula rows, #REF! references and external links in an Excel model. Stores nothing."""
     return {"findings": audit(await file.read())}
+
+
+@app.post("/models/graph")
+async def model_graph_route(file: Annotated[UploadFile, File()], who: Who):
+    """Assumptions (typed numbers the formulas read) and outputs (formulas nothing else reads). Stores nothing."""
+    return model_graph(await file.read())
 
 
 OUTCOMES = {"proceed", "pass", "hold", "more_diligence"}
