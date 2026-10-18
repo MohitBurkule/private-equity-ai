@@ -175,6 +175,17 @@ export interface WorkflowInfo { name: string; description: string; inputs: Recor
 export interface FirmRow { id: number; key: string; value: string; status: string; source: { document_id: string; page: number; quote: string } }
 export interface FirmOut { profile: Record<string, FirmRow[]>; coverage: { known: number; total: number; missing: string[] } }
 export interface DDSummary { total: number; closed: number; pct_complete: number | null; by_category: Record<string, { open: number; received: number; waived: number }> }
+/** Past IC decisions on deals sharing a SIC division or sponsor, each with the rule that matched it. */
+export interface SimilarDecision {
+  decision_id: number; deal: string; outcome: string; rationale: string | null;
+  dissent: string | null; dissenter: string | null; recorded_at: string; matched_on: string[];
+}
+export interface SimilarLesson {
+  postmortem_id: number; deal: string; outcome: string; lesson: string;
+  source_url: string | null; recorded_at: string; matched_on: string[];
+}
+export interface SimilarOut { subject: string; matches: SimilarDecision[]; postmortems: SimilarLesson[] }
+
 export interface DealSnapshot {
   deal: string; stage: string; sic: string | null; sponsor: string | null; legal_hold: boolean;
   ic: { recorded: boolean; latest: { outcome: string; recorded_at: string } | null; dissents: number; changed_since_ic: number; changed_documents: { document_id: string; filename: string }[] };
@@ -290,6 +301,7 @@ export const api2 = {
   firmReview: (id: number, status: string) => call<unknown>(`/firm-knowledge/${id}/review`, "POST", { status }),
   ddSummary: (deal: string) => call<DDSummary>(`/dd/summary?deal=${encodeURIComponent(deal)}`),
   snapshot: (deal: string) => call<DealSnapshot>(`/deals/${encodeURIComponent(deal)}/snapshot`),
+  similar: (deal: string) => call<SimilarOut>(`/deals/${encodeURIComponent(deal)}/similar-decisions`),
   legalTerms: (docId: string, docType: string) => call<LegalOut>(`/documents/${docId}/legal-terms?doc_type=${docType}`),
   conflicts: () => call<Conflict[]>("/facts/conflicts"),
   evals: () => call<EvalRunRow[]>("/evals?limit=200"),

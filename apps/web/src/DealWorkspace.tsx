@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, api2, dealNotes, DealSnapshot, LegalOut } from "./api";
+import { api, api2, dealNotes, DealSnapshot, LegalOut, SimilarOut } from "./api";
 import { useLoad } from "./hooks";
 import { SourceChip } from "./source";
 import { Badge, Button, Card, CardHead, Empty, ErrorLine, Loading } from "./ui";
@@ -12,6 +12,7 @@ export function DealWorkspace({ deal }: { deal: string }) {
   const docs = useLoad(() => api.documents().then((d) => d.filter((x) => x.deal === deal)), [deal]);
   const sum = useLoad(() => api2.ddSummary(deal).catch(() => null), [deal]);
   const snap = useLoad(() => api2.snapshot(deal).catch(() => null), [deal]);
+  const similar = useLoad(() => api2.similar(deal).catch(() => null), [deal]);
   const [legal, setLegal] = useState<Record<string, LegalOut>>({});
   const [type, setType] = useState<Record<string, string>>({});
   const [err, setErr] = useState("");
@@ -27,6 +28,7 @@ export function DealWorkspace({ deal }: { deal: string }) {
     <>
     {snap.loading && <Loading />}
     {snap.data && <SnapshotCard s={snap.data} />}
+    {similar.data && <SimilarCard s={similar.data} />}
     <Card>
       <CardHead title={`Workspace: ${deal}`} hint="Progress, documents and key legal terms" right={sum.data?.pct_complete != null && <Badge tone="acc">{sum.data.pct_complete}% of requests closed</Badge>} />
       <ErrorLine e={err || docs.error} />
@@ -90,6 +92,44 @@ export function DealWorkspace({ deal }: { deal: string }) {
 }
 
 /** The partner's one-page view: where the deal stands, what changed since IC, and what is still open. */
+/**
+ * What the firm decided on deals like this one, and what it learned. Decisions with recorded dissent come first, and
+ * each row names the rule that matched it. Shown as history to weigh, never as a recommendation.
+ */
+function SimilarCard({ s }: { s: SimilarOut }) {
+  return (
+    <Card>
+      <CardHead title="Similar past deals" hint="Same SIC division or same sponsor. Each decision is cited by its record; nothing here is a recommendation." />
+      {s.matches.length === 0 && s.postmortems.length === 0 && <Empty>No past decisions share this deal's SIC division or sponsor.</Empty>}
+      <ul className="divide-y divide-line">
+        {s.matches.map((m) => (
+          <li key={m.decision_id} className="px-5 py-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{m.deal}</span>
+              <Badge tone="mut">{m.outcome}</Badge>
+              {m.dissent && <Badge tone="warn">dissent recorded</Badge>}
+              <span className="text-xs text-mut">matched on {m.matched_on.join(", ")} · decision #{m.decision_id}</span>
+            </div>
+            {m.rationale && <p className="mt-1 text-mut">{m.rationale}</p>}
+            {m.dissent && <p className="mt-1 text-warn">Dissent{m.dissenter ? ` (${m.dissenter})` : ""}: {m.dissent}</p>}
+          </li>
+        ))}
+        {s.postmortems.map((p) => (
+          <li key={`pm-${p.postmortem_id}`} className="px-5 py-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">Lesson from {p.deal}</span>
+              <Badge tone="mut">{p.outcome}</Badge>
+              <span className="text-xs text-mut">matched on {p.matched_on.join(", ")}</span>
+            </div>
+            <p className="mt-1">{p.lesson}</p>
+            {p.source_url && <a className="text-xs text-acc underline" href={p.source_url} target="_blank" rel="noreferrer">Source</a>}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 function SnapshotCard({ s }: { s: DealSnapshot }) {
   const cells: [string, string][] = [
     ["Stage", s.stage],
