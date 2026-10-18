@@ -68,9 +68,10 @@ export function ReviewQueue() {
   );
 }
 
-export function Deals() {
+/** `initial` selects a deal when the screen opens, e.g. from a recent-deal palette entry. */
+export function Deals({ initial = "" }: { initial?: string }) {
   const [name, setName] = useState("");
-  const [sel, setSel] = useState("");
+  const [sel, setSel] = useState(initial);
   const deals = useLoad<DealRow[]>(api2.deals);
   const dd = useLoad<DDRow[]>(async () => (sel ? api2.dd(sel) : []), [sel]);
   const fail = (e: unknown) => deals.setError(String(e));
