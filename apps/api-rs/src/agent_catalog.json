@@ -1,0 +1,158 @@
+{
+ "tools": [
+  {
+   "name": "search_documents",
+   "description": "Rank pages of visible documents for a query. Returns doc_id, page, snippet.",
+   "params": {
+    "query": "text",
+    "k?": "int, default 5"
+   },
+   "writes": false
+  },
+  {
+   "name": "ask_documents",
+   "description": "Cited answer to a question from the documents (verified claims only).",
+   "params": {
+    "question": "text"
+   },
+   "writes": false
+  },
+  {
+   "name": "get_firm_profile",
+   "description": "Accepted firm rules (board cadence, sign-off thresholds, screening criteria...) with sources.",
+   "params": {
+    "keys?": "list of term keys"
+   },
+   "writes": false
+  },
+  {
+   "name": "firm_profile_gaps",
+   "description": "Firm-knowledge terms with no accepted value yet, so the user can be asked or documents mined.",
+   "params": {},
+   "writes": false
+  },
+  {
+   "name": "extract_firm_knowledge",
+   "description": "Extract firm rules from one document into the pending review queue (cited).",
+   "params": {
+    "document_id": "id",
+    "keys?": "list of term keys"
+   },
+   "writes": true
+  },
+  {
+   "name": "list_facts",
+   "description": "Verified facts, each with source. Filter by entity.",
+   "params": {
+    "entity?": "text"
+   },
+   "writes": false
+  },
+  {
+   "name": "list_deals",
+   "description": "Deals with stage.",
+   "params": {},
+   "writes": false
+  },
+  {
+   "name": "list_alerts",
+   "description": "Open alerts from the proactive inbox (covenant breaches and similar), with fact ids.",
+   "params": {},
+   "writes": false
+  },
+  {
+   "name": "open_funding_rounds",
+   "description": "Private placements (SEC Form D) for an issuer name in a quarter. Self-reported amounts; None = Indefinite.",
+   "params": {
+    "issuer": "text",
+    "year": "int",
+    "quarter": "int 1-4",
+    "limit?": "int, default 10"
+   },
+   "writes": false
+  },
+  {
+   "name": "open_entity_lookup",
+   "description": "Identify a company: GLEIF LEI records and Wikidata candidates, each with a source URL.",
+   "params": {
+    "name": "text"
+   },
+   "writes": false
+  },
+  {
+   "name": "open_macro_series",
+   "description": "Latest FRED observation for a series id (e.g. DGS10), with source URL.",
+   "params": {
+    "series_id": "text"
+   },
+   "writes": false
+  },
+  {
+   "name": "open_deal_leads",
+   "description": "8-K filings mentioning a merger agreement in a date range (leads only; read terms from the filing).",
+   "params": {
+    "since": "YYYY-MM-DD",
+    "until": "YYYY-MM-DD",
+    "phrase?": "text",
+    "limit?": "int, default 10"
+   },
+   "writes": false
+  },
+  {
+   "name": "open_news",
+   "description": "Headlines from a news RSS feed (bbc_business, prnewswire_financial), optional text filter; links only.",
+   "params": {
+    "feed": "text",
+    "query?": "text",
+    "limit?": "int, default 10"
+   },
+   "writes": false
+  },
+  {
+   "name": "open_sanctions_screen",
+   "description": "Screen a name against an OpenSanctions list (default us_ofac_sdn). A miss is NOT a clearance. Non-commercial data licence.",
+   "params": {
+    "name": "text",
+    "dataset?": "text, default us_ofac_sdn"
+   },
+   "writes": false
+  },
+  {
+   "name": "open_13f_holdings",
+   "description": "Top 13F holdings of a manager (name match) from the local quarter zip in PE_13F_ZIP.",
+   "params": {
+    "manager": "text",
+    "limit?": "int, default 10"
+   },
+   "writes": false
+  },
+  {
+   "name": "open_adviser_search",
+   "description": "Registered/exempt investment advisers by name from the local SEC roster zip in PE_ADV_ZIP (PE fund counts, private-fund assets).",
+   "params": {
+    "name": "text",
+    "limit?": "int, default 10"
+   },
+   "writes": false
+  }
+ ],
+ "workflows": [
+  {
+   "name": "build_firm_profile",
+   "description": "Mine one document for firm rules, then report what is still unknown.",
+   "inputs": {
+    "document_id": "document to mine"
+   },
+   "steps": [
+    {
+     "id": "extract",
+     "tool": "extract_firm_knowledge"
+    },
+    {
+     "id": "gaps",
+     "tool": "firm_profile_gaps"
+    }
+   ]
+  }
+ ]
+}

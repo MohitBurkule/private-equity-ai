@@ -6,7 +6,7 @@ Routes it does not serve are relayed to `FASTAPI_UPSTREAM` unchanged, so one URL
 Parity is checked with `make parity` (`scripts/parity.sh`, `parity/run.py`): status, body and audit rows of each
 request must match FastAPI for every key shape.
 
-## Served natively (46)
+## Served natively (48)
 
 | Method | Path |
 | --- | --- |
@@ -36,6 +36,8 @@ request must match FastAPI for every key shape.
 | POST | `/calc/waterfall` |
 | POST | `/calc/share-ledger` |
 | POST | `/calc/comps` |
+| GET | `/agent/tools` |
+| GET | `/agent/workflows` |
 | GET | `/dd/questions` |
 | GET | `/dd/requests` |
 | GET | `/dd/summary` |
@@ -57,7 +59,7 @@ request must match FastAPI for every key shape.
 | GET | `/workflows` |
 | GET | `/workflows/{wid}/last` |
 
-## Relayed to FastAPI (186)
+## Relayed to FastAPI (184)
 
 Port these in the order listed, one slice per PR, each gated on `make ci` and `make parity`. Comps and legal red
 flags in `GET /memo` (`peers` with `period`, `legal_doc`) also relay until `comps.py` and `legal.py` are ported.
@@ -66,8 +68,6 @@ flags in `GET /memo` (`peers` with `period`, `legal_doc`) also relay until `comp
 | --- | --- |
 | POST | `/admin/jobs/requeue` |
 | POST | `/agent/run` |
-| GET | `/agent/tools` |
-| GET | `/agent/workflows` |
 | POST | `/agent/workflows/{name}/run` |
 | POST | `/alerts/digest` |
 | POST | `/alerts/scan` |

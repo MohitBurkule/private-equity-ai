@@ -288,6 +288,11 @@ def main():
         requests = [
             ("/health", None),
             ("/memo/templates", None),
+            ("/agent/tools", "admin"),
+            ("/agent/tools", "analyst"),
+            ("/agent/tools", None),
+            ("/agent/workflows", "admin"),
+            ("/agent/workflows", "zeta"),
         ]
         for name in ["admin", "scoped_other", "zeta", "analyst"]:
             for path in ["/alerts/brief", "/dd/summary", "/dd/requests", "/dd/requests?deal=Other", "/dd/requests?status=open",
