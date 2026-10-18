@@ -17,6 +17,7 @@ mod documents;
 mod error;
 mod facts;
 mod fund;
+mod fx;
 mod legal;
 mod memo;
 mod memo_text;
