@@ -124,7 +124,7 @@ from app.chat_inbound import (
 )
 from app.citations import quote_in_page
 from app.comps import EV_METRIC
-from app.connectors import oauth, vault
+from app.connectors import oauth, resync, vault
 from app.connectors.base import ConnectorError, default_http
 from app.connectors.docusign import DocuSign
 from app.connectors.gsheets import GoogleSheets
@@ -4643,6 +4643,14 @@ def list_connectors(who: Who, db: Db):
         if c["name"] in rows:
             c.update(connection_health(rows[c["name"]]))
     return out
+
+
+@app.post("/connectors/resync-check")
+def connectors_resync_check(db: Db, who: Writer):
+    """Raises an inbox alert for each saved connection whose last run failed or is older than its
+    stale_after_hours (default 24). Idempotent: the same stale or failed run raises one alert, not a new one each call."""
+    raised = resync.check(db, who.tenant)
+    return {"raised": [{"kind": a.kind, "title": a.title, "detail": a.detail} for a in raised]}
 
 
 @app.post("/connectors/{name}/sync")
