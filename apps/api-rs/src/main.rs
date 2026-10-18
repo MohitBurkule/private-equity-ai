@@ -26,6 +26,7 @@ mod peer_sets;
 mod proxy;
 mod ratelimit;
 mod scope;
+mod shareledger;
 mod snapshot;
 mod sumcheck;
 mod tieout;
@@ -87,6 +88,7 @@ pub fn app(state: AppState) -> Router {
         .route("/calc/tieout", post(tieout::calc_tieout))
         .route("/calc/fund-metrics", post(fund::calc_fund_metrics))
         .route("/calc/waterfall", post(waterfall::calc_waterfall))
+        .route("/calc/share-ledger", post(shareledger::calc_share_ledger))
         .route("/calc/normalized-ebitda", get(calc::calc_normalized_ebitda))
         .route("/calc/revenue-trend", get(calc::calc_revenue_trend))
         .route("/calc/net-debt-adjusted", get(calc::calc_net_debt_adjusted))
