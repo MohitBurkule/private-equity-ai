@@ -107,6 +107,8 @@ def seed(conn):
             ("Other", "d" * 64, "capex", "FY24", -10),
             ("Other", "d" * 64, "long_term_debt", "FY24", 50),
             ("Other", "d" * 64, "cash", "FY24", 20),
+            ("Other", "d" * 64, "operating_income", "FY24", 15),
+            ("Other", "d" * 64, "depreciation_and_amortization", "FY24", 5),
             ("Zeta", "e" * 64, "revenue", "FY24", 500),
         ]:
             cur.execute(
@@ -224,6 +226,11 @@ def main():
                 "/workflows/9002/last",
                 "/workflows/9999/last",
                 "/workflows/abc/last",
+                "/facts/derived?formula=ebitda&entity=Other&period=FY24",
+                "/facts/derived?formula=ebitda&entity=Other&period=FY23",
+                "/facts/derived?formula=ebitda&entity=Zeta&period=FY24",
+                "/facts/derived?formula=nope&entity=Other&period=FY24",
+                "/facts/derived",
                 "/documents",
                 "/memo/versions?entity=Other",
                 "/memo/versions/1",
