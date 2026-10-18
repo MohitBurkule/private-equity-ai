@@ -26,6 +26,7 @@ mod proxy;
 mod ratelimit;
 mod scope;
 mod snapshot;
+mod sumcheck;
 mod visibility;
 mod workflows;
 
@@ -79,6 +80,7 @@ pub fn app(state: AppState) -> Router {
         .route("/calc/net-debt", get(calc::calc_net_debt))
         .route("/calc/nwc", get(calc::calc_nwc))
         .route("/calc/nwc-peg", get(calc::calc_nwc_peg))
+        .route("/calc/sumcheck", post(sumcheck::calc_sumcheck))
         .route("/calc/normalized-ebitda", get(calc::calc_normalized_ebitda))
         .route("/calc/revenue-trend", get(calc::calc_revenue_trend))
         .route("/calc/net-debt-adjusted", get(calc::calc_net_debt_adjusted))

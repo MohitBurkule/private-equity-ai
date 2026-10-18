@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 use std::str::FromStr;
 
 /// Accepts a JSON number or string, as pydantic does for Decimal.
-fn de_decimal<'de, D: Deserializer<'de>>(d: D) -> Result<Decimal, D::Error> {
+pub fn de_decimal<'de, D: Deserializer<'de>>(d: D) -> Result<Decimal, D::Error> {
     let v = Value::deserialize(d)?;
     let s = match &v {
         Value::String(s) => s.clone(),
