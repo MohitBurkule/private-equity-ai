@@ -8,6 +8,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
 WORK="$(mktemp -d)"
+# Default to the sandbox Chromium when it is present and PW_CHROMIUM is not set.
+if [ -z "${PW_CHROMIUM:-}" ] && [ -x /opt/pw-browsers/chromium ]; then PW_CHROMIUM=/opt/pw-browsers/chromium; fi
+export PW_CHROMIUM
 ADMIN_TOKEN="smoke-admin-token"
 export ADMIN_TOKEN DATABASE_URL="sqlite:///$WORK/smoke.db" OCR_ENABLED=0 SEC_USER_AGENT=""
 

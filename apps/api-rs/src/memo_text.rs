@@ -7,6 +7,7 @@ use crate::auth::principal;
 use crate::citations::locator_label;
 use crate::comps;
 use crate::error::ApiError;
+use crate::facts::stored;
 use crate::legal;
 use crate::memo::BUILT_IN;
 use crate::proxy;
@@ -179,6 +180,7 @@ async fn build_data(
     let mut memo = Memo::default();
     let mut plain: Vec<((String, String), Cited)> = Vec::new();
     for (id, metric, period, value, unit, basis) in &facts {
+        let value = stored(*value);
         let mine: Vec<&SourceRow> = sources.iter().filter(|s| s.0 == *id).collect();
         let ids: Vec<&str> = mine.iter().map(|s| s.1.as_str()).collect();
         // Python fact_visible plus `f.sources[0]`: a fact with no source is never shown.
@@ -202,13 +204,13 @@ async fn build_data(
             .push(format!("[{n}] {filename}, {where_}: \"{}\"", src.3.trim()));
         memo.lines.push(format!(
             "{metric} ({period}, {basis}): {} {unit} [{n}]",
-            gloss(*value)
+            gloss(value)
         ));
         put(
             &mut plain,
             (metric.clone(), period.clone()),
             Cited {
-                value: *value,
+                value,
                 unit: unit.clone(),
                 note: n,
             },
