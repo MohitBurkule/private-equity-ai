@@ -21,7 +21,7 @@ function MapView({ items, sel, onPick }: { items: Target[]; sel: number | null; 
   const maxRev = Math.max(1, ...placed.map((t) => Number(t.revenue ?? 0)));
   return (
     <div className="relative">
-      {placed.length === 0 && (
+      {placed.length === 0 && items.length > 0 && (
         <p className="absolute inset-x-0 top-1/2 px-6 text-center text-sm text-mut">No targets have a location yet. The SEC import carries none, so the list below is the only view.</p>
       )}
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Targets by location" className="w-full rounded-lg bg-sunk">

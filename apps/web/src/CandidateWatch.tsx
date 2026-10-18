@@ -22,7 +22,7 @@ export function CandidateWatch() {
     <Page title="Candidate watch" hint="Companies the weekly search found on the firm's sectors. Each one waits for a person to review it. Revenue is not checked here.">
       <ErrorLine e={error} />
       <Card>
-        <CardHead title="New" right={<Badge tone={open.length ? "acc" : "ok"}>{open.length}</Badge>} />
+        <CardHead title="New" right={data && <Badge tone={open.length ? "acc" : "ok"}>{open.length}</Badge>} />
         {loading && <Loading />}
         {data && open.length === 0 && <Empty>No new candidates.</Empty>}
         <ul className="divide-y divide-line">{open.map(row)}</ul>
