@@ -133,6 +133,12 @@ export interface CovenantStatus {
 /** A sourcing candidate from a live search. Not imported until someone adds it as a target. */
 export interface SearchCandidate { name: string; source_url: string | null; form?: string; file_date?: string; already_imported?: boolean }
 export interface SearchOut { total: number; items: SearchCandidate[] }
+export interface ThesisCriterion { criterion: string; met: boolean; reason: string | null; cite: string | null }
+export interface ThesisRanked { name: string; url: string; met: number; of: number; score: number; criteria: ThesisCriterion[] }
+export interface ThesisScoreBody {
+  thesis: { sic_divisions: string[]; keywords: string[]; min_revenue: string | null; max_revenue: string | null };
+  filings: { url: string; name: string; sic?: string | null; text?: string; revenue?: string | null }[];
+}
 export interface AlertRow { id: number; kind: string; severity: string; title: string; detail: string; fact_ids: number[]; status: string; created_at: string }
 export interface Breach { company: string; kpi_metric: string; period: string; status: string; value: string; threshold: string; unit?: string }
 export interface ConflictSource { fact_id: number; value: string; documents: { document_id: string; filename: string | null; page: number; quote: string }[] }
@@ -320,6 +326,7 @@ export const api2 = {
   setAlertStatus: (id: number, status: string) => call<AlertRow>(`/alerts/${id}/status`, "POST", { status }),
   searchEdgar: (body: { query: string; forms: string[]; since: string; until: string; limit?: number }) =>
     call<SearchOut>("/targets/search/edgar", "POST", body),
+  thesisScore: (body: ThesisScoreBody) => call<{ ranked: ThesisRanked[] }>("/sourcing/thesis-score", "POST", body),
   searchCompaniesHouse: (body: { query: string; limit?: number }) => call<SearchOut>("/targets/search/companies-house", "POST", body),
   lboReturns: (body: LboRequest) => call<LboResult>("/lbo/returns", "POST", body),
   flagship: (body: FlagshipBody) => call<FlagshipResult>("/flagship/run", "POST", body),
