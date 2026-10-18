@@ -156,6 +156,15 @@ def seed(conn):
                 (doc_id, text),
             )
         cur.execute(
+            "INSERT INTO agent_run (id, tenant_id, kind, name, goal, status, steps, result, error, created_at)"
+            " VALUES (8001, %s, 'workflow', 'build_firm_profile', NULL, 'done',"
+            " '[{\"id\": \"extract\", \"tool\": \"extract_firm_knowledge\"}]', '{\"rules\": 2}', NULL,"
+            " '2026-10-17T09:00:00+00:00'),"
+            " (8002, %s, 'agent', 'agent', 'find the EBITDA', 'failed', '[]', NULL, 'step budget exhausted',"
+            " '2026-10-17T10:00:00+00:00')",
+            (tenant_id, tenant_id),
+        )
+        cur.execute(
             "INSERT INTO workflow_schedule (id, tenant_id, name, kind, params, every_days, recipients, next_run,"
             " last_run, last_status, last_result, active)"
             " VALUES (9001, %s, 'Weekly report', 'portfolio_report', '{}', 7, '', '2026-10-24T00:00:00+00:00',"
@@ -235,6 +244,11 @@ def main():
                 "/deals/Nope/peer-sets",
                 "/audit",
                 "/audit/verify",
+                "/agent/runs",
+                "/agent/runs?limit=1",
+                "/agent/runs?limit=0",
+                "/agent/runs?limit=500",
+                "/agent/runs?limit=abc",
                 "/calc/periods?entity=Other",
                 "/calc/periods?entity=Zeta",
                 "/calc/periods?entity=Nope",
