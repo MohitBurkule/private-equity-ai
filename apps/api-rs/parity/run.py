@@ -252,6 +252,14 @@ def seed(conn):
     for body in [{"name": "Other"}, {"name": "Zeta", "mnpi": True}]:
         status, out = call(FA, "/deals", a, "POST", body)
         assert status == 201, out
+    # Saved connections go in directly: the token is sealed by FastAPI, and this list never reads it.
+    with conn.cursor() as cur:
+        for connector, deal in [("gmail", "Other"), ("mailpit", "Zeta")]:
+            cur.execute(
+                "INSERT INTO connection (tenant_id, connector, deal, options, token_sealed, interval_minutes,"
+                " last_run, last_status, created_by) VALUES (%s, %s, %s, '{}', 'parity', NULL, NULL, NULL, 'parity')",
+                (TENANT_ID, connector, deal),
+            )
     for deal in ["Other", "Zeta"]:
         status, _ = call(FA, f"/deals/{deal}/notes", a, "POST", {"body": f"{deal} note"})
         assert status == 201
@@ -303,6 +311,10 @@ def main():
             ("/connectors", "admin"),
             ("/connectors", "analyst"),
             ("/connectors", "zeta"),
+            ("/connections", "admin"),
+            ("/connections", "scoped_other"),
+            ("/connections", "zeta"),
+            ("/connections", None),
         ]
         for name in ["admin", "scoped_other", "zeta", "analyst"]:
             for path in ["/alerts/brief", "/dd/summary", "/dd/requests", "/dd/requests?deal=Other", "/dd/requests?status=open",
