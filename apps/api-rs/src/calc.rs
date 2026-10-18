@@ -170,14 +170,19 @@ async fn combine(
             }),
         }
     }
-    if !c.missing.is_empty() {
-        return Ok(());
+    if c.missing.is_empty() {
+        finish(c);
     }
+    Ok(())
+}
+
+/// The unit, basis and sum checks shared by every calc once all inputs are in hand.
+fn finish(c: &mut Calc) {
     let units: BTreeSet<String> = c.inputs.iter().map(|i| i.fact.unit.clone()).collect();
     if units.len() != 1 {
         c.problems
             .push(format!("inputs use different units: {}", py_list(&units)));
-        return Ok(());
+        return;
     }
     c.unit = units.into_iter().next();
     let bases: BTreeSet<String> = c.inputs.iter().map(|i| i.fact.basis.clone()).collect();
@@ -185,7 +190,7 @@ async fn combine(
         // Reported and adjusted figures never add together.
         c.problems
             .push(format!("inputs mix bases: {}", py_list(&bases)));
-        return Ok(());
+        return;
     }
     c.value = Some(c.inputs.iter().fold(Decimal::ZERO, |acc, i| {
         acc + if i.sign < 0 {
@@ -194,7 +199,141 @@ async fn combine(
             i.fact.value
         }
     }));
-    Ok(())
+}
+
+/// Python DEBT_LIKE: optional items that sit outside net debt but reduce the equity price.
+const DEBT_LIKE: [(&str, &str); 4] = [
+    ("pension", "pension_deficit"),
+    ("deferred", "deferred_consideration"),
+    ("earnout", "earn_out"),
+    ("tax", "unpaid_tax"),
+];
+
+/// Python net_debt(): total_debt (+ lease_liabilities) - cash.
+async fn net_debt(
+    tx: &mut Transaction<'_, Postgres>,
+    vis: &Visibility,
+    entity: &str,
+    period: &str,
+    include_leases: bool,
+) -> Result<Calc, ApiError> {
+    let formula = format!(
+        "debt{} - cash",
+        if include_leases { " + leases" } else { "" }
+    );
+    let mut c = Calc::new("Net debt".into(), entity, formula);
+    let mut wanted = vec![("debt", "total_debt", period, 1)];
+    if include_leases {
+        wanted.push(("leases", "lease_liabilities", period, 1));
+    }
+    wanted.push(("cash", "cash", period, -1));
+    combine(tx, vis, &mut c, &wanted).await?;
+    Ok(c)
+}
+
+/// Python debt_like(): the stated debt-like items; the metrics not found are listed, never counted as zero.
+async fn debt_like(
+    tx: &mut Transaction<'_, Postgres>,
+    vis: &Visibility,
+    entity: &str,
+    period: &str,
+) -> Result<(Calc, Vec<String>), ApiError> {
+    let names: Vec<&str> = DEBT_LIKE.iter().map(|(_, m)| *m).collect();
+    let mut c = Calc::new(
+        "Debt-like items".into(),
+        entity,
+        format!("sum of {} stated", names.join(", ")),
+    );
+    let mut not_found = Vec::new();
+    for (role, metric) in DEBT_LIKE {
+        match find(tx, vis, entity, metric, period).await? {
+            None => not_found.push(metric.to_string()),
+            Some(fact) => c.inputs.push(Input {
+                role,
+                sign: 1,
+                fact,
+            }),
+        }
+    }
+    if c.inputs.is_empty() {
+        c.missing
+            .push("no debt-like item stated for this period".into());
+    } else {
+        finish(&mut c);
+    }
+    Ok((c, not_found))
+}
+
+/// FastAPI's bool query parsing for include_leases (default true).
+fn include_leases(q: &HashMap<String, String>) -> Result<bool, ApiError> {
+    let Some(raw) = q.get("include_leases") else {
+        return Ok(true);
+    };
+    match raw.to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" => Ok(true),
+        "false" | "0" | "no" | "off" => Ok(false),
+        _ => Err(ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "validation error".into(),
+            Some(json!([{
+                "type": "bool_parsing", "loc": ["query", "include_leases"],
+                "msg": "Input should be a valid boolean, unable to interpret input", "input": raw,
+            }])),
+        )),
+    }
+}
+
+/// Shared parameter check for the net debt routes: entity and period are required.
+fn net_debt_query(q: &HashMap<String, String>) -> Result<(String, String), ApiError> {
+    let missing: Vec<Value> = ["entity", "period"]
+        .iter()
+        .filter(|name| !q.contains_key(**name))
+        .map(|name| json!({ "type": "missing", "loc": ["query", name], "msg": "Field required", "input": null }))
+        .collect();
+    if !missing.is_empty() {
+        return Err(ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "validation error".into(),
+            Some(Value::Array(missing)),
+        ));
+    }
+    Ok((q["entity"].clone(), q["period"].clone()))
+}
+
+pub async fn calc_net_debt(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, ApiError> {
+    let (p, mut tx) = principal(&s, &headers).await?;
+    let (entity, period) = net_debt_query(&q)?;
+    let leases = include_leases(&q)?;
+    let vis = Visibility::load(&mut tx, &p).await?;
+    let c = net_debt(&mut tx, &vis, &entity, &period, leases).await?;
+    tx.commit().await?;
+    Ok(Json(c.to_json()))
+}
+
+/// Python net_debt_adjusted(): the adjusted figure exists only when net debt and a debt-like item are both stated.
+pub async fn calc_net_debt_adjusted(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, ApiError> {
+    let (p, mut tx) = principal(&s, &headers).await?;
+    let (entity, period) = net_debt_query(&q)?;
+    let leases = include_leases(&q)?;
+    let vis = Visibility::load(&mut tx, &p).await?;
+    let nd = net_debt(&mut tx, &vis, &entity, &period, leases).await?;
+    let (dl, not_found) = debt_like(&mut tx, &vis, &entity, &period).await?;
+    tx.commit().await?;
+    let adjusted = match (nd.value, dl.value) {
+        (Some(n), Some(d)) if nd.unit == dl.unit => Some((n + d).to_string()),
+        _ => None,
+    };
+    Ok(Json(json!({
+        "net_debt": nd.to_json(), "debt_like": dl.to_json(), "not_found": not_found, "adjusted": adjusted,
+    })))
 }
 
 impl Calc {
