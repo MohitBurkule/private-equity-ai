@@ -234,6 +234,7 @@ def main():
                 "/deals/Zeta/peer-sets",
                 "/deals/Nope/peer-sets",
                 "/audit",
+                "/audit/verify",
                 "/audit?action=document.read",
                 "/audit?limit=2",
                 "/audit?limit=500",
