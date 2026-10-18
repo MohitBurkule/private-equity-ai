@@ -29,7 +29,12 @@ mod snapshot;
 mod visibility;
 mod workflows;
 
-use axum::{extract::State, http::HeaderMap, routing::get, Json, Router};
+use axum::{
+    extract::State,
+    http::HeaderMap,
+    routing::{delete, get},
+    Json, Router,
+};
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -70,6 +75,7 @@ pub fn app(state: AppState) -> Router {
         .route("/audit", get(audit::list_audit))
         .route("/audit/verify", get(audit::verify_audit))
         .route("/calc/periods", get(calc::calc_periods))
+        .route("/admin/keys/:kid", delete(admin::revoke_key))
         .route("/admin/tenants/:tenant_id/keys", get(admin::list_keys))
         .route(
             "/admin/tenants/:tenant_id/document-access",

@@ -149,3 +149,31 @@ pub async fn document_access(
     let restricted = docs.len();
     Ok(Json(json!({ "documents": docs, "restricted": restricted })))
 }
+
+/// DELETE /admin/keys/{kid}: revoke the one key whose id matches. Python counts the matches across every tenant, so
+/// an id that names two keys answers 404 and changes nothing. A key that is already revoked stays revoked.
+pub async fn revoke_key(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path(kid): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    if !admin_token_ok(&headers) {
+        return Err(forbidden());
+    }
+    let mut tx = s.pool.begin().await?;
+    let matches: Vec<(String,)> = sqlx::query_as(
+        "SELECT key_hash FROM api_key WHERE substr(key_hash, 1, 12) = $1 FOR UPDATE",
+    )
+    .bind(&kid)
+    .fetch_all(&mut *tx)
+    .await?;
+    let [(hash,)] = matches.as_slice() else {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "key not found"));
+    };
+    sqlx::query("UPDATE api_key SET revoked = true WHERE key_hash = $1")
+        .bind(hash)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(Json(json!({ "revoked": kid })))
+}
