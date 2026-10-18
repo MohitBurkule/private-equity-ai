@@ -133,7 +133,7 @@ fn multiple(ev: Decimal, denom: Decimal) -> (Option<Decimal>, String) {
 }
 
 /// Python `_quantile`: linear interpolation between closest ranks.
-fn quantile(vals: &[Decimal], p: Decimal) -> Decimal {
+pub(crate) fn quantile(vals: &[Decimal], p: Decimal) -> Decimal {
     let mut s = vals.to_vec();
     s.sort();
     let pos = Decimal::from(s.len() as i64 - 1) * p;
