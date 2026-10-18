@@ -428,7 +428,13 @@ pub async fn create_tenant(
     ))
 }
 
-const GRAPH: &str = "https://graph.microsoft.com/v1.0";
+/// Graph base URL: GRAPH_BASE_URL overrides it for tests and staging, as in connectors/graph.py.
+fn graph_base() -> String {
+    std::env::var("GRAPH_BASE_URL")
+        .ok()
+        .filter(|u| !u.is_empty())
+        .unwrap_or_else(|| "https://graph.microsoft.com/v1.0".to_string())
+}
 
 /// Percent-encodes everything but unreserved characters (Python quote(email, safe='')).
 fn quote(raw: &str) -> String {
@@ -450,7 +456,11 @@ async fn member_of(
     email: &str,
 ) -> Result<Vec<String>, ApiError> {
     let bad = |what: &str| ApiError::new(StatusCode::BAD_GATEWAY, what.to_string());
-    let mut url = format!("{GRAPH}/users/{}/memberOf?$select=id", quote(email));
+    let mut url = format!(
+        "{}/users/{}/memberOf?$select=id",
+        graph_base(),
+        quote(email)
+    );
     let mut ids: BTreeSet<String> = BTreeSet::new();
     loop {
         let resp = http

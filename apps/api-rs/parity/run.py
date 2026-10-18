@@ -21,6 +21,7 @@ ADMIN_TOKEN = os.environ["PARITY_ADMIN_TOKEN"]
 TENANT_ID = None
 REVOKE_KID = None
 ADMIN_KID = None
+GRAPH_KID = None
 DSN = os.environ["PARITY_DB_URL"]
 
 
@@ -205,6 +206,11 @@ def seed(conn):
     assert status == 201, out
     global REVOKE_KID
     REVOKE_KID = hashlib.sha256(out["api_key"].encode()).hexdigest()[:12]
+    status, out = call(FA, f"/admin/tenants/{tenant_id}/keys", method="POST",
+                       body={"role": "analyst", "identity": "Ana@Example.test"}, headers=admin_hdr)
+    assert status == 201, out
+    global GRAPH_KID
+    GRAPH_KID = hashlib.sha256(out["api_key"].encode()).hexdigest()[:12]
     a = keys["admin"]
     for body in [{"name": "Other"}, {"name": "Zeta", "mnpi": True}]:
         status, out = call(FA, "/deals", a, "POST", body)
@@ -321,11 +327,12 @@ def main():
                 requests.append((path, name))
         requests.append((f"DELETE /admin/keys/{REVOKE_KID}", "ADMIN"))
         requests.append(("DELETE /admin/keys/nope", "ADMIN"))
-        # Only the paths that never reach Graph: the directory is not reachable from the parity harness.
+        # The directory is the local fake Graph (parity/fake_graph.py) for both stacks.
         requests.append((f"POST /admin/tenants/{TENANT_ID}/keys/nope/groups/sync|{{\"token\": \"t\"}}", "ADMIN"))
         requests.append((f"POST /admin/tenants/{TENANT_ID}/keys/{REVOKE_KID}/groups/sync|{{\"token\": \"t\"}}", "ADMIN"))
         requests.append((f"POST /admin/tenants/{TENANT_ID}/keys/{ADMIN_KID}/groups/sync|{{\"token\": \"t\"}}", "ADMIN"))
         requests.append((f"POST /admin/tenants/{TENANT_ID}/keys/{ADMIN_KID}/groups/sync|{{\"token\": \"t\"}}", "NOTOKEN"))
+        requests.append((f"POST /admin/tenants/{TENANT_ID}/keys/{GRAPH_KID}/groups/sync|{{\"token\": \"t\"}}", "ADMIN"))
         for body in [{"role": "viewer", "deals": ["Other"], "deal_roles": {"Other": "partner"}},
                      {}, {"identity": "Ana@Example.test", "groups": ["G1", "g1", " g2 "]}]:
             requests.append((f"POST /admin/tenants/{TENANT_ID}/keys|{json.dumps(body)}", "ADMIN"))

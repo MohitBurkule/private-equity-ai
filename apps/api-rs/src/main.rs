@@ -123,7 +123,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter(|u| !u.is_empty());
     let addr = std::env::var("RS_BIND").unwrap_or_else(|_| "0.0.0.0:8001".into());
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    let http = reqwest::Client::new();
+    // GRAPH_CA_FILE trusts an extra CA (tests point the directory calls at a local server with its own certificate).
+    let mut builder = reqwest::Client::builder();
+    if let Ok(path) = std::env::var("GRAPH_CA_FILE") {
+        let pem = std::fs::read(&path)?;
+        builder = builder.add_root_certificate(reqwest::Certificate::from_pem(&pem)?);
+    }
+    let http = builder.build()?;
     let per_minute = std::env::var("RATE_LIMIT_PER_MIN")
         .ok()
         .and_then(|v| v.parse().ok())
