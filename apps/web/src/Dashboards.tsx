@@ -68,7 +68,7 @@ function KpiBoard({ report }: { report: Report }) {
         <div className="p-5">
           <div className="h-64">
             <ResponsiveContainer>
-              <BarChart data={data}>
+              <BarChart data={data} aria-label="KPI values by period">
                 <CartesianGrid stroke="var(--c-line)" vertical={false} />
                 <XAxis dataKey="label" tick={{ fill: "var(--c-mut)", fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tickFormatter={(v: number) => fmtAmount(String(v), unit)} tick={{ fill: "var(--c-mut)", fontSize: 11 }} axisLine={false} tickLine={false} width={64} />
@@ -101,7 +101,7 @@ function Pipeline({ deals }: { deals: DealRow[] }) {
       <CardHead title="Deal pipeline" hint="Click a stage to filter" right={stage && <Button variant="ghost" onClick={() => setStage("")}>Clear filter</Button>} />
       <div className="h-44 px-5 pt-4">
         <ResponsiveContainer>
-          <BarChart data={data}>
+          <BarChart data={data} aria-label="Deals per stage">
             <XAxis dataKey="stage" tick={{ fill: "var(--c-mut)", fontSize: 11 }} axisLine={false} tickLine={false} />
             <YAxis allowDecimals={false} hide />
             <Tooltip contentStyle={tip} cursor={{ fill: "var(--c-sunk)" }} />
