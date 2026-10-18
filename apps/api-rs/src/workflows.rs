@@ -62,9 +62,13 @@ pub async fn list_workflows(
 pub async fn workflow_last(
     State(s): State<AppState>,
     headers: HeaderMap,
-    Path(wid): Path<i32>,
+    Path(wid): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
+    // FastAPI resolves the key (401) before it reports a path that is not an integer (422).
     let (_, mut tx) = principal(&s, &headers).await?;
+    let wid: i32 = wid
+        .parse()
+        .map_err(|_| ApiError::bad_int_path("wid", &wid))?;
     let row: Option<LastRow> = sqlx::query_as(
         "SELECT id, name, kind, every_days, next_run, last_run, last_status, active, last_result \
          FROM workflow_schedule WHERE id = $1",

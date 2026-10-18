@@ -29,6 +29,20 @@ impl ApiError {
             }])),
         )
     }
+
+    /// FastAPI's 422 for a path parameter that is not an integer.
+    pub fn bad_int_path(name: &str, input: &str) -> Self {
+        Self(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "validation error".into(),
+            Some(json!([{
+                "type": "int_parsing",
+                "loc": ["path", name],
+                "msg": "Input should be a valid integer, unable to parse string as an integer",
+                "input": input,
+            }])),
+        )
+    }
 }
 
 impl From<sqlx::Error> for ApiError {
