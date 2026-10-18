@@ -31,7 +31,7 @@ Captured from the running UI. The first screens are from a real local run with d
 | Chat home with a proactive inbox | Click any citation to read the source page |
 | ![Interactive dashboards](docs/screenshots/08-dashboards.png) | ![Deals and diligence tracker](docs/screenshots/06-deals.png) |
 | Interactive dashboards | Deals and diligence tracker |
-| ![Covenant breach from cited facts](docs/screenshots/07-portfolio.png) | ![Documents, search, memo](docs/screenshots/05-documents.png) |
+| ![Portfolio: cited KPIs and the covenant card, which says when no tests have run](docs/screenshots/07-portfolio.png) | ![Documents, search, memo](docs/screenshots/05-documents.png) |
 | Covenant breach from cited facts | Documents, search, memo |
 | ![Comps with a cited implied range](docs/screenshots/11-comps.png) | ![Integrations catalog and import](docs/screenshots/12-integrations.png) |
 | Comps with a cited implied range | Integrations catalog and import |
