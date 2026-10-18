@@ -16,6 +16,7 @@ mod derived;
 mod documents;
 mod error;
 mod facts;
+mod fund;
 mod legal;
 mod memo;
 mod memo_text;
@@ -83,6 +84,7 @@ pub fn app(state: AppState) -> Router {
         .route("/calc/nwc-peg", get(calc::calc_nwc_peg))
         .route("/calc/sumcheck", post(sumcheck::calc_sumcheck))
         .route("/calc/tieout", post(tieout::calc_tieout))
+        .route("/calc/fund-metrics", post(fund::calc_fund_metrics))
         .route("/calc/normalized-ebitda", get(calc::calc_normalized_ebitda))
         .route("/calc/revenue-trend", get(calc::calc_revenue_trend))
         .route("/calc/net-debt-adjusted", get(calc::calc_net_debt_adjusted))
