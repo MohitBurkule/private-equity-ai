@@ -121,7 +121,7 @@ export function Chat() {
         <div ref={end} />
       </div>
       <form className="pb-6" onSubmit={(e) => { e.preventDefault(); void send(q); }}>
-        <div className="flex items-center gap-2 rounded-2xl border border-line bg-panel p-2 shadow-sm">
+        <div className="flex items-center gap-2 rounded-2xl border border-line bg-panel p-2 shadow-sm focus-within:ring-2 focus-within:ring-acc">
           <input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Question" placeholder="Ask about a deal, a metric, a clause..."
             className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-mut" />
           <Button variant="primary" type="submit" disabled={busy || !q.trim()} aria-label="Send"><SendHorizonal size={16} /></Button>
