@@ -28,7 +28,7 @@ export function ResearchDeck() {
       <Card>
         <CardHead title="Target" />
         <form className="flex flex-wrap items-end gap-3 p-5" onSubmit={(e) => { e.preventDefault(); download(); }}>
-          <label className="text-xs text-mut">Target id<Input className="mt-1" inputMode="numeric" value={targetId} onChange={(e) => setTargetId(e.target.value)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Target id<Input inputMode="numeric" value={targetId} onChange={(e) => setTargetId(e.target.value)} /></label>
           <Button variant="primary" type="submit" disabled={!/^\d+$/.test(targetId) || busy}>{busy ? "Preparing" : "Download .pptx"}</Button>
         </form>
       </Card>

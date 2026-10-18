@@ -42,7 +42,7 @@ export function PeerSets() {
       <Card>
         <CardHead title="Deal" />
         <form className="flex flex-wrap items-end gap-3 p-5" onSubmit={(e) => { e.preventDefault(); load(); }}>
-          <label className="text-xs text-mut">Deal name<Input className="mt-1" value={deal} onChange={(e) => setDeal(e.target.value)} placeholder="Deal" /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Deal name<Input value={deal} onChange={(e) => setDeal(e.target.value)} placeholder="Deal" /></label>
           <Button variant="primary" type="submit" disabled={!deal.trim() || busy}>{busy ? "Loading" : "Load sets"}</Button>
         </form>
       </Card>
@@ -51,8 +51,8 @@ export function PeerSets() {
         <Card>
           <CardHead title="Save a set" />
           <form className="flex flex-wrap items-end gap-3 p-5" onSubmit={(e) => { e.preventDefault(); save(); }}>
-            <label className="text-xs text-mut">Target id<Input className="mt-1" inputMode="numeric" value={targetId} onChange={(e) => setTargetId(e.target.value)} /></label>
-            <label className="text-xs text-mut">Set name<Input className="mt-1" value={name} onChange={(e) => setName(e.target.value)} /></label>
+            <label className="flex flex-col gap-1 text-xs text-mut">Target id<Input inputMode="numeric" value={targetId} onChange={(e) => setTargetId(e.target.value)} /></label>
+            <label className="flex flex-col gap-1 text-xs text-mut">Set name<Input value={name} onChange={(e) => setName(e.target.value)} /></label>
             <Button type="submit" disabled={!deal.trim() || !name.trim() || !/^\d+$/.test(targetId) || busy}>Save set</Button>
           </form>
         </Card>

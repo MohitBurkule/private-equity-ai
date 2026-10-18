@@ -39,7 +39,10 @@ export function PlaybookReport() {
               <li key={r.rule} className="flex flex-wrap items-start gap-3 px-5 py-2.5">
                 <Badge tone={TONE[r.status]}>{LABEL[r.status]}</Badge>
                 <span className="min-w-[10rem] font-medium">{r.term}</span>
-                <span className="flex-1 text-mut">{r.text}</span>
+                <span className="flex-1">
+                  <span className="block text-mut">{r.text}</span>
+                  <span className="block text-xs text-mut">{r.result}</span>
+                </span>
                 <span className="text-xs text-mut">{r.severity}</span>
               </li>
             ))}

@@ -41,8 +41,8 @@ export function People() {
       <Card>
         <CardHead title="Search" />
         <form className="flex flex-wrap items-end gap-3 p-5" onSubmit={(e) => { e.preventDefault(); search(q, deal); }}>
-          <label className="text-xs text-mut">Name, organisation, title or expertise<Input className="mt-1" value={q} onChange={(e) => setQ(e.target.value)} /></label>
-          <label className="text-xs text-mut">Deal<Input className="mt-1" value={deal} onChange={(e) => setDeal(e.target.value)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Name, organisation, title or expertise<Input value={q} onChange={(e) => setQ(e.target.value)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Deal<Input value={deal} onChange={(e) => setDeal(e.target.value)} /></label>
           <Button variant="primary" type="submit" disabled={busy}>{busy ? "Searching" : "Search"}</Button>
         </form>
       </Card>
@@ -68,11 +68,11 @@ export function People() {
       <Card>
         <CardHead title="Add a person" />
         <form className="grid gap-3 p-5 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); add(); }}>
-          <label className="text-xs text-mut">Name<Input className="mt-1" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
-          <label className="text-xs text-mut">Organisation<Input className="mt-1" value={draft.organisation} onChange={(e) => setDraft({ ...draft, organisation: e.target.value })} /></label>
-          <label className="text-xs text-mut">Title<Input className="mt-1" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></label>
-          <label className="text-xs text-mut">Expertise, comma separated<Input className="mt-1" value={draft.expertise} onChange={(e) => setDraft({ ...draft, expertise: e.target.value })} /></label>
-          <label className="text-xs text-mut">Deal, if sourced for one<Input className="mt-1" value={draft.deal} onChange={(e) => setDraft({ ...draft, deal: e.target.value })} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Name<Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Organisation<Input value={draft.organisation} onChange={(e) => setDraft({ ...draft, organisation: e.target.value })} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Title<Input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Expertise, comma separated<Input value={draft.expertise} onChange={(e) => setDraft({ ...draft, expertise: e.target.value })} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Deal, if sourced for one<Input value={draft.deal} onChange={(e) => setDraft({ ...draft, deal: e.target.value })} /></label>
           <div className="sm:col-span-2"><Button variant="primary" type="submit" disabled={!draft.name.trim() || busy}>Add person</Button></div>
         </form>
       </Card>

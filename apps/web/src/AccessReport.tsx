@@ -17,7 +17,7 @@ export function AccessReport() {
           setBusy(true); setErr("");
           api.accessReport(deal.trim()).then(setReport).catch((x) => { setReport(null); setErr(String(x)); }).finally(() => setBusy(false));
         }}>
-          <label className="text-xs text-mut">Deal name<Input className="mt-1" value={deal} onChange={(e) => setDeal(e.target.value)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Deal name<Input value={deal} onChange={(e) => setDeal(e.target.value)} /></label>
           <Button variant="primary" type="submit" disabled={!deal.trim() || busy}>{busy ? "Loading" : "Run report"}</Button>
         </form>
       </Card>

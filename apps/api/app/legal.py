@@ -369,6 +369,15 @@ def red_flags(result: dict, playbook: list[dict] = PLAYBOOK) -> list[dict]:
     return flags
 
 
+# What the status means for this document, shown next to the rule. The rule text alone describes the trigger,
+# so a clear row would otherwise read as the problem it checks for.
+PLAYBOOK_RESULT = {
+    "flagged": "Found in this document: the playbook trigger applies.",
+    "clear": "Checked against this document: the trigger does not apply.",
+    "not_compared": "Not decided: no stated value in this document to test against the limit.",
+}
+
+
 def playbook_report(result: dict, playbook: list[dict] = PLAYBOOK) -> list[dict]:
     """Every playbook rule with its outcome against this document, so a reviewer sees what was checked as well as
     what fired. flagged: the rule fired. clear: the rule was checked and did not fire. not_compared: a limit rule
@@ -384,5 +393,5 @@ def playbook_report(result: dict, playbook: list[dict] = PLAYBOOK) -> list[dict]
         else:
             status = "clear"
         out.append({"rule": rule["id"], "term": rule["term"], "severity": rule["severity"], "status": status,
-                    "text": rule["text"]})
+                    "text": rule["text"], "result": PLAYBOOK_RESULT[status]})
     return out

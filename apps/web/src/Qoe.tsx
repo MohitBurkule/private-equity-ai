@@ -39,9 +39,9 @@ export function Qoe() {
       <Card>
         <CardHead title="Entity and periods" />
         <form className="grid gap-3 p-5 sm:grid-cols-3" onSubmit={(e) => { e.preventDefault(); void run(); }}>
-          <label className="text-xs text-mut">Entity<Input className="mt-1 w-full" value={entity} onChange={(e) => setEntity(e.target.value)} placeholder="Company" /></label>
-          <label className="text-xs text-mut">Period<Input className="mt-1 w-full" value={period} onChange={(e) => setPeriod(e.target.value)} /></label>
-          <label className="text-xs text-mut">Periods for peg and trend<Input className="mt-1 w-full" value={periods} onChange={(e) => setPeriods(e.target.value)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Entity<Input className="w-full" value={entity} onChange={(e) => setEntity(e.target.value)} placeholder="Company" /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Period<Input className="w-full" value={period} onChange={(e) => setPeriod(e.target.value)} /></label>
+          <label className="flex flex-col gap-1 text-xs text-mut">Periods for peg and trend<Input className="w-full" value={periods} onChange={(e) => setPeriods(e.target.value)} /></label>
           <div className="sm:col-span-3"><Button variant="primary" type="submit" disabled={!entity}>Run QoE</Button></div>
         </form>
       </Card>
