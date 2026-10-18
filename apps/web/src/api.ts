@@ -185,7 +185,8 @@ export interface DealSnapshot {
 export interface LegalOut { doc_type: string; absent: string[]; findings: { term: string; value: string; page: number; quote: string; needs_review: boolean; document_id: string }[] }
 export interface Report {
   breaches: Breach[];
-  companies: { id: number; name: string; kpis: { metric: string; period: string; value: string; unit: string; sources: { document_id: string; page: number }[] }[] }[];
+  companies: { id: number; name: string; kpis: { metric: string; period: string; value: string; unit: string; sources: { document_id: string; page: number }[] }[];
+    covenants: { id: number; kpi_metric: string; operator: string; tests: CovenantTest[] }[] }[];
 }
 
 async function call<T>(path: string, method = "GET", body?: unknown): Promise<T> {

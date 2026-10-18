@@ -123,13 +123,15 @@ export function Deals() {
 
 export function PortfolioPanel() {
   const { data, error, loading } = useLoad<Report>(api2.report);
+  // Tests are counted from the report itself, so the badge can say how much was checked, not just that nothing broke.
+  const tests = data?.companies.reduce((n, c) => n + c.covenants.reduce((m, cov) => m + cov.tests.length, 0), 0) ?? 0;
   return (
     <Page title="Portfolio" hint="Every KPI is tied to a cited fact. Covenants test those KPIs against cited thresholds.">
       <ErrorLine e={error} />
       <Card>
-        <CardHead title="Covenant alerts" right={data && <Badge tone={data.breaches.length ? "bad" : data.companies.length ? "ok" : "mut"}>{data.breaches.length ? `${data.breaches.length} breach` : data.companies.length ? "no breaches" : "no companies"}</Badge>} />
+        <CardHead title="Covenant alerts" right={data && <Badge tone={data.breaches.length ? "bad" : tests ? "ok" : "mut"}>{data.breaches.length ? `${data.breaches.length} breach` : tests ? `${tests} tests, 0 breaches` : data.companies.length ? "no tests run" : "no companies"}</Badge>} />
         {loading && <Loading />}
-        {data?.breaches.length === 0 && <Empty>{data.companies.length ? "No breaches in the visible data. This list only shows tests that have run; a company with no covenant tests has nothing to breach, so check its Covenants tab." : "No portfolio companies yet. A company appears here once one of its verified KPIs is tracked."}</Empty>}
+        {data?.breaches.length === 0 && <Empty>{tests ? "No breaches in the visible tests." : data.companies.length ? "No covenant tests have run yet. Add one on a company's Covenants tab, with a cited threshold." : "No portfolio companies yet. A company appears here once one of its verified KPIs is tracked."}</Empty>}
         <ul className="divide-y divide-line">
           {data?.breaches.map((b, i) => (
             <li key={i} className="flex flex-wrap items-center gap-3 px-5 py-3 text-sm">
