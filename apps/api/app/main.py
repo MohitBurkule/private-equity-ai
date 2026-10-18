@@ -163,6 +163,7 @@ from app.hybrid import default_index
 from app.ingest import finalize_upload, ingest_any
 from app.ixbrl_full import read_filing
 from app.kpi_workbook import ingest_kpi_pack as kpi_pack_ingest
+from app.kpi_workbook import set_label_map
 from app.lbo_workbook import named_inputs, tie
 from app.llm import LLM, LLMCapExceeded, NoLLMConfigured, get_llm, llm_id
 from app.market import shares as market_shares
@@ -4736,6 +4737,21 @@ async def upload_kpi_pack(company_id: int, file: Annotated[UploadFile, File()], 
     log_event(db, who.tenant, actor(who), "portfolio.kpi_pack",
               {"company_id": company_id, "observations": len(out.observations), "skipped": len(out.skipped)})
     return {"observations": out.observations, "skipped": out.skipped, "unchanged": out.unchanged}
+
+
+class LabelMapIn(BaseModel):
+    labels: dict[str, str] = Field(default_factory=dict, max_length=200)
+
+
+@app.put("/portfolio/companies/{company_id}/label-map")
+def put_label_map(company_id: int, body: LabelMapIn, db: Db, who: Writer):
+    """This company's workbook labels -> KPI names, on top of the default map. Empty clears it. Unknown KPIs are refused."""
+    try:
+        clean = set_label_map(db, who.tenant, company_id, body.labels)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    log_event(db, who.tenant, actor(who), "portfolio.label_map", {"company_id": company_id, "labels": len(clean)})
+    return {"labels": clean}
 
 
 @app.post("/targets/{tid}/funding-import")

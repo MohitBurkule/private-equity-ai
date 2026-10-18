@@ -6,6 +6,7 @@ Each fact cites its sheet (page), the value's cell (anchor), and the row's text 
 the pack arrives, so a monthly pack resets the KPI cadence watcher."""
 from __future__ import annotations
 
+import json
 import re
 import tempfile
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ KPI_MAP = {  # workbook label (lower case) -> KPI metric name
     "gross margin": "gross_margin", "headcount": "headcount",
     "cash": "cash", "net debt": "net_debt",
 }
+KPIS = frozenset(KPI_MAP.values())
 _PERIOD = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 _HEADERS = ("metric", "period", "value", "unit")
 
@@ -45,6 +47,26 @@ def _header(ws) -> tuple[int, dict[str, int]] | None:
     return None
 
 
+def company_label_map(company: PortfolioCompany) -> dict[str, str]:
+    """Default KPI_MAP, overridden by this company's own label map. Labels still go to skipped if neither names them."""
+    extra = json.loads(company.label_map) if company.label_map else {}
+    return {**KPI_MAP, **extra}
+
+
+def set_label_map(db: Session, tenant_id: str, company_id: int, labels: dict[str, str]) -> dict[str, str]:
+    company = db.get(PortfolioCompany, company_id)
+    if company is None or company.tenant_id != tenant_id:
+        raise ValueError("company not found")
+    clean = {}
+    for label, kpi in labels.items():
+        if kpi not in KPIS:
+            raise ValueError(f"unknown KPI {kpi!r}; use one of {sorted(KPIS)}")
+        clean[label.strip().lower()] = kpi
+    company.label_map = json.dumps(clean, sort_keys=True) if clean else None
+    db.commit()
+    return clean
+
+
 def ingest_kpi_pack(db: Session, tenant_id: str, company_id: int, data: bytes, filename: str) -> PackResult:
     company = db.get(PortfolioCompany, company_id)
     if company is None or company.tenant_id != tenant_id:
@@ -57,6 +79,7 @@ def ingest_kpi_pack(db: Session, tenant_id: str, company_id: int, data: bytes, f
         if any(f.document_id == doc.id for f in db.query(FactSource).filter_by(document_id=doc.id).limit(1)):
             return PackResult([], [], unchanged=True)
         out = PackResult([], [])
+        labels = company_label_map(company)
         for sheet_no, ws in enumerate(wb.worksheets, 1):
             found = _header(ws)
             if found is None:
@@ -68,7 +91,7 @@ def ingest_kpi_pack(db: Session, tenant_id: str, company_id: int, data: bytes, f
                     continue
                 where = f"{ws.title}!{ws.cell(r_idx, cols['value']).coordinate}"
                 label = str(cells["metric"] or "").strip().lower()
-                metric = KPI_MAP.get(label)
+                metric = labels.get(label)
                 period = str(cells["period"] or "").strip()
                 unit = str(cells["unit"] or "").strip()
                 try:

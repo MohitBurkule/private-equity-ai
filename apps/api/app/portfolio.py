@@ -11,7 +11,7 @@ import re
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Integer, Numeric, String, select
+from sqlalchemy import ForeignKey, Integer, Numeric, String, Text, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.db import Base
@@ -26,6 +26,7 @@ class PortfolioCompany(Base):
     sector: Mapped[str | None] = mapped_column(String(128), default=None)
     sic: Mapped[str | None] = mapped_column(String(8), default=None)  # SIC code; add-on search matches on it too
     ownership_pct: Mapped[Decimal | None] = mapped_column(Numeric(7, 4), default=None)
+    label_map: Mapped[str | None] = mapped_column(Text, default=None)  # JSON {workbook label: KPI}, merged over the default map
 
 
 class KpiObservation(Base):
