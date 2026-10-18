@@ -38,3 +38,25 @@ def test_unknown_kind_and_text_amount_are_skipped_not_guessed():
 def test_missing_period_is_skipped():
     out = bridge_lines(_book([["Legal", "add_back", 7, None]]))
     assert out["lines"] == [] and out["skipped"][0]["reason"] == "no period"
+
+
+def test_stored_lines_are_candidates_not_verified_facts(tmp_path):
+    from sqlalchemy.orm import Session
+
+    from app.bridge_workbook import store_candidates
+    from app.db import Base, make_engine
+    from app.models import Fact
+    from app.qoe import normalized_ebitda
+
+    path = tmp_path / "bridge.xlsx"
+    path.write_bytes(_book([["Reported EBITDA", "reported", 120, "FY2025"],
+                            ["Legal", "add_back", 7, "FY2025"]]))
+    engine = make_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as s:
+        out = store_candidates(s, "t", "Acme", path, "bridge.xlsx")
+        facts = s.query(Fact).all()
+        assert len(out["fact_ids"]) == 2 and {f.status for f in facts} == {"auto"}
+        assert {f.metric for f in facts} == {"ebitda_bridge reported", "ebitda_bridge add_back"}
+        assert all(f.sources[0].kind == "xlsx" and f.sources[0].anchor for f in facts)
+        assert normalized_ebitda(s, "t", "Acme", "FY2025").missing  # unreviewed lines withhold the total
