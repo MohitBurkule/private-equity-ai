@@ -20,6 +20,7 @@ RS = os.environ["PARITY_RUST"]
 ADMIN_TOKEN = os.environ["PARITY_ADMIN_TOKEN"]
 TENANT_ID = None
 REVOKE_KID = None
+ADMIN_KID = None
 DSN = os.environ["PARITY_DB_URL"]
 
 
@@ -51,6 +52,8 @@ def seed(conn):
     status, out = call(FA, "/admin/tenants", method="POST", body={"name": "parity"}, headers=admin_hdr)
     assert status == 201, out
     keys["admin"] = out["api_key"]
+    global ADMIN_KID
+    ADMIN_KID = hashlib.sha256(out["api_key"].encode()).hexdigest()[:12]
     tenant_id = out["tenant_id"]
     global TENANT_ID
     TENANT_ID = tenant_id
@@ -318,6 +321,11 @@ def main():
                 requests.append((path, name))
         requests.append((f"DELETE /admin/keys/{REVOKE_KID}", "ADMIN"))
         requests.append(("DELETE /admin/keys/nope", "ADMIN"))
+        # Only the paths that never reach Graph: the directory is not reachable from the parity harness.
+        requests.append((f"POST /admin/tenants/{TENANT_ID}/keys/nope/groups/sync|{{\"token\": \"t\"}}", "ADMIN"))
+        requests.append((f"POST /admin/tenants/{TENANT_ID}/keys/{REVOKE_KID}/groups/sync|{{\"token\": \"t\"}}", "ADMIN"))
+        requests.append((f"POST /admin/tenants/{TENANT_ID}/keys/{ADMIN_KID}/groups/sync|{{\"token\": \"t\"}}", "ADMIN"))
+        requests.append((f"POST /admin/tenants/{TENANT_ID}/keys/{ADMIN_KID}/groups/sync|{{\"token\": \"t\"}}", "NOTOKEN"))
         for body in [{"role": "viewer", "deals": ["Other"], "deal_roles": {"Other": "partner"}},
                      {}, {"identity": "Ana@Example.test", "groups": ["G1", "g1", " g2 "]}]:
             requests.append((f"POST /admin/tenants/{TENANT_ID}/keys|{json.dumps(body)}", "ADMIN"))

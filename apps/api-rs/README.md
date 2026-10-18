@@ -6,13 +6,14 @@ Routes it does not serve are relayed to `FASTAPI_UPSTREAM` unchanged, so one URL
 Parity is checked with `make parity` (`scripts/parity.sh`, `parity/run.py`): status, body and audit rows of each
 request must match FastAPI for every key shape.
 
-## Served natively (32)
+## Served natively (33)
 
 | Method | Path |
 | --- | --- |
 | DELETE | `/admin/keys/{kid}` |
 | POST | `/admin/tenants` |
 | POST | `/admin/tenants/{tenant_id}/keys` |
+| POST | `/admin/tenants/{tenant_id}/keys/{kid}/groups/sync` |
 | GET | `/admin/tenants/{tenant_id}/document-access` |
 | PUT | `/admin/tenants/{tenant_id}/pii-redaction` |
 | GET | `/admin/tenants/{tenant_id}/keys` |
@@ -43,7 +44,7 @@ request must match FastAPI for every key shape.
 | GET | `/workflows` |
 | GET | `/workflows/{wid}/last` |
 
-## Relayed to FastAPI (200)
+## Relayed to FastAPI (199)
 
 Port these in the order listed, one slice per PR, each gated on `make ci` and `make parity`. Comps and legal red
 flags in `GET /memo` (`peers` with `period`, `legal_doc`) also relay until `comps.py` and `legal.py` are ported.
@@ -51,7 +52,6 @@ flags in `GET /memo` (`peers` with `period`, `legal_doc`) also relay until `comp
 | Method | Path |
 | --- | --- |
 | POST | `/admin/jobs/requeue` |
-| POST | `/admin/tenants/{tenant_id}/keys/{kid}/groups/sync` |
 | POST | `/agent/run` |
 | GET | `/agent/tools` |
 | GET | `/agent/workflows` |

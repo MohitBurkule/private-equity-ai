@@ -427,3 +427,122 @@ pub async fn create_tenant(
         })),
     ))
 }
+
+const GRAPH: &str = "https://graph.microsoft.com/v1.0";
+
+/// Percent-encodes everything but unreserved characters (Python quote(email, safe='')).
+fn quote(raw: &str) -> String {
+    raw.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+/// Port of connectors/graph.py DirectoryGroups.member_of: the directory group ids a person is in, lower-cased,
+/// sorted. Follows @odata.nextLink. Any transport or parse failure is a 502, as the Python ConnectorError is.
+async fn member_of(
+    http: &reqwest::Client,
+    token: &str,
+    email: &str,
+) -> Result<Vec<String>, ApiError> {
+    let bad = |what: &str| ApiError::new(StatusCode::BAD_GATEWAY, what.to_string());
+    let mut url = format!("{GRAPH}/users/{}/memberOf?$select=id", quote(email));
+    let mut ids: BTreeSet<String> = BTreeSet::new();
+    loop {
+        let resp = http
+            .get(&url)
+            .bearer_auth(token)
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|_| bad("directory request failed"))?;
+        if !resp.status().is_success() {
+            return Err(bad("directory request failed"));
+        }
+        let page: Value = resp
+            .json()
+            .await
+            .map_err(|_| bad("non-JSON response from directory"))?;
+        for g in page
+            .get("value")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(id) = g
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|i| !i.is_empty())
+            {
+                ids.insert(id.to_lowercase());
+            }
+        }
+        match page
+            .get("@odata.nextLink")
+            .and_then(Value::as_str)
+            .filter(|u| !u.is_empty())
+        {
+            Some(next) => url = next.to_string(),
+            None => break,
+        }
+    }
+    Ok(ids.into_iter().collect())
+}
+
+#[derive(serde::Deserialize)]
+pub struct GroupSyncBody {
+    token: String,
+}
+
+/// POST /admin/tenants/{tenant_id}/keys/{kid}/groups/sync: set a key's groups from its person's directory
+/// memberships. The token is used once for the lookup and never stored.
+pub async fn sync_key_groups(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Path((tenant, kid)): Path<(String, String)>,
+    Json(body): Json<GroupSyncBody>,
+) -> Result<Json<Value>, ApiError> {
+    if !admin_token_ok(&headers) {
+        return Err(forbidden());
+    }
+    if body.token.is_empty() || body.token.len() > 4096 {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "token must be 1 to 4096 characters",
+        ));
+    }
+    let mut tx = s.pool.begin().await?;
+    let rows: Vec<(String, bool, Option<String>)> = sqlx::query_as(
+        "SELECT key_hash, revoked, identity FROM api_key WHERE tenant_id = $1 ORDER BY key_hash",
+    )
+    .bind(&tenant)
+    .fetch_all(&mut *tx)
+    .await?;
+    let Some((hash, revoked, identity)) = rows
+        .into_iter()
+        .find(|(h, _, _)| h[..12.min(h.len())] == kid)
+    else {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "key not found"));
+    };
+    if revoked {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "key not found"));
+    }
+    let Some(identity) = identity.filter(|i| !i.is_empty()) else {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "key has no identity to look up in the directory",
+        ));
+    };
+    let groups = member_of(&s.http, &body.token, &identity).await?;
+    sqlx::query("UPDATE api_key SET groups = $2 WHERE key_hash = $1")
+        .bind(&hash)
+        .bind(format_groups(Some(&groups)))
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(Json(json!({ "key_id": kid, "groups": groups })))
+}

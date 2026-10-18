@@ -78,6 +78,10 @@ pub fn app(state: AppState) -> Router {
         .route("/admin/keys/:kid", delete(admin::revoke_key))
         .route("/admin/tenants", post(admin::create_tenant))
         .route(
+            "/admin/tenants/:tenant_id/keys/:kid/groups/sync",
+            post(admin::sync_key_groups),
+        )
+        .route(
             "/admin/tenants/:tenant_id/keys",
             get(admin::list_keys).post(admin::add_key),
         )
