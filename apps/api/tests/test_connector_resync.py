@@ -61,3 +61,15 @@ def test_check_endpoint_raises_once_per_stale_run():
     with SessionLocal() as s:
         bind_tenant(s, tid)
         assert s.query(Alert).filter_by(tenant_id=tid, kind="connector_stale").count() == 1
+
+
+def test_run_due_tick_also_raises_resync_alerts():
+    h, tid = new_tenant_id(c, "resync-tick")
+    with SessionLocal() as s:
+        bind_tenant(s, tid)
+        s.add(Connection(tenant_id=tid, connector="s3", options="{}", token_sealed="x", created_by="k",
+                         last_run=(datetime.now(UTC) - timedelta(days=2)).isoformat(), last_status="ok: done"))
+        s.commit()
+    body = c.post("/connections/run-due", headers=h).json()
+    assert body["resync_alerts"] == 1
+    assert c.post("/connections/run-due", headers=h).json()["resync_alerts"] == 0

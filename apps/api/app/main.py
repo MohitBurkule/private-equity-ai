@@ -5100,7 +5100,7 @@ def sync_saved_connection(cid: int, db: Db, who: Writer):
     return out
 
 
-@app.post("/connections/run-due")
+@app.post("/connections/run-due")  # cron: hit hourly (or more often; the resync check is idempotent per last run)
 def run_due_connections(db: Db, who: Writer):
     """Cron entry point: run every visible connection whose interval has elapsed. Call it every few minutes."""
     now = datetime.now(UTC)
@@ -5112,7 +5112,10 @@ def run_due_connections(db: Db, who: Writer):
             continue
         _run_connection(db, who, r)
         ran.append({"id": r.id, "status": r.last_status})
-    return {"ran": ran}
+    # Stale or failed connections raise their inbox alert on the same tick. Idempotent per last run, so a tick
+    # that finds nothing new adds nothing.
+    raised = resync.check(db, who.tenant, now)
+    return {"ran": ran, "resync_alerts": len(raised)}
 
 
 @app.post("/connectors/linkedin/import")
