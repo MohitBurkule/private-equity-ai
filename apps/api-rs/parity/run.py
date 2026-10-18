@@ -131,6 +131,15 @@ def seed(conn):
             (tenant_id, "e" * 64),
         )
         cur.execute(
+            "INSERT INTO workflow_schedule (id, tenant_id, name, kind, params, every_days, recipients, next_run,"
+            " last_run, last_status, last_result, active)"
+            " VALUES (9001, %s, 'Weekly report', 'portfolio_report', '{}', 7, '', '2026-10-24T00:00:00+00:00',"
+            " '2026-10-17T00:00:00+00:00', 'ok', '{\"sent\": 1}', 1),"
+            " (9002, %s, 'Comps refresh', 'comps', '{}', 30, 'a@example.test', '2026-11-16T00:00:00+00:00',"
+            " NULL, 'failed', 'peer feed timed out', 0)",
+            (tenant_id, tenant_id),
+        )
+        cur.execute(
             "INSERT INTO memo_template (tenant_id, name, sections, headings, intro, created_by, created_at)"
             " VALUES (%s, 'board', '[\"financial\", \"risks\", \"rules\"]', '{\"financial\": \"Numbers\"}',"
             " 'Draft for the board.', 'seed', '2026-10-17T10:00:00+00:00')",
@@ -210,6 +219,10 @@ def main():
                 "/memo/sections?entity=Other&template=nope",
                 "/memo/sections?entity=Nope",
                 "/memo/sections",
+                "/workflows",
+                "/workflows/9001/last",
+                "/workflows/9002/last",
+                "/workflows/9999/last",
                 "/documents",
                 "/memo/versions?entity=Other",
                 "/memo/versions/1",

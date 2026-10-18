@@ -21,6 +21,7 @@ mod ratelimit;
 mod scope;
 mod snapshot;
 mod visibility;
+mod workflows;
 
 use axum::{extract::State, http::HeaderMap, routing::get, Json, Router};
 use serde_json::{json, Value};
@@ -68,6 +69,8 @@ pub fn app(state: AppState) -> Router {
         .route("/deals/:name/peer-sets", get(peer_sets::list_peer_sets))
         .route("/targets/:tid/notes", get(notes::list_target_notes))
         .route("/memo", get(memo_text::get_memo))
+        .route("/workflows", get(workflows::list_workflows))
+        .route("/workflows/:wid/last", get(workflows::workflow_last))
         .route("/memo/sections", get(memo_text::get_memo_sections))
         .route("/memo/templates", get(memo::list_templates))
         .route("/memo/versions", get(memo::list_versions))
