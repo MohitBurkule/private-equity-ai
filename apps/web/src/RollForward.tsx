@@ -43,7 +43,7 @@ export function RollForward() {
         </form>
       </Card>
       {err && <ErrorLine e={err} />}
-      {companies && companies.length === 0 && <Empty>No portfolio companies yet.</Empty>}
+      {companies && companies.length === 0 && <Empty>No portfolio companies yet. A company appears here once one of its verified KPIs is tracked.</Empty>}
       {companies && companies.length > 0 && (
         <Card>
           <CardHead title="Company" />
