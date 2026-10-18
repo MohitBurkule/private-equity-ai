@@ -223,6 +223,7 @@ def main():
                 "/workflows/9001/last",
                 "/workflows/9002/last",
                 "/workflows/9999/last",
+                "/workflows/abc/last",
                 "/documents",
                 "/memo/versions?entity=Other",
                 "/memo/versions/1",
