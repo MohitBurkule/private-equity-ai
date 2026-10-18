@@ -138,6 +138,23 @@ def seed(conn):
             " VALUES (%s, 'board_meeting_frequency', 'monthly', %s, 1, 'Board meets monthly.', 'accepted')",
             (tenant_id, "e" * 64),
         )
+        for doc_id, filename, deal, sha, text in [
+            ("f" * 64, "nda-other.pdf", "Other", "d" * 64,
+             "Mutual Non-Disclosure Agreement between the parties. This Agreement shall be governed by the laws of "
+             "the State of Delaware. The obligations of confidentiality survive for seven (7) years. Each party will "
+             "not solicit employees for a period of four (4) years."),
+            ("g" * 64, "board-minutes-zeta.pdf", "Zeta", "e" * 64, "Board minutes for the Zeta deal team."),
+            ("h" * 64, "minutes-other.pdf", "Other", "f" * 64, "Minutes of the operating committee."),
+        ]:
+            cur.execute(
+                "INSERT INTO document (id, tenant_id, sha256, filename, n_pages, kind, deal, created_at)"
+                " VALUES (%s, %s, %s, %s, 1, 'pdf', %s, '2026-10-17T10:00:00+00:00')",
+                (doc_id, tenant_id, sha, filename, deal),
+            )
+            cur.execute(
+                "INSERT INTO page (document_id, number, text) VALUES (%s, 1, %s)",
+                (doc_id, text),
+            )
         cur.execute(
             "INSERT INTO workflow_schedule (id, tenant_id, name, kind, params, every_days, recipients, next_run,"
             " last_run, last_status, last_result, active)"
@@ -224,6 +241,10 @@ def main():
                 "/memo?entity=Other&peers=PeerA,PeerB,Zeta,PeerC&period=FY24",
                 "/memo?entity=Zeta&peers=Other,PeerA,PeerB&period=FY24",
                 "/memo?entity=Other&peers=PeerA,PeerB,PeerC&period=FY23",
+                "/memo?entity=Other&legal_doc=" + "f" * 64,
+                "/memo?entity=Other&legal_doc=" + "g" * 64,
+                "/memo?entity=Other&legal_doc=" + "h" * 64,
+                "/memo?entity=Other&legal_doc=" + "x" * 64,
                 "/memo/sections?entity=Other",
                 "/memo/sections?entity=Zeta&template=snapshot",
                 "/memo/sections?entity=Other&template=board",
