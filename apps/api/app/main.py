@@ -249,6 +249,7 @@ from app.shareledger import reconcile as reconcile_shares
 from app.similar_deals import similar_decisions
 from app.stage_sync import stage_sync as run_stage_sync
 from app.sumcheck import sum_check
+from app.thesis_score import Filing, Thesis, rank
 from app.tracing import render_metrics, tracing_middleware
 from app.valuation_rounds import parse_rounds
 from app.versions import same_lineage, superseded
@@ -4961,6 +4962,38 @@ def alerts_scan(db: Db, who: Writer):
     made = al.scan(db, who.tenant)
     log_event(db, who.tenant, actor(who), "alerts.scan", {"created": len(made)})
     return {"created": [al.alert_dict(a) for a in made]}
+
+
+class ThesisFilingIn(BaseModel):
+    url: str = Field(min_length=8, max_length=512)
+    name: str = Field(min_length=1, max_length=256)
+    sic: str | None = Field(default=None, max_length=8)
+    text: str = Field(default="", max_length=2_000_000)
+    revenue: Decimal | None = None
+
+
+class ThesisIn(BaseModel):
+    sic_divisions: list[str] = Field(default_factory=list, max_length=20)
+    keywords: list[str] = Field(default_factory=list, max_length=20)
+    min_revenue: Decimal | None = None
+    max_revenue: Decimal | None = None
+
+
+class ThesisScoreIn(BaseModel):
+    thesis: ThesisIn
+    filings: list[ThesisFilingIn] = Field(max_length=100)
+
+
+@app.post("/sourcing/thesis-score")
+def sourcing_thesis_score(body: ThesisScoreIn, who: Who):
+    """Ranks filings against the firm thesis. Each met criterion cites its filing URL; an unmet criterion says why.
+    Stores nothing: the caller supplies the filing text and revenue, which are not fetched here."""
+    t = body.thesis
+    thesis = Thesis(sic_divisions=frozenset(d.strip()[:2] for d in t.sic_divisions if d.strip()),
+                    keywords=tuple(k.strip() for k in t.keywords if k.strip()),
+                    min_revenue=t.min_revenue, max_revenue=t.max_revenue)
+    filings = [Filing(url=f.url, name=f.name, sic=f.sic, text=f.text, revenue=f.revenue) for f in body.filings]
+    return {"ranked": rank(thesis, filings)}
 
 
 @app.get("/alerts/brief")
