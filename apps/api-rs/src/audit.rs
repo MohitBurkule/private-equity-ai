@@ -70,6 +70,7 @@ pub async fn log_event(
 }
 
 type AuditRow = (i32, String, String, String, String);
+type ChainRow = (i32, String, String, String, String, String, String);
 
 /// FastAPI's `limit: int = Query(100, ge=1, le=500)`, checked before the handler runs.
 fn audit_limit(raw: Option<&String>) -> Result<i64, ApiError> {
@@ -123,4 +124,27 @@ pub async fn list_audit(
         })
         .collect();
     Ok(Json(json!({ "items": items })))
+}
+
+/// Port of GET /audit/verify (app/main.py audit_verify): walk the tenant chain from the start and report the first
+/// row whose link or digest does not hold. Any key of the tenant may ask; the chain covers every deal.
+pub async fn verify_audit(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, ApiError> {
+    let (_p, mut tx) = principal(&s, &headers).await?;
+    let rows: Vec<ChainRow> = sqlx::query_as(
+        "SELECT id, ts, actor, action, payload, prev_hash, hash FROM audit_event ORDER BY id",
+    )
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let mut prev = "0".repeat(64);
+    for (id, ts, actor, action, payload, prev_hash, hash) in rows {
+        if prev_hash != prev || hash != digest(&prev, &ts, &actor, &action, &payload) {
+            return Ok(Json(json!({ "ok": false, "first_bad_id": id })));
+        }
+        prev = hash;
+    }
+    Ok(Json(json!({ "ok": true, "first_bad_id": null })))
 }

@@ -6,13 +6,14 @@ Routes it does not serve are relayed to `FASTAPI_UPSTREAM` unchanged, so one URL
 Parity is checked with `make parity` (`scripts/parity.sh`, `parity/run.py`): status, body and audit rows of each
 request must match FastAPI for every key shape.
 
-## Served natively (23)
+## Served natively (24)
 
 | Method | Path |
 | --- | --- |
 | GET | `/alerts` |
 | GET | `/alerts/brief` |
 | GET | `/audit` |
+| GET | `/audit/verify` |
 | GET | `/dd/questions` |
 | GET | `/dd/requests` |
 | GET | `/dd/summary` |
@@ -34,7 +35,7 @@ request must match FastAPI for every key shape.
 | GET | `/workflows` |
 | GET | `/workflows/{wid}/last` |
 
-## Relayed to FastAPI (209)
+## Relayed to FastAPI (208)
 
 Port these in the order listed, one slice per PR, each gated on `make ci` and `make parity`. Comps and legal red
 flags in `GET /memo` (`peers` with `period`, `legal_doc`) also relay until `comps.py` and `legal.py` are ported.
@@ -59,7 +60,6 @@ flags in `GET /memo` (`peers` with `period`, `legal_doc`) also relay until `comp
 | POST | `/alerts/{alert_id}/status` |
 | POST | `/ask` |
 | POST | `/audit/archive` |
-| GET | `/audit/verify` |
 | POST | `/calc/comps` |
 | POST | `/calc/comps.docx` |
 | POST | `/calc/comps.pptx` |
