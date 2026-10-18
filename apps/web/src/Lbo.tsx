@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api2, FactRow, LboRequest, LboResult, LboRunDetail, LboRunRow } from "./api";
 import { fmtAmount } from "./format";
 import { useLoad } from "./hooks";
-import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input, Page } from "./ui";
+import { Badge, Button, Card, CardHead, Empty, ErrorLine, Input, Loading, Page } from "./ui";
 
 // Mirrors lbo.REQUIRED on the API. Each input is a verified cited fact, or an assumption with an owner and a reason.
 const REQUIRED = ["ebitda", "entry_multiple", "exit_multiple", "leverage", "interest_rate", "tax_rate", "cash_conversion", "fees_pct", "years"] as const;
@@ -91,6 +91,7 @@ export function Lbo() {
       <Card>
         <CardHead title="Inputs" />
         <ErrorLine e={error} />
+        {facts.loading && <Loading />}
         {facts.data?.length === 0 && <Empty>No verified facts yet. Accept facts in Review first.</Empty>}
         <div className="grid gap-4 p-5 sm:grid-cols-2">
           {REQUIRED.map((k) => {

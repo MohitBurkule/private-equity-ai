@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Note } from "./api";
 import { useLoad } from "./hooks";
-import { Button, CardHead, Card, ErrorLine, Input } from "./ui";
+import { Button, Card, CardHead, ErrorLine, Input, Loading } from "./ui";
 
 type NotesApi = { list: () => Promise<Note[]>; add: (body: string) => Promise<Note>; edit: (id: number, body: string) => Promise<Note> };
 
@@ -27,6 +27,7 @@ export function NotesPanel({ title, hint, api, deps }: { title: string; hint: st
       <CardHead title={title} hint={hint} />
       <div className="space-y-3 p-4 text-sm">
         <ErrorLine e={err || notes.error} />
+        {notes.loading && <Loading />}
         {(notes.data ?? []).map((n) => (
           <div key={n.id} className="rounded-lg border border-line p-3">
             <div className="mb-1 flex justify-between text-xs text-mut">
