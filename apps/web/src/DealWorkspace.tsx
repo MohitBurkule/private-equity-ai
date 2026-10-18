@@ -73,9 +73,9 @@ export function DealWorkspace({ deal }: { deal: string }) {
           <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-xs text-mut"><tr><th className="pb-1">Document</th><th>Term</th><th>Value</th><th className="text-right">Page</th></tr></thead>
             <tbody>{redFlags.map((f, i) => (
               <tr key={`${f.document_id}-${f.term}-${i}`} className="border-t border-line">
-                <td className="py-1.5">{docName.get(f.document_id) ?? f.document_id.slice(0, 8)}</td>
-                <td>{f.term.replace(/_/g, " ")}</td>
-                <td className="tnum">{f.value}</td>
+                <td className="py-1.5 pr-3">{docName.get(f.document_id) ?? f.document_id.slice(0, 8)}</td>
+                <td className="pr-3">{f.term.replace(/_/g, " ")}</td>
+                <td className="tnum pr-3">{f.value}</td>
                 <td className="tnum text-right">{f.page}</td>
               </tr>
             ))}</tbody></table></div>
