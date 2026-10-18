@@ -162,8 +162,8 @@ from app.holdings import parse_holdings
 from app.hybrid import default_index
 from app.ingest import finalize_upload, ingest_any
 from app.ixbrl_full import read_filing
+from app.kpi_workbook import company_for_alias, set_inbox_alias, set_label_map
 from app.kpi_workbook import ingest_kpi_pack as kpi_pack_ingest
-from app.kpi_workbook import set_label_map
 from app.lbo_workbook import named_inputs, tie
 from app.llm import LLM, LLMCapExceeded, NoLLMConfigured, get_llm, llm_id
 from app.market import shares as market_shares
@@ -4788,6 +4788,43 @@ def put_label_map(company_id: int, body: LabelMapIn, db: Db, who: Writer):
         raise HTTPException(422, str(e)) from e
     log_event(db, who.tenant, actor(who), "portfolio.label_map", {"company_id": company_id, "labels": len(clean)})
     return {"labels": clean}
+
+
+class InboxAliasIn(BaseModel):
+    alias: str | None = Field(default=None, max_length=64)
+
+
+@app.put("/portfolio/companies/{company_id}/inbox-alias")
+def put_inbox_alias(company_id: int, body: InboxAliasIn, db: Db, who: Writer):
+    """The address-like name this company's KPI packs are mailed to. Null clears it."""
+    try:
+        clean = set_inbox_alias(db, who.tenant, company_id, body.alias)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    log_event(db, who.tenant, actor(who), "portfolio.inbox_alias", {"company_id": company_id, "alias": clean})
+    return {"alias": clean}
+
+
+@app.post("/portfolio/kpi-packs/inbox")
+async def kpi_pack_inbox(alias: Annotated[str, Form(min_length=1, max_length=64)],
+                         file: Annotated[UploadFile, File()], db: Db, who: Writer):
+    """A KPI pack mailed to a company's inbox alias. The alias picks the company; the pack then goes through the
+    same ingest as a direct upload, so every figure still cites its sheet and cell."""
+    company = company_for_alias(db, who.tenant, alias)
+    if company is None:
+        raise HTTPException(404, "no company has that inbox alias")
+    data = await file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, f"file larger than {MAX_UPLOAD} bytes")
+    try:
+        out = kpi_pack_ingest(db, who.tenant, company.id, data, file.filename or "kpi-pack.xlsx")
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    log_event(db, who.tenant, actor(who), "portfolio.kpi_pack",
+              {"company_id": company.id, "via": "inbox", "observations": len(out.observations),
+               "skipped": len(out.skipped)})
+    return {"company_id": company.id, "observations": out.observations, "skipped": out.skipped,
+            "unchanged": out.unchanged}
 
 
 @app.post("/targets/{tid}/funding-import")
