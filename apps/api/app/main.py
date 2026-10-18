@@ -153,6 +153,7 @@ from app.facts import (
     review_fact,
 )
 from app.factsxlsx import build_facts_xlsx, fact_rows
+from app.figures import detect_figures, store_figures
 from app.filing_view import filing_page_html
 from app.funding_import import funding_for_target
 from app.fundmetrics import fund_metrics
@@ -197,6 +198,7 @@ from app.models import (
     MemoTemplate,
     MemoVersion,
     OutreachItem,
+    PageFigure,
     PageRow,
     PeerSet,
     Person,
@@ -4320,6 +4322,26 @@ def ask(body: AskIn, db: Db, who: Who, llm: Annotated[LLM, Depends(llm_dependenc
     return {"status": a.status, "detail": a.detail, "claims": [cite(c) for c in a.claims],
             "rejected": [{**cite(c), "reason": c.reason} for c in a.rejected],
             "prompt_version": a.prompt_version, "model": a.model, "cached": cached}
+
+
+@app.post("/documents/{doc_id}/figures/detect")
+def detect_document_figures(doc_id: str, db: Db, who: Writer):
+    """Find the figures on each page of the document's kept PDF and store where they sit."""
+    _own_doc(db, who, doc_id)
+    original = db.get(DocumentFile, doc_id)
+    if original is None or original.media_type != "application/pdf":
+        raise HTTPException(404, "no PDF kept for this document")
+    n = store_figures(db, who.tenant, doc_id, detect_figures(original.data))
+    log_event(db, who.tenant, actor(who), "figures.detect", {"document_id": doc_id, "found": n})
+    db.commit()
+    return {"document_id": doc_id, "found": n}
+
+
+@app.get("/documents/{doc_id}/figures")
+def list_document_figures(doc_id: str, db: Db, who: Who):
+    _own_doc(db, who, doc_id)
+    rows = db.query(PageFigure).filter_by(tenant_id=who.tenant, document_id=doc_id).order_by(PageFigure.page, PageFigure.id).all()
+    return [{"id": r.id, "page": r.page, "kind": r.kind, "bbox": [r.left, r.top, r.right, r.bottom]} for r in rows]
 
 
 @app.post("/chat/{kind}/inbound")
