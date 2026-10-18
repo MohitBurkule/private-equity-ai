@@ -10,3 +10,11 @@ def test_version_token_splits_off_the_lineage_name():
 def test_newest_version_supersedes_older_only_within_a_lineage():
     names = {1: "Acme_model_v3.xlsx", 2: "Acme_model_v5.xlsx", 3: "Acme_CIM.pdf", 4: "Beta_model_v1.xlsx"}
     assert superseded(names) == {1: 2}
+
+
+def test_same_lineage_needs_two_versioned_files_of_one_model():
+    from app.versions import same_lineage
+    assert same_lineage({1: "model_v3.xlsx", 2: "model_v5.xlsx"}) is True
+    assert same_lineage({1: "model_v3.xlsx", 2: "cim.xlsx"}) is False
+    assert same_lineage({1: "model_v3.xlsx"}) is False
+    assert same_lineage({1: "cim.xlsx", 2: "qoe.xlsx"}) is False

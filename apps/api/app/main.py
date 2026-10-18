@@ -239,7 +239,7 @@ from app.stage_sync import stage_sync as run_stage_sync
 from app.sumcheck import sum_check
 from app.tracing import render_metrics, tracing_middleware
 from app.valuation_rounds import parse_rounds
-from app.versions import superseded
+from app.versions import same_lineage, superseded
 from app.waterfall import PrefClass, waterfall
 from app.webhooks import UnsafeWebhookUrl
 from app.xbrl import candidates, crosscheck, load_companyfacts
@@ -952,6 +952,8 @@ def fact_conflicts(db: Db, who: Who, entity: str | None = None, cross_document_o
                     "spread_pct": str(c.spread_pct.quantize(Decimal("0.01"))), "likely_rounding": c.likely_rounding,
                     "severity": c.severity, "cross_document": c.cross_document, "sources": c.sources,
                     "values": [{"value": str(v), "fact_id": fid} for v, fid in c.values],
+                    # Versions of one model disagree as a restatement (read in order); anything else is a conflict.
+                    "kind": "restatement" if same_lineage({k: v for k, v in names.items() if v}) else "conflict",
                     "superseded_by": {str(k): str(v) for k, v in newer.items()}})
     return out
 
