@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.models import Deal, ICDecision
+from app.models import Deal, DealPostMortem, ICDecision
 from app.seen_before import normalise
 
 
@@ -34,7 +34,7 @@ def similar_decisions(db: Session, tenant: str, deal_name: str, scope: set[str] 
               if scope is None or d.name in scope]
     matched = {d.name: rules for d in others if (rules := _matches(subject, d))}
     if not matched:
-        return {"subject": deal_name, "matches": []}
+        return {"subject": deal_name, "matches": [], "postmortems": []}
     decisions = (db.query(ICDecision)
                  .filter(ICDecision.tenant_id == tenant, ICDecision.deal.in_(list(matched)))
                  .order_by(ICDecision.recorded_at.desc(), ICDecision.id.desc()).all())
@@ -43,4 +43,10 @@ def similar_decisions(db: Session, tenant: str, deal_name: str, scope: set[str] 
              "matched_on": matched[d.deal]} for d in decisions]
     # Recorded dissent first: a partner most needs to see where the room disagreed.
     rows.sort(key=lambda r: r["dissent"] is None)
-    return {"subject": deal_name, "matches": rows}
+    pms = (db.query(DealPostMortem)
+           .filter(DealPostMortem.tenant_id == tenant, DealPostMortem.deal.in_(list(matched)))
+           .order_by(DealPostMortem.recorded_at.desc(), DealPostMortem.id.desc()).all())
+    lessons = [{"postmortem_id": p.id, "deal": p.deal, "outcome": p.outcome, "lesson": p.lesson,
+                "source_url": p.source_url, "recorded_at": p.recorded_at, "matched_on": matched[p.deal]}
+               for p in pms]
+    return {"subject": deal_name, "matches": rows, "postmortems": lessons}
