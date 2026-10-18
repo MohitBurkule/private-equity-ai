@@ -11,7 +11,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     Json,
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 use serde_json::{json, Value};
 use sqlx::{Postgres, Transaction};
 use std::collections::HashMap;
@@ -341,6 +341,97 @@ pub async fn calc_nwc(
     let c = nwc(&mut tx, &vis, &entity, &period).await?;
     tx.commit().await?;
     Ok(Json(c.to_json()))
+}
+
+/// Python nwc_peg(): the average trade NWC over the given periods. Every period must be complete, so a peg built from a
+/// partial set never moves silently when a missing period is later loaded.
+async fn nwc_peg(
+    tx: &mut Transaction<'_, Postgres>,
+    vis: &Visibility,
+    entity: &str,
+    periods: &[String],
+) -> Result<Calc, ApiError> {
+    let mut c = Calc::new(
+        "NWC peg".into(),
+        entity,
+        format!("average of trade NWC over {}", periods.join(", ")),
+    );
+    c.unit = Some("USD".into());
+    if periods.is_empty() {
+        c.missing.push("no periods given for the peg".into());
+        return Ok(c);
+    }
+    let mut values = Vec::new();
+    for p in periods {
+        let n = nwc(tx, vis, entity, p).await?;
+        match (n.value, n.unit.as_deref()) {
+            (None, _) => {
+                let items = if n.missing.is_empty() {
+                    &n.problems
+                } else {
+                    &n.missing
+                };
+                c.missing.extend(items.iter().map(|m| format!("{p} {m}")));
+            }
+            (Some(_), unit) if unit != Some("USD") => {
+                c.problems.push(format!(
+                    "{p} NWC is in {}, expected USD",
+                    unit.unwrap_or_default()
+                ));
+            }
+            (Some(v), _) => values.push(v),
+        }
+    }
+    if c.missing.is_empty() && c.problems.is_empty() {
+        let total = values.iter().fold(Decimal::ZERO, |acc, v| acc + v);
+        let mut avg = (total / Decimal::from(values.len()))
+            .round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+        avg.rescale(2);
+        c.value = Some(avg);
+    }
+    Ok(c)
+}
+
+/// Splits the comma-separated periods parameter the way FastAPI does: strip, drop empties.
+fn split_periods(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+pub async fn calc_nwc_peg(
+    State(s): State<AppState>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, ApiError> {
+    let (p, mut tx) = principal(&s, &headers).await?;
+    let missing: Vec<Value> = ["entity", "periods"]
+        .iter()
+        .filter(|name| !q.contains_key(**name))
+        .map(|name| json!({ "type": "missing", "loc": ["query", name], "msg": "Field required", "input": null }))
+        .collect();
+    if !missing.is_empty() {
+        return Err(ApiError(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "validation error".into(),
+            Some(Value::Array(missing)),
+        ));
+    }
+    let entity = q["entity"].clone();
+    let periods = split_periods(&q["periods"]);
+    let vis = Visibility::load(&mut tx, &p).await?;
+    let peg = nwc_peg(&mut tx, &vis, &entity, &periods).await?;
+    let mut per_period = serde_json::Map::new();
+    for period in &periods {
+        let c = nwc(&mut tx, &vis, &entity, period).await?;
+        per_period.insert(period.clone(), c.to_json());
+    }
+    tx.commit().await?;
+    let mut out = peg.to_json();
+    out["per_period"] = Value::Object(per_period);
+    Ok(Json(out))
 }
 
 pub async fn calc_net_debt(
