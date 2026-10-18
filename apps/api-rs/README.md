@@ -6,7 +6,7 @@ Routes it does not serve are relayed to `FASTAPI_UPSTREAM` unchanged, so one URL
 Parity is checked with `make parity` (`scripts/parity.sh`, `parity/run.py`): status, body and audit rows of each
 request must match FastAPI for every key shape.
 
-## Served natively (36)
+## Served natively (37)
 
 | Method | Path |
 | --- | --- |
@@ -26,6 +26,7 @@ request must match FastAPI for every key shape.
 | GET | `/calc/ltm` |
 | GET | `/calc/net-debt` |
 | GET | `/calc/net-debt-adjusted` |
+| GET | `/calc/nwc` |
 | GET | `/dd/questions` |
 | GET | `/dd/requests` |
 | GET | `/dd/summary` |
@@ -47,7 +48,7 @@ request must match FastAPI for every key shape.
 | GET | `/workflows` |
 | GET | `/workflows/{wid}/last` |
 
-## Relayed to FastAPI (196)
+## Relayed to FastAPI (195)
 
 Port these in the order listed, one slice per PR, each gated on `make ci` and `make parity`. Comps and legal red
 flags in `GET /memo` (`peers` with `period`, `legal_doc`) also relay until `comps.py` and `legal.py` are ported.
@@ -69,7 +70,6 @@ flags in `GET /memo` (`peers` with `period`, `legal_doc`) also relay until `comp
 | POST | `/calc/comps.pptx` |
 | POST | `/calc/fund-metrics` |
 | GET | `/calc/normalized-ebitda` |
-| GET | `/calc/nwc` |
 | GET | `/calc/nwc-peg` |
 | GET | `/calc/revenue-trend` |
 | POST | `/calc/share-ledger` |
