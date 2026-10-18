@@ -296,13 +296,14 @@ def _number(value: str) -> float | None:
         return float(_WORDS[value.lower()]) if value.lower() in _WORDS else None
 
 
-def red_flags(result: dict) -> list[dict]:
-    """Apply PLAYBOOK to an extract() result. Abstains on non-numeric values; never guesses a number."""
+def red_flags(result: dict, playbook: list[dict] = PLAYBOOK) -> list[dict]:
+    """Apply a playbook (the firm's by default) to an extract() result. Abstains on non-numeric values; never guesses
+    a number."""
     flags = []
     by_term: dict[str, list[dict]] = {}
     for f in result["findings"]:
         by_term.setdefault(f["term"], []).append(f)
-    for rule in PLAYBOOK:
+    for rule in playbook:
         term = rule["term"]
         hits = by_term.get(term, [])
         if rule["check"] == "absent":
@@ -366,3 +367,22 @@ def red_flags(result: dict) -> list[dict]:
                 }
             )
     return flags
+
+
+def playbook_report(result: dict, playbook: list[dict] = PLAYBOOK) -> list[dict]:
+    """Every playbook rule with its outcome against this document, so a reviewer sees what was checked as well as
+    what fired. flagged: the rule fired. clear: the rule was checked and did not fire. not_compared: a limit rule
+    had no numeric value to test, so nothing was decided; that is never reported as clear."""
+    fired = {f["rule"] for f in red_flags(result, playbook) if f["rule"] != "negation_review"}
+    numeric = {f["term"] for f in result["findings"] if _number(f["value"]) is not None}
+    out = []
+    for rule in playbook:
+        if rule["id"] in fired:
+            status = "flagged"
+        elif rule["check"] in ("max", "min") and rule["term"] not in numeric:
+            status = "not_compared"
+        else:
+            status = "clear"
+        out.append({"rule": rule["id"], "term": rule["term"], "severity": rule["severity"], "status": status,
+                    "text": rule["text"]})
+    return out

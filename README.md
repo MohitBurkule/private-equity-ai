@@ -22,6 +22,36 @@ An analyst loads deal documents, searches them, and every number in the output l
 | ![Targets](docs/screenshots/15-targets.png) | |
 | Acquisition target map, filter by sector, country, revenue | |
 
+<details>
+<summary>More screens</summary>
+
+| | |
+|---|---|
+| ![Key screen](docs/screenshots/01-key-screen.png) | ![Chat home](docs/screenshots/02-home-chat-inbox.png) |
+| API key sign-in | Chat home |
+| ![Review](docs/screenshots/09-review.png) | ![Evals](docs/screenshots/10-evals.png) |
+| Review queue for unverified facts | Answer evals |
+| ![Deck upload](docs/screenshots/17-deck-upload.png) | ![Memo](docs/screenshots/18-memo-deck-3m.png) |
+| Deck upload | IC memo draft |
+| ![Source page highlight](docs/screenshots/21-source-page-highlight.png) | ![Filing page highlight](docs/screenshots/22-filing-page-highlight.png) |
+| Highlighted source page | Highlighted filing page |
+| ![Dark home](docs/screenshots/23-home-brief-dark.png) | ![Light home](docs/screenshots/24-home-brief-light.png) |
+| Home brief, dark theme | Home brief, light theme |
+| ![Command palette](docs/screenshots/25-command-palette-dark.png) | ![Dark portfolio](docs/screenshots/26-portfolio-dark.png) |
+| Command palette | Portfolio, dark theme |
+| ![Review queue](docs/screenshots/27-review-queue.png) | ![Covenant tracker](docs/screenshots/28-covenant-tracker.png) |
+| Review queue | Covenant tracker |
+| ![LBO returns](docs/screenshots/29-lbo-returns.png) | ![LBO history](docs/screenshots/33-lbo-history.png) |
+| LBO returns | LBO history |
+| ![Integrations status](docs/screenshots/30-integrations-status.png) | ![Sourcing search](docs/screenshots/31-sourcing-search.png) |
+| Integration status | Sourcing search |
+| ![Candidate watch](docs/screenshots/32-candidate-watch.png) | ![Memo screen](docs/screenshots/34-memo-screen.png) |
+| Candidate watch | Memo screen |
+| ![Mailpit inbox](docs/screenshots/16-mailpit-inbox.png) | ![Dashboards seeded](docs/screenshots/19-dashboards-seeded.png) |
+| Alert emails in the local inbox | Dashboards with seeded demo data |
+
+</details>
+
 Known rough edges: `/ask` and auto-extraction need an LLM key and have not run against a real model.
 
 ## What works today
