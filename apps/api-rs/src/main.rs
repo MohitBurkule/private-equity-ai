@@ -12,6 +12,7 @@ mod documents;
 mod error;
 mod facts;
 mod memo;
+mod memo_text;
 mod names;
 mod notes;
 mod peer_sets;
@@ -66,6 +67,8 @@ pub fn app(state: AppState) -> Router {
         .route("/deals/:name/notes", get(notes::list_deal_notes))
         .route("/deals/:name/peer-sets", get(peer_sets::list_peer_sets))
         .route("/targets/:tid/notes", get(notes::list_target_notes))
+        .route("/memo", get(memo_text::get_memo))
+        .route("/memo/sections", get(memo_text::get_memo_sections))
         .route("/memo/templates", get(memo::list_templates))
         .route("/memo/versions", get(memo::list_versions))
         .route("/documents/:doc_id/pages/:number", get(documents::get_page))
