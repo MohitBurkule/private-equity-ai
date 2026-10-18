@@ -75,6 +75,7 @@ pub fn app(state: AppState) -> Router {
         .route("/audit", get(audit::list_audit))
         .route("/audit/verify", get(audit::verify_audit))
         .route("/calc/periods", get(calc::calc_periods))
+        .route("/calc/ltm", get(calc::calc_ltm))
         .route("/admin/keys/:kid", delete(admin::revoke_key))
         .route("/admin/tenants", post(admin::create_tenant))
         .route(
