@@ -188,6 +188,7 @@ from app.models import (
     DealChecklistItem,
     DealDeletion,
     DealNote,
+    DealPostMortem,
     DigestPref,
     Document,
     DocumentFile,
@@ -1520,6 +1521,45 @@ def ic_review(deal: str, db: Db, who: Who):
     return {"deal": deal, "latest": _decision_out(latest) if latest else None,
             "dissents": [_decision_out(d) for d in rows if d.dissent],
             "changed_since_ic": since, "ic_recorded": latest is not None}
+
+
+POSTMORTEM_OUTCOMES = {"exited", "passed", "lost", "written_off"}
+
+
+class PostMortemIn(BaseModel):
+    outcome: str
+    lesson: str = Field(min_length=1, max_length=4000)
+    source_url: str | None = Field(default=None, max_length=512)
+
+
+def _postmortem_out(r: DealPostMortem) -> dict:
+    return {"id": r.id, "deal": r.deal, "outcome": r.outcome, "lesson": r.lesson, "source_url": r.source_url,
+            "recorded_by": r.recorded_by, "recorded_at": r.recorded_at}
+
+
+@app.post("/deals/{name}/postmortems", status_code=201)
+def deal_postmortem_add(name: str, body: PostMortemIn, db: Db, who: Writer):
+    """A typed record of how the deal ended and the lesson. Append-only: a changed view is a new row."""
+    _visible_deal_or_404(db, who, name)
+    if not _dd_scope_ok(who, name):
+        raise HTTPException(403, "deal is outside this key's scope")
+    if body.outcome not in POSTMORTEM_OUTCOMES:
+        raise HTTPException(422, f"outcome must be one of {sorted(POSTMORTEM_OUTCOMES)}")
+    if body.source_url is not None and not body.source_url.startswith("https://"):
+        raise HTTPException(422, "source_url must be an https link")
+    r = DealPostMortem(tenant_id=who.tenant, deal=name, outcome=body.outcome, lesson=body.lesson,
+                       source_url=body.source_url, recorded_by=actor(who), recorded_at=_now_iso())
+    db.add(r)
+    db.commit()
+    return _postmortem_out(r)
+
+
+@app.get("/deals/{name}/postmortems")
+def deal_postmortem_list(name: str, db: Db, who: Who):
+    _visible_deal_or_404(db, who, name)
+    rows = (db.query(DealPostMortem).filter_by(tenant_id=who.tenant, deal=name)
+            .order_by(DealPostMortem.id.desc()).all())
+    return [_postmortem_out(r) for r in rows]
 
 
 @app.get("/deals/{name}/similar-decisions")

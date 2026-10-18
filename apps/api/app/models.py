@@ -221,6 +221,20 @@ class ICDecision(Base):
     recorded_at: Mapped[str] = mapped_column(String(40), default="")
 
 
+class DealPostMortem(Base):
+    """A human-written record of how a deal ended and what the team learned. Append-only, like ICDecision: a
+    corrected view is a new row. The lesson is typed by a person; nothing here is generated."""
+    __tablename__ = "deal_postmortem"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    deal: Mapped[str] = mapped_column(String(128), index=True)
+    outcome: Mapped[str] = mapped_column(String(32))  # exited | passed | lost | written_off
+    lesson: Mapped[str] = mapped_column(Text)
+    source_url: Mapped[str | None] = mapped_column(Text, default=None)
+    recorded_by: Mapped[str] = mapped_column(String(64), default="")
+    recorded_at: Mapped[str] = mapped_column(String(40), default="")
+
+
 # Ordered deal pipeline. Order matters for reporting; "closed" and "passed" end a deal and gate retention.
 STAGES = ["sourcing", "screening", "nda", "cim", "ioi", "loi", "dd", "ic", "signed", "closed", "passed"]
 
