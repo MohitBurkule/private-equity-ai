@@ -32,12 +32,12 @@ DATA_DIR="${DATA_DIR:-$ROOT/data/demo/edgar}"
 if [ -f "$DATA_DIR/filings/3M_2019_10K.htm" ]; then
   SEED=$(python3 scripts/seed_ixbrl_facts.py "http://localhost:8000" "$ADMIN_TOKEN" "$DATA_DIR")
   KEY=$(awk '/API key/{print $3}' <<<"$SEED")
-  python3 scripts/demo_extras.py "http://localhost:8000" "$KEY" "$DATABASE_URL" "$DATA_DIR" "$WORK" >/dev/null
+  python3 scripts/demo_extras.py "http://localhost:8000" "$KEY" "$DATABASE_URL" "$DATA_DIR" "$WORK" | sed "s/^/extras: /"
   if [ -f "$DATA_DIR/filings/XPO_10-K_FY2024.htm" ]; then
-    python3 scripts/seed_xpo_qoe.py "http://localhost:8000" "$KEY" "$DATA_DIR/filings" >/dev/null
+    python3 scripts/seed_xpo_qoe.py "http://localhost:8000" "$KEY" "$DATA_DIR/filings" | sed "s/^/qoe: /"
   fi
-  python3 scripts/seed_portfolio_synthetic.py "http://localhost:8000" "$KEY" >/dev/null
-  python3 scripts/seed_peer_ev_synthetic.py "$DATABASE_URL" >/dev/null
+  python3 scripts/seed_portfolio_synthetic.py "http://localhost:8000" "$KEY" | sed "s/^/synthetic: /"
+  python3 scripts/seed_peer_ev_synthetic.py "$DATABASE_URL" | sed "s/^/synthetic peers: /"
   echo "smoke: demo data from $DATA_DIR"
 else
   echo "smoke: demo smoke skipped, no filings at $DATA_DIR/filings; running on an empty tenant"
