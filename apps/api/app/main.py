@@ -222,6 +222,7 @@ from app.oidc import oidc_principal
 from app.page_image import render_page
 from app.parse import chart_vlm
 from app.parse.sh01 import parse_capital_form
+from app.periods import period_warning
 from app.portfolio import (
     MARK_METRIC,
     Covenant,
@@ -858,7 +859,8 @@ def create_fact(body: FactIn, db: Db, who: Writer):
         raise HTTPException(422, str(e)) from e
     log_event(db, tenant, actor(who), "fact.create", {"fact_id": f.id, "entity": body.entity,
                                                  "metric": body.metric, "period": body.period})
-    return {"id": f.id, "status": f.status}
+    warning = period_warning(body.period)
+    return {"id": f.id, "status": f.status, **({"warning": warning} if warning else {})}
 
 
 def _fact_out(f: Fact) -> dict:
