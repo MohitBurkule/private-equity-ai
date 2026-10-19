@@ -23,6 +23,7 @@ import { IcReview } from "./IcReview";
 import { Flagship } from "./Flagship";
 import { Covenants } from "./Covenants";
 import { Sourcing } from "./Sourcing";
+import { DissentLog } from "./DissentLog";
 import { CandidateWatch } from "./CandidateWatch";
 import { EmailReview } from "./EmailReview";
 import { DealMeetings } from "./DealMeetings";
@@ -55,6 +56,7 @@ const NAV: { id: string; icon: ReactNode }[] = [
   { id: "LBO ties", icon: <Calculator size={16} /> },
   { id: "MNPI wall", icon: <ShieldCheck size={16} /> },
   { id: "IC review", icon: <Briefcase size={16} /> },
+  { id: "Dissent log", icon: <ShieldCheck size={16} /> },
   { id: "Email review", icon: <Mail size={16} /> },
   { id: "Meetings", icon: <Calendar size={16} /> },
   { id: "Peer sets", icon: <Calculator size={16} /> },
@@ -193,6 +195,7 @@ export function App() {
         {tab === "LP report" && <LpReport />}
         {tab === "MNPI wall" && <MnpiWall />}
         {tab === "IC review" && <IcReview />}
+        {tab === "Dissent log" && <DissentLog />}
         {tab === "Sourcing" && <Sourcing />}
         {tab === "Candidates" && <CandidateWatch />}
         {tab === "Dashboards" && <Dashboards />}
