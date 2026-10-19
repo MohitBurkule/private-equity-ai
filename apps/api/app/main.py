@@ -1501,6 +1501,17 @@ def ic_decision_list(deal: str, db: Db, who: Who):
     return [_decision_out(d) for d in rows]
 
 
+@app.get("/ic/dissent-log")
+def ic_dissent_log(db: Db, who: Who, limit: int = Query(100, ge=1, le=500)):
+    """Every recorded dissent across the firm, newest first, each with its deal and decision id. Only deals this key
+    may see are listed, so a walled deal's dissent never shows up here."""
+    scope = deal_scope(db, who)
+    rows = (db.query(ICDecision).filter(ICDecision.tenant_id == who.tenant, ICDecision.dissent.isnot(None))
+            .order_by(ICDecision.id.desc()).all())
+    visible = [d for d in rows if scope is None or d.deal in scope]
+    return [_decision_out(d) for d in visible[:limit]]
+
+
 @app.get("/ic/review")
 def ic_review(deal: str, db: Db, who: Who):
     """The IC pack's record view: the latest decision, the dissents on file, and the documents filed since that
