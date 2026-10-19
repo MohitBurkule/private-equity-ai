@@ -21,7 +21,7 @@ export function Inbox({ onGo }: { onGo: (tab: string) => void }) {
       const [brief, report, conflicts, queue, deals, alerts] = await Promise.all([
         soft(api2.brief(day), null), soft(api2.report(), null), soft(api2.conflicts(), []),
         soft(Promise.all([api2.facts("auto"), api2.facts("ocr_unverified")]).then((a) => a.flat()), []),
-        soft(api2.deals(), []), soft(api2.alerts("open"), []),
+        soft(api2.deals(), []), soft(api2.alerts("new"), []),
       ]);
       if (failures.length === 6) { setError(failures[0]); setItems(null); return; }
       if (brief && brief.total > 0) {
