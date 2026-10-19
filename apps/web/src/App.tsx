@@ -23,6 +23,7 @@ import { IcReview } from "./IcReview";
 import { Flagship } from "./Flagship";
 import { Covenants } from "./Covenants";
 import { Sourcing } from "./Sourcing";
+import { Pipeline } from "./Pipeline";
 import { DissentLog } from "./DissentLog";
 import { CandidateWatch } from "./CandidateWatch";
 import { EmailReview } from "./EmailReview";
@@ -46,6 +47,7 @@ import { recentDeals, RECENT_EVENT } from "./recentDeals";
 const NAV: { id: string; icon: ReactNode }[] = [
   { id: "Home", icon: <MessageSquare size={16} /> },
   { id: "Documents", icon: <FileText size={16} /> },
+  { id: "Pipeline", icon: <Map size={16} /> },
   { id: "Deals", icon: <Briefcase size={16} /> },
   { id: "Portfolio", icon: <LayoutGrid size={16} /> },
   { id: "Covenants", icon: <ShieldCheck size={16} /> },
@@ -172,6 +174,7 @@ export function App() {
           </div>
         )}
         {tab === "Documents" && <Documents />}
+        {tab === "Pipeline" && <Pipeline />}
         {tab === "Deals" && <Deals key={pick?.n ?? 0} initial={pick?.deal} />}
         {tab === "Portfolio" && <PortfolioPanel />}
         {tab === "Covenants" && <Covenants />}
