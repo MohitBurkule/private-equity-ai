@@ -279,6 +279,7 @@ export const api2 = {
   ddSeed: (deal: string) => call<{ created: number }>("/dd/requests/seed", "POST", { deal }),
   ddStatus: (id: number, status: string) => call<DDRow>(`/dd/requests/${id}`, "PATCH", { status }),
   icPrecedents: (deal: string) => call<ICPrecedents>(`/ic/precedents?deal=${encodeURIComponent(deal)}`),
+  dissentLog: () => call<ICDecisionRow[]>("/ic/dissent-log"),
   icReview: (deal: string) => call<ICReview>(`/ic/review?deal=${encodeURIComponent(deal)}`),
   ddQuestions: (deal: string) => call<DDQuestionRow[]>(`/dd/questions?deal=${encodeURIComponent(deal)}`),
   ddQuestionAdd: (deal: string, question: string) => call<DDQuestionRow>("/dd/questions", "POST", { deal, question }),
