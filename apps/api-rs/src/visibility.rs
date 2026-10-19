@@ -101,6 +101,11 @@ impl Visibility {
         self.hidden_deals.iter()
     }
 
+    /// Membership in the visible document set (visible_doc_ids); None means unrestricted.
+    pub fn doc_in_scope(&self, doc_id: &str) -> bool {
+        self.scope.as_ref().is_none_or(|s| s.contains(doc_id))
+    }
+
     /// The source ACL half, for single-document access (_own_doc).
     pub fn acl_allows(&self, doc_id: &str) -> bool {
         !self.hidden_docs.contains(doc_id)

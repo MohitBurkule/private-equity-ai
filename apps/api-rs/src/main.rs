@@ -36,6 +36,7 @@ mod shareledger;
 mod snapshot;
 mod sumcheck;
 mod tieout;
+mod valuation;
 mod visibility;
 mod waterfall;
 mod workflows;
@@ -129,6 +130,7 @@ pub fn app(state: AppState) -> Router {
         .route("/deals/:name/snapshot", get(snapshot::deal_snapshot))
         .route("/deals/:name/notes", get(notes::list_deal_notes))
         .route("/deals/:name/peer-sets", get(peer_sets::list_peer_sets))
+        .route("/valuation-rounds", get(valuation::list_rounds))
         .route("/targets/:tid/notes", get(notes::list_target_notes))
         .route("/facts/derived", get(derived::fact_derived))
         .route("/memo", get(memo_text::get_memo))
