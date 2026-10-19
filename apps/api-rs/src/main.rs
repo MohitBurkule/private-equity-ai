@@ -41,6 +41,7 @@ mod valuation;
 mod visibility;
 mod wall;
 mod waterfall;
+mod webhooks;
 mod workflows;
 
 use axum::{
@@ -135,6 +136,7 @@ pub fn app(state: AppState) -> Router {
         .route("/valuation-rounds", get(valuation::list_rounds))
         .route("/deals/:name/meetings", get(meetings::deal_meetings))
         .route("/deals/:name/wall", get(wall::get_wall))
+        .route("/webhooks", get(webhooks::list_webhooks))
         .route("/targets/:tid/notes", get(notes::list_target_notes))
         .route("/facts/derived", get(derived::fact_derived))
         .route("/memo", get(memo_text::get_memo))
