@@ -39,6 +39,7 @@ mod sumcheck;
 mod tieout;
 mod valuation;
 mod visibility;
+mod wall;
 mod waterfall;
 mod workflows;
 
@@ -133,6 +134,7 @@ pub fn app(state: AppState) -> Router {
         .route("/deals/:name/peer-sets", get(peer_sets::list_peer_sets))
         .route("/valuation-rounds", get(valuation::list_rounds))
         .route("/deals/:name/meetings", get(meetings::deal_meetings))
+        .route("/deals/:name/wall", get(wall::get_wall))
         .route("/targets/:tid/notes", get(notes::list_target_notes))
         .route("/facts/derived", get(derived::fact_derived))
         .route("/memo", get(memo_text::get_memo))

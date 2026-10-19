@@ -25,23 +25,27 @@ pub struct Visibility {
 
 impl Visibility {
     pub async fn load(tx: &mut Transaction<'_, Postgres>, p: &Principal) -> Result<Self, ApiError> {
-        let mnpi: Vec<(String, String)> =
-            sqlx::query_as("SELECT name, created_by FROM deal WHERE mnpi")
-                .fetch_all(&mut **tx)
-                .await?;
+        let grants = p.grants();
+        let flagged: Vec<(String, String, bool, Option<String>)> = sqlx::query_as(
+            "SELECT name, created_by, mnpi, wall FROM deal WHERE mnpi OR wall IS NOT NULL",
+        )
+        .fetch_all(&mut **tx)
+        .await?;
         let mut hidden_deals = HashSet::new();
         let mut visible_mnpi = HashSet::new();
-        for (name, created_by) in mnpi {
+        for (name, created_by, mnpi, wall) in flagged {
             // _may_see_mnpi: scoped by name, or the key that flagged the deal.
             let may = p.deal_scope_has(&name) || (!p.key_id.is_empty() && created_by == p.key_id);
-            if may {
-                visible_mnpi.insert(name);
-            } else {
+            if mnpi && may {
+                visible_mnpi.insert(name.clone());
+            }
+            // deal_hidden: an MNPI deal the key may not see, or a deal whose ethical wall names this key.
+            let walled = wall.as_deref().is_some_and(|w| wall_hides(w, &grants));
+            if (mnpi && !may) || walled {
                 hidden_deals.insert(name);
             }
         }
 
-        let grants = p.grants();
         let acls: Vec<(String, String)> =
             sqlx::query_as("SELECT document_id, acl FROM document_source WHERE acl IS NOT NULL")
                 .fetch_all(&mut **tx)
@@ -120,6 +124,14 @@ impl Visibility {
             }
         }
     }
+}
+
+/// wall_hides: the deal's wall (a JSON list of lowercased grants) names one of this key's grants.
+pub fn wall_hides(wall: &str, grants: &HashSet<String>) -> bool {
+    serde_json::from_str::<Vec<String>>(wall)
+        .unwrap_or_default()
+        .iter()
+        .any(|g| grants.contains(g))
 }
 
 /// _visible_deal_or_404: the deal exists in the tenant and the key may see it (deal scope and MNPI wall).

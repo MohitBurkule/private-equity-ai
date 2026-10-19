@@ -107,6 +107,8 @@ def seed(conn):
             " VALUES (%s, %s, %s, 'zeta-cim.pdf', 3, 'pdf', 'Zeta', '2026-10-17T10:00:00+00:00')",
             ("e" * 64, tenant_id, "c" * 64),
         )
+        # Walled against the analyst identity (Ana@Example.test, lowercased): that key must not see Other.
+        cur.execute("UPDATE deal SET wall = %s WHERE tenant_id = %s AND name = 'Other'", ('["ana@example.test"]', tenant_id))
         for deal, ext, title, starts_at, url, board in [
             ("Other", "parity-1", "Board meeting: Other", "2024-02-01", "https://cal.example.test/1", True),
             ("Other", "parity-2", "Diligence call: Other", "2024-01-10", "", False),
@@ -361,6 +363,9 @@ def main():
                 "/deals/Other/meetings",
                 "/deals/Zeta/meetings",
                 "/deals/Nope/meetings",
+                "/deals/Other/wall",
+                "/deals/Zeta/wall",
+                "/deals/Nope/wall",
                 "/valuation-rounds?company=Other",
                 "/valuation-rounds?company=Nope",
                 "/audit",
