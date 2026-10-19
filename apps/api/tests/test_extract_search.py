@@ -39,3 +39,13 @@ def test_dollar_signs_and_spacing_stripped_from_raw():
     line = "Net income attributable to Pfizer Inc.      $         21,979      $       9,159"
     (row,) = extract_rows(line, 57)
     assert row.raw_values == ("21,979", "9,159")
+
+
+def test_statement_page_ranks_up_for_financial_question_only():
+    from app.search import PageIndex
+    prose = "Our customers are important. " * 4
+    table = "Consolidated Statements of Income. Revenues 100 Cost 60 Net income 40"
+    idx = PageIndex([("d", 1, prose), ("d", 2, table + " customers")])
+    assert idx.search("what is net income revenue for FY2022", k=1)[0].page == 2
+    # Non-financial question: no boost, so the prose page with more query hits still wins.
+    assert idx.search("who are the customers", k=1)[0].page == 1
