@@ -6,7 +6,7 @@ Routes it does not serve are relayed to `FASTAPI_UPSTREAM` unchanged, so one URL
 Parity is checked with `make parity` (`scripts/parity.sh`, `parity/run.py`): status, body and audit rows of each
 request must match FastAPI for every key shape.
 
-## Served natively (54)
+## Served natively (55)
 
 | Method | Path |
 | --- | --- |
@@ -51,6 +51,7 @@ request must match FastAPI for every key shape.
 | GET | `/valuation-rounds` |
 | GET | `/deals/{name}/meetings` |
 | GET | `/deals/{name}/wall` |
+| GET | `/webhooks` |
 | GET | `/deals/{name}/snapshot` |
 | GET | `/documents` |
 | GET | `/documents/{doc_id}/pages/{number}` |
@@ -65,7 +66,7 @@ request must match FastAPI for every key shape.
 | GET | `/workflows` |
 | GET | `/workflows/{wid}/last` |
 
-## Relayed to FastAPI (178)
+## Relayed to FastAPI (177)
 
 Port these in the order listed, one slice per PR, each gated on `make ci` and `make parity`. Comps and legal red
 flags in `GET /memo` (`peers` with `period`, `legal_doc`) also relay until `comps.py` and `legal.py` are ported.
@@ -242,7 +243,6 @@ flags in `GET /memo` (`peers` with `period`, `legal_doc`) also relay until `comp
 | POST | `/uk/psc/extract` |
 | POST | `/valuation-rounds/import` |
 | POST | `/waterfall/lp` |
-| GET | `/webhooks` |
 | POST | `/webhooks` |
 | POST | `/webhooks/docusign` |
 | DELETE | `/webhooks/{endpoint_id}` |

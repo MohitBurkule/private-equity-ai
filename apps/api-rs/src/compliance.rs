@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 
 /// Python acl.CAPABILITIES["govern"].
-const GOVERN_ROLES: &[&str] = &["admin", "partner", "vp", "compliance"];
+pub(crate) const GOVERN_ROLES: &[&str] = &["admin", "partner", "vp", "compliance"];
 
 /// Python Principal.role_on: the role a per-deal override gives on this deal, else the key role.
 fn role_on<'a>(p: &'a Principal, deal: &str) -> &'a str {
