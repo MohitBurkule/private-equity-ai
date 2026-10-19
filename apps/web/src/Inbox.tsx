@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, FileWarning, GitCompareArrows, ListChecks } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileWarning, GitCompareArrows, ListChecks, TrendingUp } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { api, api2 } from "./api";
@@ -18,12 +18,12 @@ export function Inbox({ onGo }: { onGo: (tab: string) => void }) {
       // A failed source must not read as "nothing needs attention": count the failures and say so when every source failed.
       const failures: string[] = [];
       const soft = <T,>(p: Promise<T>, fallback: T) => p.catch((e: unknown) => { failures.push(String(e)); return fallback; });
-      const [brief, report, conflicts, queue, deals] = await Promise.all([
+      const [brief, report, conflicts, queue, deals, alerts] = await Promise.all([
         soft(api2.brief(day), null), soft(api2.report(), null), soft(api2.conflicts(), []),
         soft(Promise.all([api2.facts("auto"), api2.facts("ocr_unverified")]).then((a) => a.flat()), []),
-        soft(api2.deals(), []),
+        soft(api2.deals(), []), soft(api2.alerts("open"), []),
       ]);
-      if (failures.length === 5) { setError(failures[0]); setItems(null); return; }
+      if (failures.length === 6) { setError(failures[0]); setItems(null); return; }
       if (brief && brief.total > 0) {
         const crit = brief.by_severity.critical ?? 0;
         out.push({
@@ -36,6 +36,11 @@ export function Inbox({ onGo }: { onGo: (tab: string) => void }) {
         key: `b${i}`, tone: "bad", icon: <AlertTriangle size={16} />, go: "Portfolio",
         title: `Covenant breach: ${b.company}`,
         body: `${b.kpi_metric} ${b.period} is ${fmtAmount(b.value, b.unit ?? "")} against ${fmtAmount(b.threshold, b.unit ?? "")}.`,
+      }));
+      // The KPI check flags a month whose move is far outside the company's own usual move. The figure stays as reported.
+      alerts.filter((a) => a.kind === "kpi_anomaly").forEach((a) => out.push({
+        key: `k${a.id}`, tone: "warn", icon: <TrendingUp size={16} />, go: "Portfolio",
+        title: a.title, body: a.detail,
       }));
       conflicts.forEach((c, i) => out.push({
         key: `c${i}`, tone: c.likely_rounding ? "acc" : "warn", icon: <GitCompareArrows size={16} />, go: "Review",
