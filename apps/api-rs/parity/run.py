@@ -109,6 +109,17 @@ def seed(conn):
         )
         # Walled against the analyst identity (Ana@Example.test, lowercased): that key must not see Other.
         cur.execute("UPDATE deal SET wall = %s WHERE tenant_id = %s AND name = 'Other'", ('["ana@example.test"]', tenant_id))
+        for connector, deal, status, ingested, error in [
+            ("gmail", "Other", "ok", 2, None),
+            ("mailpit", "Zeta", "error", 0, "upstream timeout"),
+            ("gmail", None, "ok", 5, None),
+        ]:
+            cur.execute(
+                "INSERT INTO sync_run (tenant_id, connector, deal, started_at, finished_at, status, ingested,"
+                " unchanged, skipped, error) VALUES (%s, %s, %s, '2026-10-17T09:00:00+00:00',"
+                " '2026-10-17T09:05:00+00:00', %s, %s, 1, 0, %s)",
+                (tenant_id, connector, deal, status, ingested, error),
+            )
         for url, active in [("https://hooks.example.test/a", True), ("https://hooks.example.test/b", False)]:
             cur.execute(
                 "INSERT INTO webhook_endpoint (tenant_id, url, secret, active) VALUES (%s, %s, %s, %s)",
@@ -372,6 +383,9 @@ def main():
                 "/deals/Zeta/wall",
                 "/deals/Nope/wall",
                 "/webhooks",
+                "/sync-runs",
+                "/sync-runs?limit=1",
+                "/sync-runs?limit=0",
                 "/valuation-rounds?company=Other",
                 "/valuation-rounds?company=Nope",
                 "/audit",
