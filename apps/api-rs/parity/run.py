@@ -107,6 +107,16 @@ def seed(conn):
             " VALUES (%s, %s, %s, 'zeta-cim.pdf', 3, 'pdf', 'Zeta', '2026-10-17T10:00:00+00:00')",
             ("e" * 64, tenant_id, "c" * 64),
         )
+        for deal, ext, title, starts_at, url, board in [
+            ("Other", "parity-1", "Board meeting: Other", "2024-02-01", "https://cal.example.test/1", True),
+            ("Other", "parity-2", "Diligence call: Other", "2024-01-10", "", False),
+            ("Zeta", "parity-3", "Zeta intro call", "2024-03-01", "https://cal.example.test/3", False),
+        ]:
+            cur.execute(
+                "INSERT INTO calendar_event (tenant_id, source, external_id, title, starts_at, url, board, deal)"
+                " VALUES (%s, 'parity', %s, %s, %s, %s, %s, %s)",
+                (tenant_id, ext, title, starts_at, url, board, deal),
+            )
         for company, round_date, round_type, post_money, ccy, doc, line in [
             ("Other", "2023-06-01", "Seed", "250", "EUR", "d" * 64, 1),
             ("Other", "2024-01-15", "Series B", "1000", "USD", "d" * 64, 2),
@@ -348,6 +358,9 @@ def main():
                 "/deals/Zeta/peer-sets",
                 "/deals/Nope/peer-sets",
                 "/valuation-rounds",
+                "/deals/Other/meetings",
+                "/deals/Zeta/meetings",
+                "/deals/Nope/meetings",
                 "/valuation-rounds?company=Other",
                 "/valuation-rounds?company=Nope",
                 "/audit",
