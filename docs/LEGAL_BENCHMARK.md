@@ -46,6 +46,9 @@ Misses and the cause in each case:
 - **Non-solicit, Sabre (1597033):** "until the second (2nd) anniversary of the Closing Date". No month or year word, so not read. Gold is 24.
 - **Escrow, VSE (102752) and Lantheus (1521036):** the rule needs an escrow amount in the same sentence. Both exhibits name an escrow fund or "Adjustment Escrow Amount" without a figure in this text. **Gold conflict:** the gold labels mark these as present, but the labelling rule was "an escrow amount is stated". By that rule both should be absent and the rules are right. Left as labelled, not relabelled after scoring.
 
+### Gold relabel after decision (held-out, rules unchanged)
+Decision taken on the card: relabel gold where the labelling rule and the text disagree. Changes: escrow set to absent for VSE (102752) and Lantheus (1521036), which name an escrow fund but no amount; non-solicit set to 36 months for Flowco (2035149), which states a third-anniversary restriction. Lantheus termination fee stays at the base $10,000,000: the amendment is a conditional change and is flagged for review, not read as the gold fee. Rules-only rescore: escrow 17/17 recall 1.00, non-solicit 4/4 precision and recall 1.00, governing law 20/20, termination fee unchanged at 4/1/1. This is a relabel after scoring, so these are not held-out numbers.
+
 ### Reader false-finding sample
 Reader (local gemma 9B) run on the held-out terms the rules did not find, on the gold-null cases. A false finding is a reader value on an exhibit labelled null. Run on CPU is slow (minutes per call), so the sample is small: see the result line below.
 

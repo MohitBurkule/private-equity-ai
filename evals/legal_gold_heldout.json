@@ -4,7 +4,7 @@
     "governing_law": "Delaware",
     "termination_fee": null,
     "non_solicit_months": null,
-    "escrow": true,
+    "escrow": false,
     "material_adverse_effect": true
   },
   "1364885_0001104659-24-120232": {
@@ -18,7 +18,7 @@
     "governing_law": "Delaware",
     "termination_fee": "10000000",
     "non_solicit_months": null,
-    "escrow": true,
+    "escrow": false,
     "material_adverse_effect": true
   },
   "1597033_0001193125-25-100450": {
@@ -87,7 +87,7 @@
   "2035149_0001193125-26-032740": {
     "governing_law": "Delaware",
     "termination_fee": null,
-    "non_solicit_months": null,
+    "non_solicit_months": "36",
     "escrow": true,
     "material_adverse_effect": true
   },
