@@ -6,7 +6,7 @@ Routes it does not serve are relayed to `FASTAPI_UPSTREAM` unchanged, so one URL
 Parity is checked with `make parity` (`scripts/parity.sh`, `parity/run.py`): status, body and audit rows of each
 request must match FastAPI for every key shape.
 
-## Served natively (52)
+## Served natively (53)
 
 | Method | Path |
 | --- | --- |
@@ -49,6 +49,7 @@ request must match FastAPI for every key shape.
 | GET | `/deals/{name}/notes` |
 | GET | `/deals/{name}/peer-sets` |
 | GET | `/valuation-rounds` |
+| GET | `/deals/{name}/meetings` |
 | GET | `/deals/{name}/snapshot` |
 | GET | `/documents` |
 | GET | `/documents/{doc_id}/pages/{number}` |
@@ -63,7 +64,7 @@ request must match FastAPI for every key shape.
 | GET | `/workflows` |
 | GET | `/workflows/{wid}/last` |
 
-## Relayed to FastAPI (180)
+## Relayed to FastAPI (179)
 
 Port these in the order listed, one slice per PR, each gated on `make ci` and `make parity`. Comps and legal red
 flags in `GET /memo` (`peers` with `period`, `legal_doc`) also relay until `comps.py` and `legal.py` are ported.
@@ -104,7 +105,6 @@ flags in `GET /memo` (`peers` with `period`, `legal_doc`) also relay until `comp
 | DELETE | `/deals/{name}/checklist/{item_id}` |
 | PATCH | `/deals/{name}/checklist/{item_id}` |
 | POST | `/deals/{name}/deletion-request` |
-| GET | `/deals/{name}/meetings` |
 | POST | `/deals/{name}/notes` |
 | PATCH | `/deals/{name}/notes/{nid}` |
 | POST | `/deals/{name}/peer-sets` |
