@@ -8,7 +8,7 @@ from __future__ import annotations
 import html
 import re
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 CHURN_RESIGNATIONS = 3  # officer resignations on the page that count as churn
 PSC_WINDOW_DAYS = 365  # a PSC notified inside this window is a recent ownership change
@@ -36,7 +36,7 @@ def _quote(text: str, pattern: str) -> str | None:
 
 def _date(s: str) -> date | None:
     try:
-        return datetime.strptime(s.strip(), "%d %B %Y").date()
+        return datetime.strptime(s.strip(), "%d %B %Y").replace(tzinfo=UTC).date()
     except ValueError:
         return None
 
@@ -69,7 +69,7 @@ def officer_flags(page: str, url: str) -> list[Flag]:
 
 def red_flags(pages: dict[str, str], today: date | None = None) -> list[Flag]:
     """`pages` maps kind ("charges", "psc", "officers") to (url, html). Missing kinds are skipped."""
-    today = today or date.today()
+    today = today or datetime.now(UTC).date()
     out: list[Flag] = []
     if "charges" in pages:
         out += charge_flags(pages["charges"][1], pages["charges"][0])
