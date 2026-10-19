@@ -247,6 +247,8 @@ class Deal(Base):
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     name: Mapped[str] = mapped_column(String(128))
     stage: Mapped[str] = mapped_column(String(16), default="sourcing")
+    # When the deal last entered its current stage; null on older rows (the watcher falls back to updated_at).
+    stage_since: Mapped[str | None] = mapped_column(String(40), default=None)
     note: Mapped[str | None] = mapped_column(Text, default=None)
     # Set by compliance: a held deal cannot be deleted until the hold is lifted.
     legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())

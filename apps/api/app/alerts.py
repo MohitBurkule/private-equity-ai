@@ -250,6 +250,28 @@ def stalled_deals(db: Session, tenant_id: str) -> list[AlertDraft]:
     return out
 
 
+# Days a deal may sit in one stage before the inbox flags it. The firm overrides a stage with an accepted
+# `stage_days_<stage>` rule.
+STAGE_DAYS = {"screening": 21, "nda": 21, "cim": 30, "ioi": 30, "loi": 45, "dd": 60, "ic": 14}
+
+
+@register_watcher("stage_ageing")
+def stage_ageing(db: Session, tenant_id: str) -> list[AlertDraft]:
+    """Live deals longer in their current stage than the firm's limit. Re-alerts weekly while still over."""
+    out = []
+    for d in db.query(Deal).filter_by(tenant_id=tenant_id):
+        if d.stage not in STAGE_DAYS:
+            continue
+        limit = _firm_days(db, tenant_id, f"stage_days_{d.stage}", STAGE_DAYS[d.stage])
+        age = _age_days(d.stage_since or d.updated_at)
+        if age is None or age < limit:
+            continue
+        out.append(AlertDraft("deal", "warning", f"{d.name}: {age} days in {d.stage} (limit {limit})",
+                              f"In stage {d.stage} since {d.stage_since or d.updated_at}.",
+                              f"stage_ageing:{d.id}:{d.stage}:{_week()}"))
+    return out
+
+
 @register_watcher("overdue_dd")
 def overdue_dd(db: Session, tenant_id: str) -> list[AlertDraft]:
     """Open DD requests unchanged for the firm's response days, one alert per deal per week."""

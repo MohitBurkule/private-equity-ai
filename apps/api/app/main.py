@@ -2048,6 +2048,8 @@ def deal_update(name: str, body: DealUpdate, db: Db, who: Who):
     if body.stage is not None:
         if body.stage not in STAGES:
             raise HTTPException(422, f"stage must be one of {STAGES}")
+        if body.stage != d.stage:
+            d.stage_since = _now_iso()
         d.stage = body.stage
     if body.note is not None:
         d.note = body.note
@@ -4798,6 +4800,7 @@ async def docusign_connect(request: Request, tenant: str, db: Db):
         deal.stage = advance(deal.stage, status)
         if deal.stage != before:
             deal.updated_at = _now_iso()
+            deal.stage_since = deal.updated_at
             changed = {"deal": deal.name, "stage_before": before, "stage_after": deal.stage}
             db.commit()
     log_event(db, tenant, "docusign-connect", "docusign.webhook",
@@ -4831,6 +4834,7 @@ def docusign_stage_sync(body: SyncBody, db: Db, who: Writer):
         new = advance(d.stage, e["status"])
         if new != d.stage:
             d.stage = new
+            d.stage_since = _now_iso()
             applied.append(e["envelopeId"])
     if applied:
         d.updated_at = _now_iso()
