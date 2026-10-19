@@ -58,6 +58,7 @@ Captured from the running UI. The first screens are from a real local run with d
 | ![Sourcing search](docs/screenshots/31-sourcing-search.png) | ![Candidate watch](docs/screenshots/32-candidate-watch.png) |
 | Sourcing search | Candidate watch |
 | ![Memo screen](docs/screenshots/34-memo-screen.png) | ![Alert emails in the local inbox](docs/screenshots/16-mailpit-inbox.png) |
+| ![Firm-wide IC dissent log](docs/screenshots/37-dissent-log.png) | ![Memo versions: saved drafts and the diff between them](docs/screenshots/38-memo-versions.png) |
 | Memo screen | Alert emails in the local inbox |
 | ![Dashboards with seeded demo data](docs/screenshots/19-dashboards-seeded.png) | ![Deal snapshot card above the workspace](docs/screenshots/21-deal-snapshot.png) |
 | Dashboards with seeded demo data | Deal snapshot card above the workspace |
