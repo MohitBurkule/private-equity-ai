@@ -107,6 +107,16 @@ def seed(conn):
             " VALUES (%s, %s, %s, 'zeta-cim.pdf', 3, 'pdf', 'Zeta', '2026-10-17T10:00:00+00:00')",
             ("e" * 64, tenant_id, "c" * 64),
         )
+        for company, round_date, round_type, post_money, ccy, doc, line in [
+            ("Other", "2023-06-01", "Seed", "250", "EUR", "d" * 64, 1),
+            ("Other", "2024-01-15", "Series B", "1000", "USD", "d" * 64, 2),
+            ("Zeta", "2024-03-01", "Series C", "2500.5", "USD", "e" * 64, 3),
+        ]:
+            cur.execute(
+                "INSERT INTO valuation_round (tenant_id, company, round_date, round_type, post_money, currency,"
+                " document_id, line) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (tenant_id, company, round_date, round_type, post_money, ccy, doc, line),
+            )
         for entity, doc, metric, period, value in [
             ("Other", "d" * 64, "revenue", "FY23", 100),
             ("Other", "d" * 64, "revenue", "FY24", 120),
@@ -337,6 +347,9 @@ def main():
                 "/deals/Other/peer-sets",
                 "/deals/Zeta/peer-sets",
                 "/deals/Nope/peer-sets",
+                "/valuation-rounds",
+                "/valuation-rounds?company=Other",
+                "/valuation-rounds?company=Nope",
                 "/audit",
                 "/audit/verify",
                 "/agent/runs",
