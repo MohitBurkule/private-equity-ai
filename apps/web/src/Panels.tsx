@@ -7,6 +7,7 @@ import { useState } from "react";
 import { DealWorkspace } from "./DealWorkspace";
 import { covenantBadge, covenantTestCount } from "./covenantSummary";
 import { pushRecentDeal } from "./recentDeals";
+import { sparkPoints } from "./sparkline";
 
 
 export function ReviewQueue() {
@@ -149,8 +150,12 @@ export function PortfolioPanel() {
           <CardHead title={c.name} />
           {c.kpis.length === 0 && <Empty>No visible KPI observations.</Empty>}
           <table className="w-full text-sm"><tbody>
-            {c.kpis.map((k, i) => (
-              <tr key={i} className="border-t border-line first:border-0"><td className="px-5 py-2">{k.metric}</td><td className="text-mut">{k.period}</td>
+            {latestByMetric(c.kpis).map((k) => (
+              <tr key={k.metric} className="border-t border-line first:border-0"><td className="px-5 py-2">{k.metric}</td>
+                <td className="px-2"><svg aria-label={`${k.metric} trend`} width={96} height={24} className="text-acc" role="img">
+                  <polyline fill="none" stroke="currentColor" strokeWidth={1.5}
+                    points={sparkPoints(k.history.map((h) => Number(h.value)), 96, 24)} /></svg></td>
+                <td className="text-mut">{k.period}</td>
                 <td className="tnum text-right font-medium">{fmtAmount(k.value, k.unit)}</td>
                 <td className="px-5 text-right">{k.sources[0] && <SourceChip docId={k.sources[0].document_id} page={k.sources[0].page} quote="" />}</td></tr>
             ))}
@@ -162,6 +167,18 @@ export function PortfolioPanel() {
 }
 
 const isNum = (v: unknown): v is number => typeof v === "number";
+
+type KpiRow = { metric: string; period: string; value: string; unit: string; sources: { document_id: string; page: number }[] };
+
+/** One row per metric: its latest period, with the full history in period order for the trend line. */
+function latestByMetric(rows: KpiRow[]): (KpiRow & { history: KpiRow[] })[] {
+  const byMetric = new Map<string, KpiRow[]>();
+  for (const r of rows) byMetric.set(r.metric, [...(byMetric.get(r.metric) ?? []), r]);
+  return [...byMetric.values()].map((h) => {
+    const history = [...h].sort((a, b) => a.period.localeCompare(b.period));
+    return { ...history[history.length - 1], history };
+  });
+}
 
 export function EvalDashboard() {
   const { data, error, loading } = useLoad<EvalRunRow[]>(api2.evals);
