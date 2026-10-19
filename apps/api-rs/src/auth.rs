@@ -42,9 +42,21 @@ impl Principal {
         self.deals.as_ref().is_some_and(|d| d.contains(deal))
     }
 
+    /// Python Principal.role_on: the role a per-deal override gives on this deal, else the key role.
+    pub fn role_on(&self, deal: &str) -> &str {
+        self.deal_roles
+            .iter()
+            .find(|(d, _)| d == deal)
+            .map_or(self.role.as_str(), |(_, r)| r.as_str())
+    }
+
     /// What this principal matches in a source's access list (app/acl.py principal_grants).
     pub fn grants(&self) -> HashSet<String> {
-        let mut out: HashSet<String> = self.groups.iter().map(|g| format!("group:{g}")).collect();
+        let mut out: HashSet<String> = self
+            .groups
+            .iter()
+            .map(|g| format!("group:{}", g.to_lowercase()))
+            .collect();
         if let Some(id) = &self.identity {
             out.insert(id.to_lowercase());
         }
