@@ -67,6 +67,7 @@ def stage_sync(db: Session, tenant: str, conn, limit: int = 50) -> dict:
                 continue
             if deal.stage != crm_stage:
                 deal.stage = crm_stage
+                deal.stage_since = datetime.now(UTC).isoformat()
                 out["updated"] += 1
             db.add(DealLink(tenant_id=tenant, connector=conn.name, external_id=rec["id"], deal=deal.name,
                             last_local=crm_stage, last_external=crm_stage))
@@ -90,6 +91,7 @@ def stage_sync(db: Session, tenant: str, conn, limit: int = 50) -> dict:
             final = deal.stage
         if final != deal.stage:
             deal.stage = final
+            deal.stage_since = datetime.now(UTC).isoformat()
             out["updated"] += 1
         pushed_to = link.last_external
         if final != crm_stage and final in back:
