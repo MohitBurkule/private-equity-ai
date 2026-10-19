@@ -36,6 +36,7 @@ mod scope;
 mod shareledger;
 mod snapshot;
 mod sumcheck;
+mod sync_runs;
 mod tieout;
 mod valuation;
 mod visibility;
@@ -137,6 +138,7 @@ pub fn app(state: AppState) -> Router {
         .route("/deals/:name/meetings", get(meetings::deal_meetings))
         .route("/deals/:name/wall", get(wall::get_wall))
         .route("/webhooks", get(webhooks::list_webhooks))
+        .route("/sync-runs", get(sync_runs::list_sync_runs))
         .route("/targets/:tid/notes", get(notes::list_target_notes))
         .route("/facts/derived", get(derived::fact_derived))
         .route("/memo", get(memo_text::get_memo))
