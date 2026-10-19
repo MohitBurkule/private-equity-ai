@@ -19,7 +19,12 @@ Known rough edges: `/ask` and auto-extraction need an LLM key and have not run a
 - Calculators that never default a missing input: LTM, net debt, NWC, table tie-out and sum checks, share-ledger reconciliation, fund metrics (DPI, TVPI, XIRR, vintage cohorts), exit waterfall.
 - Deals pipeline with a DD request tracker; portfolio KPIs that must link to a cited fact, covenant tests, portfolio report (JSON and Word).
 - Data sources: SEC XBRL cross-check and filings list; Companies House filing list, officers and PSC (keyed API), PSC snapshot extractor, Basic Company Data parser, SH01 capital-form reader; holdings CSV import (Seedrs, Crowdcube and similar exports, header-mapped); market quotes from Yahoo, Stooq and FactSet (`/market/quote`); PitchBook, Crowdcube and Seedrs/Republic CSV exports turned into cited facts (`/documents/{id}/vendor-facts`).
-- Eval dashboard in the UI; React UI for all of the above.
+- Deals pipeline shown as a board by stage, with a stage control on each card, and the DD request tracker; portfolio KPIs that must link to a cited fact, a trend line per metric, covenant tests, portfolio report (JSON and Word).
+- KPI month-over-month outliers judged against each company's own history: a month far outside its usual move raises an inbox warning that cites the pack cell and keeps the figure as reported.
+- IC record: decisions with dissent, a firm-wide dissent log, similar past decisions for a deal (same SIC division or sponsor), and memo drafts saved as versions with a figure and claim diff between any two.
+- Sourcing: live EDGAR and Companies House search, and a thesis score that ranks candidates on SIC division, keywords and revenue band, citing each met criterion; unmet criteria say why.
+- Optional Rust API (`apps/api-rs`) serves 56 routes natively and relays the rest to FastAPI, with `make parity` checking they match.
+- Eval dashboard in the UI; React UI for all of the above, with a guided tour, command palette, recent deals, and every screen checked at 1280px and 400px.
 
 ## Screenshots
 
@@ -70,7 +75,9 @@ Captured from the running UI. The first screens are from a real local run with d
 | ![Memo EBITDA (Adjusted) chart, with source line](docs/screenshots/19-memo-ebitda-chart.png) | ![Memo margins and net debt / EBITDA, derived from cited facts](docs/screenshots/20-memo-margins-leverage-chart.png) |
 | Memo EBITDA (Adjusted) chart, with source line | Memo margins and net debt / EBITDA, derived from cited facts |
 | ![Deal workspace at 390px: documents and extract buttons stack](docs/screenshots/35-phone-workspace.png) | ![IC review at 390px](docs/screenshots/36-phone-ic-review.png) |
+| ![Deal pipeline board grouped by stage](docs/screenshots/41-pipeline-board.png) | ![Portfolio KPI trend line, with a month that jumps](docs/screenshots/42-portfolio-sparkline.png) |
 | Deal workspace at phone width | IC review at phone width |
+| Deal pipeline board grouped by stage | Portfolio KPI trend line, with a month that jumps |
 
 ## What does not work yet
 - Dense retrieval (BM25 recall@10 is 0.57 on the sample set; no model downloads in the build sandbox).
