@@ -33,6 +33,13 @@ SYNONYMS = {
 }
 
 
+# Financial statement pages (income statement, balance sheet, cash flows) carry their numbers in tables with few
+# prose words, so BM25 ranks prose pages above them. A finance-sounding question gets those pages a boost.
+STATEMENT_BOOST = 1.5
+_STATEMENT = re.compile(r"Consolidated (Statements? of|Balance Sheets?)|Statements? of (Income|Operations|Cash Flows|Earnings)|Balance Sheets?", re.IGNORECASE)
+_FINANCE = re.compile(r"revenue|sales|income|margin|tax|cash|capital|capex|earnings|net|operations|costs?|expenses?|assets|liabilities|dividend|debt|equity|profit|eps|share|growth|rate", re.IGNORECASE)
+
+
 def tokenize(text: str) -> list[str]:
     return [t.lower().strip(".,") for t in _TOK.findall(text) if t.lower() not in _STOP]
 
@@ -65,9 +72,11 @@ class PageIndex:
             df.update(c.keys())
         n = len(pages)
         self.idf = {t: math.log(1 + (n - f + 0.5) / (f + 0.5)) for t, f in df.items()}
+        self.statement = [bool(_STATEMENT.search(t)) for _, _, t in pages]
 
     def search(self, query: str, k: int = 5, doc_ids: set[str] | None = None) -> list[Hit]:
         q = expand_query(query)
+        boost = STATEMENT_BOOST if _FINANCE.search(query) else 1.0
         hits = []
         for i, (doc, page) in enumerate(self.keys):
             if doc_ids is not None and doc not in doc_ids:
@@ -79,6 +88,6 @@ class PageIndex:
                     s += self.idf[t] * f * (self.k1 + 1) / (
                         f + self.k1 * (1 - self.b + self.b * dl / (self.avg or 1)))
             if s > 0:
-                hits.append(Hit(doc, page, s))
+                hits.append(Hit(doc, page, s * (boost if self.statement[i] else 1.0)))
         hits.sort(key=lambda h: -h.score)
         return hits[:k]
