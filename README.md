@@ -59,6 +59,7 @@ Captured from the running UI. The first screens are from a real local run with d
 | Sourcing search | Candidate watch |
 | ![Memo screen](docs/screenshots/34-memo-screen.png) | ![Alert emails in the local inbox](docs/screenshots/16-mailpit-inbox.png) |
 | ![Firm-wide IC dissent log](docs/screenshots/37-dissent-log.png) | ![Memo versions: saved drafts and the diff between them](docs/screenshots/38-memo-versions.png) |
+| ![Inbox flags a KPI month that jumps 53% from its usual move, with the cited pack cell](docs/screenshots/40-home-kpi-outlier.png) | |
 | Memo screen | Alert emails in the local inbox |
 | ![Dashboards with seeded demo data](docs/screenshots/19-dashboards-seeded.png) | ![Deal snapshot card above the workspace](docs/screenshots/21-deal-snapshot.png) |
 | Dashboards with seeded demo data | Deal snapshot card above the workspace |
