@@ -109,6 +109,16 @@ def seed(conn):
         )
         # Walled against the analyst identity (Ana@Example.test, lowercased): that key must not see Other.
         cur.execute("UPDATE deal SET wall = %s WHERE tenant_id = %s AND name = 'Other'", ('["ana@example.test"]', tenant_id))
+        for suite, metrics in [
+            ("ic-memo", '{"precision": 0.9, "recall": 0.8}'),
+            ("ic-memo", '{"precision": 0.7}'),
+            ("extract", '{"accuracy": 0.95}'),
+        ]:
+            cur.execute(
+                "INSERT INTO eval_run (tenant_id, suite, metrics, note, ran_at, recorded_by)"
+                " VALUES (%s, %s, %s, NULL, '2026-10-17T12:00:00+00:00', 'seed')",
+                (tenant_id, suite, metrics),
+            )
         for connector, deal, status, ingested, error in [
             ("gmail", "Other", "ok", 2, None),
             ("mailpit", "Zeta", "error", 0, "upstream timeout"),
@@ -386,6 +396,10 @@ def main():
                 "/sync-runs",
                 "/sync-runs?limit=1",
                 "/sync-runs?limit=0",
+                "/evals",
+                "/evals?suite=ic-memo",
+                "/evals?suite=",
+                "/evals?limit=1",
                 "/valuation-rounds?company=Other",
                 "/valuation-rounds?company=Nope",
                 "/audit",

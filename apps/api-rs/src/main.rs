@@ -20,6 +20,7 @@ mod deals;
 mod derived;
 mod documents;
 mod error;
+mod evals;
 mod facts;
 mod fund;
 mod fx;
@@ -139,6 +140,7 @@ pub fn app(state: AppState) -> Router {
         .route("/deals/:name/wall", get(wall::get_wall))
         .route("/webhooks", get(webhooks::list_webhooks))
         .route("/sync-runs", get(sync_runs::list_sync_runs))
+        .route("/evals", get(evals::list_evals))
         .route("/targets/:tid/notes", get(notes::list_target_notes))
         .route("/facts/derived", get(derived::fact_derived))
         .route("/memo", get(memo_text::get_memo))
